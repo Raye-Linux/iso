@@ -1,0 +1,322 @@
+#!/usr/bin/python3 -I
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Low disk, failing disk, low battery and "sign in to this network", in
+Raye's words. Runs in the user's session and looks once a minute: one notice
+when something starts or gets worse, nothing while it stays the same.
+
+The stock popups for the same events are off (the *.notifyrc files in this
+folder); powerdevil still acts on a critical battery.
+"""
+import argparse
+import json
+import os
+import subprocess
+import threading
+import time
+from collections import namedtuple
+
+Notice = namedtuple("Notice", "key level app icon title body actions")
+
+OPEN_STORAGE = ["raye-settings", "--page", "system/storage"]
+OPEN_PORTAL = ["xdg-open", "http://detectportal.firefox.com/canonical.html"]
+
+GIB = 1024 ** 3
+MIB = 1024 ** 2
+LOW_DISK_BYTES = 2 * GIB
+LOW_DISK_SHARE = 0.05
+VERY_LOW_DISK_BYTES = 500 * MIB
+
+TICK_SECONDS = 60
+HEALTH_EVERY_TICKS = 30
+
+# UPower Device.State and Device.WarningLevel
+DISCHARGING = 2
+WARNING_LOW = 3
+# NetworkManager Connectivity
+PORTAL = 2
+
+WORDS = {
+    "en": {
+        "storage": "Storage",
+        "low_disk_title": "Low disk space",
+        "low_disk_body": "{space} GB left on this PC. Free up some space so it keeps running well.",
+        "very_low_disk_title": "Disk almost full",
+        "clean_up": "Clean up",
+        "health_title": "A drive may be failing",
+        "health_body": "{drive} is reporting a problem. Back up your files now.",
+        "back_up": "Open Storage",
+        "power": "Power",
+        "low_battery_title": "Battery low",
+        "low_battery_body": "{percent}% left. Plug in your PC soon.",
+        "critical_battery_title": "Battery almost empty",
+        "critical_battery_body": "{percent}% left. Plug in your PC now or it will turn off.",
+        "network": "Network",
+        "portal_title": "Sign in to {network}",
+        "portal_body": "This network wants you to sign in before you can use the internet.",
+        "portal_title_unnamed": "Sign in to this network",
+        "sign_in": "Sign in",
+    },
+    "fr": {
+        "storage": "Stockage",
+        "low_disk_title": "Espace disque insuffisant",
+        "low_disk_body": "Il reste {space} Go sur ce PC. Libérez de l'espace pour qu'il continue de bien fonctionner.",
+        "very_low_disk_title": "Disque presque plein",
+        "clean_up": "Nettoyer",
+        "health_title": "Un disque est peut-être en train de lâcher",
+        "health_body": "{drive} signale un problème. Sauvegardez vos fichiers maintenant.",
+        "back_up": "Ouvrir Stockage",
+        "power": "Alimentation",
+        "low_battery_title": "Batterie faible",
+        "low_battery_body": "Il reste {percent} %. Branchez bientôt votre PC.",
+        "critical_battery_title": "Batterie presque vide",
+        "critical_battery_body": "Il reste {percent} %. Branchez votre PC maintenant, sinon il va s'éteindre.",
+        "network": "Réseau",
+        "portal_title": "Connectez-vous à {network}",
+        "portal_body": "Ce réseau vous demande de vous connecter avant d'utiliser Internet.",
+        "portal_title_unnamed": "Connectez-vous à ce réseau",
+        "sign_in": "Se connecter",
+    },
+}
+
+
+def language(env=os.environ):
+    """The first language the session asks for that Raye has words in."""
+    for key in ("LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"):
+        value = env.get(key, "")
+        if value:
+            return "fr" if value.split(":")[0].lower().startswith("fr") else "en"
+    return "en"
+
+
+def disk_level(free, total):
+    if total <= 0:
+        return 0
+    if free < VERY_LOW_DISK_BYTES:
+        return 2
+    if free < LOW_DISK_BYTES or free < total * LOW_DISK_SHARE:
+        return 1
+    return 0
+
+
+def statvfs(path):
+    st = os.statvfs(path)
+    return st.f_bavail * st.f_frsize, st.f_blocks * st.f_frsize, st.f_fsid
+
+
+def disk_conditions(read, words, paths):
+    out = []
+    seen = set()
+    for path in paths:
+        try:
+            free, total, fsid = read(path)
+        except OSError:
+            continue
+        if fsid in seen:
+            continue
+        seen.add(fsid)
+        level = disk_level(free, total)
+        if level:
+            title = words["very_low_disk_title" if level == 2 else "low_disk_title"]
+            space = "%.1f" % (free / GIB)
+            if words is WORDS["fr"]:
+                space = space.replace(".", ",")
+            out.append(Notice("disk:%s" % fsid, level, words["storage"], "drive-harddisk", title,
+                              words["low_disk_body"].format(space=space),
+                              [("clean", words["clean_up"], OPEN_STORAGE)]))
+    return out
+
+
+def battery_conditions(info, words):
+    if not info or not info.get("present") or info.get("state") != DISCHARGING:
+        return []
+    warning = info.get("warning", 0)
+    if warning < WARNING_LOW:
+        return []
+    percent = int(round(info.get("percent", 0)))
+    if warning == WARNING_LOW:
+        return [Notice("battery", 1, words["power"], "battery-low", words["low_battery_title"],
+                       words["low_battery_body"].format(percent=percent), [])]
+    return [Notice("battery", 2, words["power"], "battery-caution", words["critical_battery_title"],
+                   words["critical_battery_body"].format(percent=percent), [])]
+
+
+def _value(group, name, default=None):
+    item = (group or {}).get(name)
+    return item.get("data", default) if isinstance(item, dict) else default
+
+
+def health_conditions(managed, words):
+    """Failing drives in what UDisks2's GetManagedObjects returned."""
+    if not managed or not managed.get("data"):
+        return []
+    objects = managed["data"][0]
+    failing = set()
+    for path, ifaces in objects.items():
+        if _value(ifaces.get("org.freedesktop.UDisks2.Drive.Ata"), "SmartFailing", False):
+            failing.add(path)
+        warnings = _value(ifaces.get("org.freedesktop.UDisks2.NVMe.Controller"), "SmartCriticalWarning", [])
+        if warnings:
+            drive = _value(ifaces.get("org.freedesktop.UDisks2.Block"), "Drive") \
+                or _value(ifaces.get("org.freedesktop.UDisks2.NVMe.Controller"), "Drive")
+            failing.add(drive or path)
+    out = []
+    for path in sorted(failing):
+        drive = objects.get(path, {}).get("org.freedesktop.UDisks2.Drive", {})
+        name = " ".join(x for x in (_value(drive, "Vendor", ""), _value(drive, "Model", "")) if x).strip()
+        out.append(Notice("health:%s" % path.rsplit("/", 1)[-1], 1, words["storage"], "drive-harddisk",
+                          words["health_title"], words["health_body"].format(drive=name or path.rsplit("/", 1)[-1]),
+                          [("backup", words["back_up"], OPEN_STORAGE)]))
+    return out
+
+
+def portal_conditions(connectivity, network, words):
+    if connectivity != PORTAL:
+        return []
+    title = words["portal_title"].format(network=network) if network else words["portal_title_unnamed"]
+    return [Notice("portal", 1, words["network"], "network-wireless", title, words["portal_body"],
+                   [("signin", words["sign_in"], OPEN_PORTAL)])]
+
+
+def clear_restart_mark(read_boot, write, this_boot):
+    """The restart a notice asked for has happened: the dot on Start goes."""
+    marked = read_boot()
+    if marked and this_boot and marked != this_boot:
+        write("Start", "RestartNeeded")
+        write("Power", "RestartNeededBoot")
+        return True
+    return False
+
+
+class Monitor:
+    """Says each thing once: again only when it gets worse or comes back."""
+
+    def __init__(self, send):
+        self.send = send
+        self.shown = {}
+
+    def update(self, group, notices):
+        current = {n.key for n in notices}
+        for key in [k for k in self.shown if k[0] == group and k[1] not in current]:
+            del self.shown[key]
+        for notice in notices:
+            key = (group, notice.key)
+            if notice.level > self.shown.get(key, 0):
+                self.send(notice)
+            self.shown[key] = max(notice.level, self.shown.get(key, 0))
+
+
+def busctl(*args):
+    """A property or call through busctl, as parsed JSON; None when nothing answers."""
+    try:
+        res = subprocess.run(["busctl", "--system", "--json=short", "--timeout=5", *args],
+                             capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if res.returncode != 0:
+        return None
+    try:
+        return json.loads(res.stdout)
+    except ValueError:
+        return None
+
+
+def prop(service, path, iface, name):
+    got = busctl("get-property", service, path, iface, name)
+    return got.get("data") if isinstance(got, dict) else None
+
+
+def read_battery():
+    path = "/org/freedesktop/UPower/devices/DisplayDevice"
+    get = lambda name: prop("org.freedesktop.UPower", path, "org.freedesktop.UPower.Device", name)
+    if not get("IsPresent"):
+        return None
+    return {"present": True, "state": get("State"), "warning": get("WarningLevel") or 0,
+            "percent": get("Percentage") or 0}
+
+
+def read_portal():
+    nm = "org.freedesktop.NetworkManager"
+    connectivity = prop(nm, "/org/freedesktop/NetworkManager", nm, "Connectivity")
+    if connectivity != PORTAL:
+        return connectivity, ""
+    primary = prop(nm, "/org/freedesktop/NetworkManager", nm, "PrimaryConnection")
+    name = prop(nm, primary, nm + ".Connection.Active", "Id") if primary and primary != "/" else ""
+    return connectivity, name or ""
+
+
+def read_drives():
+    return busctl("call", "org.freedesktop.UDisks2", "/org/freedesktop/UDisks2",
+                  "org.freedesktop.DBus.ObjectManager", "GetManagedObjects")
+
+
+def _read_boot_mark():
+    try:
+        return subprocess.run(["kreadconfig6", "--file", "rayeshellrc", "--group", "Power", "--key", "RestartNeededBoot"],
+                              capture_output=True, text=True, timeout=10).stdout.strip()
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+
+
+def _clear_key(group, key):
+    subprocess.run(["kwriteconfig6", "--file", "rayeshellrc", "--notify", "--group", group, "--key", key, "--delete"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+
+
+def _this_boot():
+    try:
+        with open("/proc/sys/kernel/random/boot_id", encoding="ascii") as fh:
+            return fh.read().strip()
+    except OSError:
+        return ""
+
+
+def show(notice, wait=True):
+    cmd = ["notify-send", "--app-name=" + notice.app, "--icon=" + notice.icon, "--urgency=normal"]
+    cmd += ["--action=%s=%s" % (a[0], a[1]) for a in notice.actions]
+    if notice.actions:
+        cmd.append("--wait")
+    cmd += [notice.title, notice.body]
+
+    def run():
+        try:
+            res = subprocess.run(cmd, capture_output=True, text=True)
+        except OSError:
+            return
+        chosen = res.stdout.strip()
+        for action in notice.actions:
+            if action[0] == chosen:
+                try:
+                    subprocess.Popen(action[2], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                except OSError:
+                    pass
+
+    if wait and notice.actions:
+        threading.Thread(target=run, daemon=True).start()
+    else:
+        run()
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--once", action="store_true", help="look once and exit")
+    parser.add_argument("--paths", nargs="*", default=None)
+    args = parser.parse_args()
+    paths = args.paths if args.paths is not None else ["/", os.path.expanduser("~")]
+    words = WORDS[language()]
+    clear_restart_mark(_read_boot_mark, _clear_key, _this_boot())
+    mon = Monitor(lambda n: show(n, wait=not args.once))
+    tick = 0
+    while True:
+        mon.update("disk", disk_conditions(statvfs, words, paths))
+        mon.update("battery", battery_conditions(read_battery(), words))
+        mon.update("portal", portal_conditions(*read_portal(), words))
+        if tick % HEALTH_EVERY_TICKS == 0:
+            mon.update("health", health_conditions(read_drives(), words))
+        if args.once:
+            return 0
+        tick += 1
+        time.sleep(TICK_SECONDS)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

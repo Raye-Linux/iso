@@ -1,0 +1,138 @@
+#!/usr/bin/python3 -I
+# Writes the "Raye Linux, earlier states" submenu of the boot menu: one
+# entry per restore point. Each starts today's kernel with
+# raye.go-back=N, and raye-go-back-at-boot makes point N the system before
+# the desktop starts. GRUB reads the file at boot (42_raye_earlier_states),
+# so a new or deleted point only rewrites it, never the whole grub.cfg.
+#
+#   raye-earlier-states [FILE]      default /boot/grub/raye-earlier-states.cfg
+#
+# RAYE_EARLIER_ROOT stands for / (cmdline, locale), RAYE_SNAPSHOTS_SNAPPER
+# for snapper and RAYE_EARLIER_LIB for grub-mkconfig_lib in the tests.
+import json
+import os
+import re
+import subprocess
+import sys
+
+ROOT = os.environ.get("RAYE_EARLIER_ROOT", "")
+LIB = os.environ.get("RAYE_EARLIER_LIB", "/usr/share/grub/grub-mkconfig_lib")
+TITLES = {"en": "Raye Linux, earlier states", "fr": "Raye Linux, états précédents"}
+# the names Settings gives the points (settings recovery.cpp, its .po)
+WORDS = {
+    "en": {"update": "Before installing updates", "daily": "Daily restore point",
+           "apt": "Before installing updates or apps", "timeline": "Automatic restore point",
+           "boot": "When the computer started", "": "Restore point"},
+    "fr": {"update": "Avant l'installation des mises à jour",
+           "daily": "Point de restauration quotidien",
+           "apt": "Avant l'installation de mises à jour ou d'applications",
+           "timeline": "Point de restauration automatique",
+           "boot": "Au démarrage de l'ordinateur", "": "Point de restauration"},
+}
+MAX_POINTS = 30
+# one-time words of this boot, never carried into another
+DROP = re.compile(r"^(BOOT_IMAGE=|raye\.go-back=|systemd\.unit=|recovery$|single$|nomodeset$)")
+
+
+def language():
+    try:
+        with open(ROOT + "/etc/default/locale") as f:
+            m = re.search(r"^LANG=\"?([a-z]{2})", f.read(), re.M)
+    except OSError:
+        m = None
+    return m.group(1) if m and m.group(1) in TITLES else "en"
+
+
+def command_line():
+    with open(ROOT + "/proc/cmdline") as f:
+        return [w for w in f.read().split() if not DROP.match(w)]
+
+
+def quoted(text):
+    # GRUB quotes like sh: a quote inside single quotes is '\''
+    text = re.sub(r"[\x00-\x1f\x7f]", "", text).strip()
+    return "'%s'" % text.replace("'", "'\\''")
+
+
+def title(point, lang):
+    words = WORDS[lang]
+    description = (point.get("description") or "").strip()
+    userdata = point.get("userdata")
+    maker = userdata.get("raye", "") if isinstance(userdata, dict) else ""
+    if maker in ("update", "daily"):
+        return words[maker]
+    if maker == "manual" and description:
+        return description
+    if description == "apt" or description.startswith("apt "):
+        return words["apt"]
+    if description in ("timeline", "boot", ""):
+        return words[description]
+    return description
+
+
+def grub(script):
+    r = subprocess.run(["sh", "-c", '. "$1"; ' + script, "sh", LIB],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        raise OSError(r.stderr.strip())
+    return r.stdout
+
+
+def points():
+    snapper = os.environ.get("RAYE_SNAPSHOTS_SNAPPER", "snapper")
+    r = subprocess.run([snapper, "--no-dbus", "-c", "root", "--jsonout", "list",
+                        "--disable-used-space"], capture_output=True, text=True)
+    if r.returncode != 0:
+        return []
+    try:
+        snaps = json.loads(r.stdout).get("root", [])
+    except ValueError:
+        return []
+    # a "post" point is the state just after a change, the broken one;
+    # Settings leaves it out too
+    out = [s for s in snaps if isinstance(s.get("number"), int) and s["number"] > 0
+           and s.get("type") != "post"]
+    return sorted(out, key=lambda s: s["number"], reverse=True)[:MAX_POINTS]
+
+
+def menu():
+    found = points()
+    if not found:
+        return ""
+    early = command_line()
+    if "boot=casper" in early or not any(w.startswith("root=") for w in early):
+        return ""
+    access = grub('prepare_grub_to_access_device "$(grub-probe --target=device /boot)"')
+    kernel = grub("make_system_path_relative_to_its_root /boot/vmlinuz").strip()
+    initrd = grub("make_system_path_relative_to_its_root /boot/initrd.img").strip()
+    words = " ".join(command_line())
+    lang = language()
+    body = ["submenu %s --class raye {" % quoted(TITLES[lang])]
+    for s in found:
+        name = quoted("%s  %s" % (s.get("date", "")[:16], title(s, lang)[:64]))
+        n = s["number"]
+        body.append("\tmenuentry %s --class raye --id raye-earlier-%d {" % (name, n))
+        body += ["\t\t" + line for line in access.splitlines() if line.strip()]
+        body.append("\t\tlinux %s %s raye.go-back=%d" % (kernel, words, n))
+        body.append("\t\tinitrd %s" % initrd)
+        body.append("\t}")
+    body.append("}")
+    return "\n".join(body) + "\n"
+
+
+def main():
+    out = sys.argv[1] if len(sys.argv) > 1 else "/boot/grub/raye-earlier-states.cfg"
+    try:
+        text = menu()
+    except OSError as e:
+        print("raye-earlier-states: %s" % e, file=sys.stderr)
+        text = ""
+    tmp = out + ".new"
+    with open(tmp, "w") as f:
+        f.write(text)
+    os.replace(tmp, out)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

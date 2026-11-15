@@ -1,0 +1,8 @@
+# Release names, by version number. A name is letters only: no accent,
+# no space, no quote, nothing around it. os-release, lsb-release, issue
+# and raye.info say "Raye Linux <VERSION> <name>"; the ISO file name and
+# its volume label keep the number only. Put the next names here before
+# they ship: tests/test_boot_menu.sh takes the line of VERSION's number.
+0.5 Alpenglow
+1.0 Brocken
+1.1 Crepuscule

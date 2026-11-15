@@ -1,0 +1,29 @@
+#!/bin/sh
+# Give the base system back every file raye-system took the place of, and
+# os-prober's boot entry if this package turned it off.
+set -e
+
+OS_PROBER=/etc/grub.d/30_os-prober
+OS_PROBER_OFF=/var/lib/raye-system/os-prober-off
+
+#DEBHELPER#
+
+case "$1" in
+    remove|purge|disappear|abort-install)
+        # --list does not filter by package: keep the lines that end in ours
+        dpkg-divert --list | while read -r kind _ file _ to _ owner; do
+            [ "$kind" = diversion ] && [ "$owner" = raye-system ] || continue
+            dpkg-divert --package raye-system --remove --rename --divert "$to" "$file"
+        done
+        if [ -e "$DPKG_ROOT$OS_PROBER_OFF" ]; then
+            dpkg-statoverride --remove "$OS_PROBER" >/dev/null 2>&1 || true
+            if [ -e "$DPKG_ROOT$OS_PROBER" ]; then
+                chmod 755 "$DPKG_ROOT$OS_PROBER"
+            fi
+            rm -f "$DPKG_ROOT$OS_PROBER_OFF"
+            rmdir "$DPKG_ROOT${OS_PROBER_OFF%/*}" 2>/dev/null || true
+        fi
+        ;;
+esac
+
+exit 0

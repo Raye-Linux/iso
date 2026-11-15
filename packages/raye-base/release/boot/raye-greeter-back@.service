@@ -1,0 +1,9 @@
+[Unit]
+Description=Bring the sign-in screen back after a user's sessions end
+Conflicts=shutdown.target
+Before=shutdown.target
+DefaultDependencies=no
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/raye-greeter-back %i

@@ -1,0 +1,37 @@
+#!/bin/sh
+# Daily restore point, only when the system changed since the last one
+# (packages, settings in /etc, system apps). Run by
+# raye-snapshots-daily.timer; the old ones go with TIMELINE_LIMIT_DAILY.
+#
+# RAYE_SNAPSHOTS_ROOT stands for / in the tests.
+set -eu
+
+root=${RAYE_SNAPSHOTS_ROOT:-}
+[ -e "$root/etc/snapper/configs/root" ] || exit 0
+
+# date of the newest restore point, "YYYY-MM-DD HH:MM:SS", empty without
+last=$(snapper --no-dbus -c root --csvout list --columns number,date 2>/dev/null |
+    awk -F, 'NR > 1 && $1 > 0 { d = $2 } END { print d }')
+# snapper keeps whole seconds: what changed in the second of the last
+# point is already in it
+[ -z "$last" ] || last=$(date -d "$last 1 second" '+%F %T')
+
+changed() {
+    [ -n "$last" ] || return 0
+    for path in /etc /var/lib/dpkg/status /var/lib/flatpak; do
+        [ -e "$root$path" ] || continue
+        if [ -n "$(find "$root$path" -xdev -newermt "$last" -print -quit 2>/dev/null)" ]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+if changed; then
+    snapper --no-dbus -c root create -c timeline \
+        -d "Daily restore point" -u raye=daily
+fi
+# points made by hand stay out of the number cleanup below
+"${RAYE_SNAPSHOTS_SORT:-/usr/libexec/raye-snapshots-sort}" || true
+snapper --no-dbus -c root cleanup timeline || true
+snapper --no-dbus -c root cleanup number || true

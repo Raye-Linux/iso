@@ -1,0 +1,14 @@
+[Desktop Entry]
+Name=Your Phone
+Name[fr]=Votre téléphone
+GenericName=Phone Link
+GenericName[fr]=Lien avec le téléphone
+Comment=Send files and messages between this PC and your phone
+Comment[fr]=Échanger des fichiers et des messages entre ce PC et votre téléphone
+Keywords=phone;android;kdeconnect;
+Keywords[fr]=téléphone;android;kdeconnect;
+Exec=kdeconnect-app
+Icon=kdeconnect
+Type=Application
+Terminal=false
+Categories=Qt;KDE;Network

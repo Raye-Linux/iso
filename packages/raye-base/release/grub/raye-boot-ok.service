@@ -1,0 +1,19 @@
+[Unit]
+Description=Tell the boot menu this start-up worked
+# An offline update starts into system-update.target and restarts from
+# there, so boot-complete.target (where grub2-common.service clears the
+# flag) is never reached and the next start showed the boot menu. Getting
+# this far means the kernel, the disk and the system are fine.
+DefaultDependencies=no
+Requires=local-fs.target
+After=local-fs.target
+Before=system-update.target raye-update-install.service
+ConditionPathIsSymbolicLink=/system-update
+ConditionPathExists=/boot/grub/grubenv
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/grub-editenv /boot/grub/grubenv unset recordfail
+
+[Install]
+WantedBy=system-update.target

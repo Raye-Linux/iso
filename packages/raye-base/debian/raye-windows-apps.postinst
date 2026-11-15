@@ -1,0 +1,8 @@
+#!/bin/sh
+set -e
+if [ "$1" = configure ]; then
+    # every user prepares their own Windows space after login
+    systemctl --global enable raye-windows-prepare.timer >/dev/null 2>&1 || true
+    systemctl --global enable raye-windows-prepare.path >/dev/null 2>&1 || true
+fi
+#DEBHELPER#

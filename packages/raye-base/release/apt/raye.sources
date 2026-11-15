@@ -1,0 +1,10 @@
+# Raye Linux packages. Only Raye's own packages live here, everything
+# else comes from the regular archive.
+# The mirror list names rayelinux.com first and GitHub second: when one
+# of them does not answer, apt takes the file from the other one.
+Types: deb
+URIs: mirror+file:/etc/apt/mirrors/raye.list
+Suites: resolute
+Components: main
+Architectures: amd64
+Signed-By: /usr/share/keyrings/raye-archive-keyring.gpg

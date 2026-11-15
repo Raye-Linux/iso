@@ -1,0 +1,74 @@
+# Installed on top of raye-desktop in the live image. The installer
+# removes the live-only ones (casper, calamares) from the new system.
+raye-desktop
+calamares-settings-raye
+casper
+language-pack-en
+language-pack-fr
+language-pack-kde-en
+language-pack-kde-fr
+language-pack-gnome-fr
+hunspell-fr
+
+# Everyday tools, asked for by name (2026-11-03/04). The sizes are what
+# each one really costs here, dependencies included, measured against the
+# 26.04 archive; the whole list as asked came to 240 MB in 155 packages,
+# so what earns its place is kept and the rest is left out.
+
+# Terminal and diagnostics
+curl
+wget
+git
+strace
+gnupg2
+net-tools
+htop
+btop
+mesa-utils
+
+# Managing software: the graphical one, the text one, and the piece that
+# add-apt-repository lives in
+synaptic
+aptitude
+software-properties-common
+
+# The file manager reaches further: Google Drive, printers and shares
+# announced on the network, admin folders
+kio-gdrive
+kde-zeroconf
+
+# A terminal that drops down over the desktop
+yakuake
+
+# Sound: the ALSA, JACK and PulseAudio faces of the audio server, and
+# cameras for programs that only know V4L2
+pipewire-alsa
+pipewire-jack
+pipewire-pulse
+pipewire-v4l2
+
+# Snapshots of the disk, and the filesystem tools behind them
+btrfs-assistant
+udisks2-btrfs
+
+# Qt programs that are not ours follow the Raye look (to be restyled)
+adwaita-qt
+adwaita-qt6
+
+# Asked for, and used by other things: async disk I/O, apt over https,
+# last-login records, fonts and XML for perl programs
+libaio1t64
+apt-transport-https
+lastlog2
+libfont-freetype-perl
+libxml-libxml-perl
+
+# The hypervisor can shut this machine down cleanly and freeze its
+# filesystem for a consistent snapshot. It costs NOTHING on real
+# hardware, and that is measured rather than assumed: the unit is
+# `BindsTo=dev-virtio\x2dports-org.qemu.guest_agent.0.device`, so without
+# that virtio-serial port -- which a laptop does not have -- systemd
+# cannot start it at all. 3.8 MB on a 2.96 GB image, and this beta exists
+# to be tried, which for many people means in a VM. Raye already tunes
+# for that case (release/tuning/raye-vm-cursor).
+qemu-guest-agent

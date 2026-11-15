@@ -1,0 +1,42 @@
+{
+  "format": 2,
+  "tool": "raye-bench.ps1",
+  "os": "windows",
+  "taken": "2026-10-31T19:30:00+00:00",
+  "runs": 3,
+  "fingerprint": {
+    "os": "Windows 11 Pro 10.0.26100",
+    "cpu": "AMD Ryzen 7 7700 8-Core Processor",
+    "threads": 16,
+    "ram_mib": 32458,
+    "disk": "Samsung SSD 980 PRO 1TB (nvme, ssd)",
+    "gpu": ["AMD Radeon RX 7800 XT 32.0.21025.1024"],
+    "kernel": "10.0.26100",
+    "fast_startup": false,
+    "on_mains": true,
+    "virtual": null
+  },
+  "results": {
+    "boot": {
+      "total_s": {"median": 14.2, "min": 13.8, "max": 15.1, "values": [13.8, 14.2, 15.1]},
+      "main_path_s": {"median": 9.4, "min": 9.1, "max": 9.9, "values": [9.1, 9.4, 9.9]}
+    },
+    "memory": {
+      "used_mib": {"median": 3500, "min": 3500, "max": 3500, "values": [3500]},
+      "total_mib": {"median": 16000, "min": 16000, "max": 16000, "values": [16000]}
+    },
+    "disk": {
+      "used_gib": {"median": 31.4, "min": 31.4, "max": 31.4, "values": [31.4]},
+      "size_gib": {"median": 930.5, "min": 930.5, "max": 930.5, "values": [930.5]}
+    },
+    "launch": {
+      "files_s": {"median": 1.0, "min": 0.9, "max": 1.1, "values": [0.9, 1.0, 1.1]},
+      "browser_s": {"median": 1.2, "min": 1.1, "max": 1.4, "values": [1.1, 1.2, 1.4]},
+      "settings_s": {"median": 1.6, "min": 1.5, "max": 1.9, "values": [1.5, 1.6, 1.9]},
+      "terminal_s": {"median": 0.8, "min": 0.7, "max": 0.9, "values": [0.7, 0.8, 0.9]},
+      "store_s": {"median": 2.1, "min": 1.9, "max": 2.6, "values": [1.9, 2.1, 2.6]}
+    }
+  },
+  "details": {},
+  "errors": {}
+}

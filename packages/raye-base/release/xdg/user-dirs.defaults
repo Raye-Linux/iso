@@ -1,0 +1,14 @@
+# The folders a new account gets, Windows' set, named in the account's
+# language on its first sign-in (Bureau, Téléchargements, Images...).
+# Templates and Public are not here: no folder of theirs shows in the
+# home. New accounts point them under ~/.local/share (/etc/skel/.config/
+# user-dirs.dirs), where "New" still finds the templates.
+#
+# The values are folders relative to the home, translated one path
+# element at a time.
+DESKTOP=Desktop
+DOWNLOAD=Downloads
+DOCUMENTS=Documents
+PICTURES=Pictures
+MUSIC=Music
+VIDEOS=Videos

@@ -1,0 +1,235 @@
+#!/usr/bin/python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Uploads the apt tree and the release to Cloudflare R2 (dl.rayelinux.com).
+
+    publish-r2 --dry-run        what would go where, nothing is sent
+    publish-r2                  the apt tree only (the ISO stays private)
+    publish-r2 all              apt tree and release, only once the ISO may be public
+    publish-r2 apt | iso        only one of them
+
+Credentials come from $R2_ENV (/var/lib/raye-release/r2.env, root 0600),
+written by hand:
+
+    R2_ACCOUNT_ID=...
+    R2_ACCESS_KEY_ID=...
+    R2_SECRET_ACCESS_KEY=...
+    R2_BUCKET=...
+
+They are handed to rclone in its environment and never printed. The apt
+tree goes up in the order a client reads it backwards (packages, then
+indexes, then InRelease last), so a client never sees an InRelease that
+names files not there yet; the folder pages follow, then files gone from
+the tree are deleted. The page at the top of the bucket ($STAGE/www) goes
+up with the apt tree.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import pathlib
+import stat
+import subprocess
+import sys
+import tempfile
+import urllib.request
+
+sys.dont_write_bytecode = True  # no __pycache__ in the repo
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import raye_pages  # noqa: E402
+import raye_publish as rp  # noqa: E402
+
+NEEDED = ("R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_BUCKET")
+FOREVER = "Cache-Control: public, max-age=31536000, immutable"
+SHORT = "Cache-Control: public, max-age=60"
+DAY = "Cache-Control: public, max-age=86400"
+TOP_FILES = ("/dists/*/InRelease", "/dists/*/Release", "/dists/*/Release.gpg")
+
+
+def read_env(path):
+    """The R2 settings, refusing a file others can read."""
+    st = os.stat(path)
+    if st.st_mode & (stat.S_IRWXG | stat.S_IRWXO) or st.st_uid != os.getuid():
+        raise rp.PublishError(f"{path} must belong to you with mode 0600")
+    values = {}
+    for n, line in enumerate(pathlib.Path(path).read_text().splitlines(), 1):
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        key, sep, value = line.partition("=")
+        if not sep:
+            raise rp.PublishError(f"{path}:{n}: not KEY=VALUE")
+        values[key.strip()] = value.strip().strip('"').strip("'")
+    missing = [k for k in NEEDED if not values.get(k)]
+    if missing:
+        raise rp.PublishError(f"{path}: missing {', '.join(missing)}")
+    return values
+
+
+def rclone_env(values, config):
+    env = dict(os.environ)
+    env.update({
+        "RCLONE_CONFIG": config,
+        "RCLONE_CONFIG_R2_TYPE": "s3",
+        "RCLONE_CONFIG_R2_PROVIDER": "Cloudflare",
+        "RCLONE_CONFIG_R2_REGION": "auto",
+        "RCLONE_CONFIG_R2_ENDPOINT": f"https://{values['R2_ACCOUNT_ID']}.r2.cloudflarestorage.com",
+        "RCLONE_CONFIG_R2_ACCESS_KEY_ID": values["R2_ACCESS_KEY_ID"],
+        "RCLONE_CONFIG_R2_SECRET_ACCESS_KEY": values["R2_SECRET_ACCESS_KEY"],
+        "RCLONE_CONFIG_R2_NO_CHECK_BUCKET": "true",
+    })
+    return env
+
+
+def rules(*patterns):
+    # --filter keeps the order rules are given in; --include and
+    # --exclude together do not
+    return [a for p in patterns for a in ("--filter", p)]
+
+
+def apt_steps(tree, bucket):
+    """(what, rclone arguments) for the apt tree, in upload order."""
+    dest = f"r2:{bucket}/apt"
+    return [
+        ("packages and old indexes",
+         ["copy", str(tree), dest,
+          *rules(f"- {raye_pages.INDEX}", "+ /pool/**", "+ /dists/**/by-hash/**", "- **"),
+          "--header-upload", FOREVER]),
+        ("indexes",
+         ["copy", str(tree), dest,
+          *rules(f"- {raye_pages.INDEX}", "- /dists/**/by-hash/**",
+                 *(f"- {f}" for f in TOP_FILES), "+ /dists/**", "- **"),
+          "--header-upload", SHORT]),
+        ("InRelease, Release, Release.gpg",
+         ["copy", str(tree), dest, *rules(*(f"+ {f}" for f in TOP_FILES), "- **"),
+          "--header-upload", SHORT]),
+        ("folder pages",
+         ["copy", str(tree), dest, *rules(f"+ {raye_pages.INDEX}", "- **"),
+          "--header-upload", SHORT]),
+        ("delete what left the tree", ["sync", str(tree), dest]),
+    ]
+
+
+def root_steps(page, bucket):
+    """The page at the top of the bucket, outside apt/."""
+    return [("page at the top of the bucket",
+             ["copyto", str(page), f"r2:{bucket}/{raye_pages.INDEX}", "--header-upload", SHORT])]
+
+
+def write_root_page(stage):
+    """$STAGE/www/index.html, the local copy of the top page of the bucket."""
+    page = pathlib.Path(stage) / "www" / raye_pages.INDEX
+    page.parent.mkdir(parents=True, exist_ok=True)
+    text = raye_pages.root_page()
+    if not page.is_file() or page.read_text() != text:
+        page.write_text(text)
+    page.chmod(0o644)
+    return page
+
+
+def iso_steps(release, info, bucket):
+    dest = f"r2:{bucket}/iso/{info['release']}"
+    return [
+        (info["iso"], ["copyto", info["source"], f"{dest}/{info['iso']}", "--header-upload", DAY]),
+        ("checksums, key and notes",
+         ["copy", str(release), dest, *rules("- /parts/**", "- /release.json"),
+          "--header-upload", "Cache-Control: public, max-age=300"]),
+    ]
+
+
+def files_of(folder, skip=()):
+    for p in sorted(pathlib.Path(folder).rglob("*")):
+        if p.is_file() and not any(part in skip for part in p.relative_to(folder).parts):
+            yield p
+
+
+def public_size(url):
+    # Cloudflare answers 403 to the default Python-urllib agent
+    req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "raye-publish/1"})
+    with urllib.request.urlopen(req, timeout=20) as r:
+        return int(r.headers.get("Content-Length", -1))
+
+
+def main(argv=None):
+    conf = rp.settings()
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("what", nargs="?", choices=("all", "apt", "iso"), default="apt")
+    ap.add_argument("--dry-run", action="store_true", help="what would go where, nothing is sent")
+    args = ap.parse_args(argv)
+    stage = pathlib.Path(conf["STAGE"])
+    tree, release = stage / "apt", stage / "release" / conf["RELEASE"]
+    try:
+        values = read_env(conf["R2_ENV"]) if os.path.exists(conf["R2_ENV"]) else None
+        if values is None and not args.dry_run:
+            raise rp.PublishError(f"no {conf['R2_ENV']}: write it first (see publish-r2 --help)")
+        bucket = values["R2_BUCKET"] if values else "<bucket>"
+        steps = []
+        if args.what in ("all", "apt"):
+            if not (tree / "dists" / conf["SUITE"] / "InRelease").is_file():
+                raise rp.PublishError(f"no signed tree in {tree}: run publish-repo first")
+            files = list(files_of(tree))
+            print(f"apt: {len(files)} files, {rp.human(sum(f.stat().st_size for f in files))}"
+                  f" -> {conf['R2_PUBLIC']}/apt/")
+            steps += apt_steps(tree, bucket)
+            # local, derived from raye_pages: written even for a dry run
+            steps += root_steps(write_root_page(stage), bucket)
+        if args.what in ("all", "iso"):
+            if not (release / "SHA256SUMS.asc").is_file():
+                raise rp.PublishError(f"no signed release in {release}: run release-files first")
+            info = json.loads((release / "release.json").read_text())
+            if os.path.getsize(info["source"]) != info["size"]:
+                raise rp.PublishError(f"{info['source']} changed since release-files ran")
+            print(f"iso: {info['iso']} ({rp.human(info['size'])}) -> {info['urls']['r2']}")
+            for f in files_of(release, skip=("parts",)):
+                if f.name != "release.json":
+                    print(f"     {f.name}")
+            steps += iso_steps(release, info, bucket)
+    except (rp.PublishError, OSError, KeyError, ValueError) as e:
+        print(f"publish-r2: {e}", file=sys.stderr)
+        return 1
+
+    rclone = subprocess.run(["sh", "-c", "command -v rclone"], capture_output=True).returncode == 0
+    for what, cmd in steps:
+        print(f"  {what}: rclone {' '.join(cmd)}")
+    if args.dry_run and not (rclone and values):
+        print("dry run: nothing sent" + ("" if rclone else "; rclone is not installed (apt install rclone)")
+              + ("" if values else f"; {conf['R2_ENV']} is not there yet"))
+        return 0
+    if not rclone:
+        print("publish-r2: rclone is not installed (apt install rclone)", file=sys.stderr)
+        return 1
+
+    with tempfile.NamedTemporaryFile("w", prefix="rclone-", suffix=".conf") as cfg:
+        env = rclone_env(values, cfg.name)
+        for what, cmd in steps:
+            # --s3-no-head: R2 names a version id after a PUT and answers 501 to
+            # the HEAD ?versionId= rclone then sends; every upload "failed"
+            # once and only passed on the retry
+            extra = (["--dry-run"] if args.dry_run else
+                     ["--transfers", "4", "--s3-chunk-size", "64M", "--s3-no-head"])
+            print(f"==> {what}")
+            if subprocess.run(["rclone", *cmd, *extra, "--stats-one-line", "-v"], env=env).returncode:
+                print(f"publish-r2: {what} failed", file=sys.stderr)
+                return 1
+    if args.dry_run:
+        return 0
+    # what a visitor gets, not what rclone believes it sent
+    try:
+        if args.what in ("all", "iso"):
+            got = public_size(info["urls"]["r2"])
+            if got != info["size"]:
+                print(f"publish-r2: {info['urls']['r2']} serves {got} bytes, not {info['size']}",
+                      file=sys.stderr)
+                return 1
+        if args.what in ("all", "apt"):
+            public_size(f"{conf['R2_PUBLIC']}/apt/dists/{conf['SUITE']}/InRelease")
+    except OSError as e:
+        print(f"publish-r2: uploaded, but {conf['R2_PUBLIC']} does not answer yet ({e})",
+              file=sys.stderr)
+        return 1
+    print(f"done: {conf['R2_PUBLIC']}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

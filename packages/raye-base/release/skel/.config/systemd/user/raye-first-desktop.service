@@ -1,0 +1,15 @@
+# First sign-in of a new account: the user folders in the account's
+# language and the Recycle Bin on the desktop. Runs once, before the
+# folders step of xdg-user-dirs and before the desktop shows, then the
+# setup script removes this unit.
+[Unit]
+Description=First desktop of a new account
+Before=xdg-user-dirs.service graphical-session-pre.target
+ConditionPathExists=%h/.local/share/raye/first-desktop/setup
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh %h/.local/share/raye/first-desktop/setup
+
+[Install]
+WantedBy=graphical-session-pre.target

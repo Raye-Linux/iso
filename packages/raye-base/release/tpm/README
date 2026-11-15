@@ -1,0 +1,139 @@
+raye-tpm
+========
+
+Keeps the TPM opening the encrypted disk by itself when the computer
+switches between Ubuntu's kernel and the Raye kernel, and when a Secure
+Boot database update (db, dbx, KEK) is written. Installed as
+/usr/libexec/raye-tpm by raye-system. Python 3, standard library only;
+it calls tpm2_pcrread (only when /sys/class/tpm/tpm0/pcr-*/7 cannot be
+read), cryptsetup and clevis.
+
+Why it is needed
+----------------
+The disk's clevis tpm2 bindings are sealed to PCR 7. PCR 7 records the
+Secure Boot variables and one "authority" event per certificate that
+verified a boot binary. Shim logs the certificate it used from its own
+lists: Ubuntu's kernel is verified with shim's built-in certificate,
+already logged for GRUB, so it adds nothing; the Raye kernel is verified
+with the Raye boot key from MokList, which adds an event. A dbx update
+changes the dbx event. Either way the old binding no longer opens the
+disk and the password is asked.
+
+How it works
+------------
+1. Read the firmware event log
+   (/sys/kernel/security/tpm0/binary_bios_measurements, crypto-agile or
+   SHA-1 only) and replay PCR 7 in the bank the disk uses (sha256, else
+   sha1). If the replay is not the TPM's value: stop, change nothing.
+2. Predict PCR 7 for the next boot:
+   - the Secure Boot variable events (SecureBoot, PK, KEK, db, dbx, dbt,
+     dbr) are rebuilt from /sys/firmware/efi/efivars, hashed the way this
+     firmware hashed them (whole UEFI_VARIABLE_DATA or value only, found
+     from the event itself; anything else: stop);
+   - the Raye kernel's authority event is removed, then added at the end
+     for "--kernel raye" when Secure Boot and shim's checks are on;
+   - every other event is kept as recorded.
+3. Bind each TPM disk to that value: `clevis luks bind -y -k - ... tpm2
+   '{"pcr_bank":B,"pcr_ids":"7","pcr_digest":D}'`, D being the raw PCR
+   value in unpadded base64url (what clevis decodes with `jose b64 dec`).
+   The existing key comes from `clevis luks pass` on a binding that
+   opens the disk now and goes to clevis on a pipe, never to a file.
+4. Record the binding's role in /var/lib/raye-tpm/bindings.json
+   (predicted, ubuntu-kernel, raye-kernel) with its bank and PCR 7
+   value. No secret is ever written there.
+
+Updates it cannot predict
+-------------------------
+fwupd writes db or dbx while it installs, after Raye Update has asked
+raye-tpm to get ready, and a new shim or GRUB can be signed or carry an
+SBAT level raye-tpm cannot know in advance. For those, raye-tpm
+suspends the TPM protection for one start, the way BitLocker does:
+
+1. `suspend` adds a clevis tpm2 binding with no PCR policy, keyed like
+   the others, records it as "suspended" and leaves the flag
+   /var/lib/raye-tpm/suspended.
+2. The next start opens the disk with it, or with a binding predicted
+   after the variables were written (Raye Update calls
+   prepare-firmware again once fwupd is done).
+3. raye-tpm-check.service runs `resume` at that start (only when the
+   flag is there). If a PCR 7 binding opened the disk, the suspension
+   is removed. If not, the disk is bound to the PCR 7 the TPM shows
+   now, the new binding is checked to open the disk, and then the
+   suspension is removed. The other installed kernel gets its
+   prediction for the new values.
+4. A suspension is never kept: if it cannot be resumed, it is tried
+   once more at the next start, then removed anyway and the disk asks
+   its password (Raye Settings offers to bind it again).
+
+The password and recovery key slots are never touched: raye-tpm only
+adds and removes clevis tpm2 bindings. resume never acts on the start
+that made the suspension, so it lasts until the computer restarts.
+
+raye-tpm-watch.path runs "prepare-firmware --if-changed" when dbx, db,
+KEK or PK is written by any other tool (fwupdmgr by hand, for example).
+The path unit also fires when a write is turned down by the firmware:
+sbkeysync tries the same dbx update at every start on some machines.
+--if-changed first compares the variables with what this boot measured
+(the event log) and does nothing when they are the same, so no binding
+without PCR 7 is made for an update that never happened. When the log
+cannot tell, it suspends as before.
+
+suspend and the bindings read the disk's slots under the state lock:
+resume may remove a suspension at the same moment, at start-up.
+
+The Raye kernel's event
+-----------------------
+Shim 15.8 logs a MokList certificate as an EV_EFI_VARIABLE_AUTHORITY
+event named "MokListRT" (shim's GUID) whose value is the certificate's
+MokList entry: owner GUID (16 bytes) then the DER certificate. raye-tpm
+builds it from /usr/share/raye/kernel/raye-boot.der and the owner found
+in the MokListRT variable (shim's GUID when it is not there yet, which
+is what mokutil uses). The first time the Raye kernel really runs, the
+bytes it logged are kept in /var/lib/raye-tpm/raye-authority.bin and win
+from then on.
+
+Commands
+--------
+  replay [--bank B]         event log -> PCR 7, compared with the TPM
+  predict --kernel K        print the predicted PCR 7 ("bank hex")
+  bind-next --kernel K      bind every TPM disk for the next boot of K
+  prepare-firmware          suspend for one start, and bind for every
+                            installed kernel from the current Secure
+                            Boot variables (before and after db/dbx/KEK
+                            are written); --if-changed: only when they
+                            differ from what this boot measured
+  suspend                   let the TPM open the disk without PCR 7 for
+                            the next start only
+  resume                    on the start after: seal to PCR 7 again and
+                            remove the suspension
+  record                    tag the bindings that open the disk on this
+                            boot; count the boots the others missed
+  status [--json]           per disk: which bindings open it now, roles
+  prune                     remove bindings that missed 3 boots and that
+                            no installed kernel can open any more
+
+K is raye or ubuntu. A binding that opens the disk now, a binding raye-tpm
+has never seen open the disk, and the last binding of a disk are never
+removed; without a prediction it can trust, prune removes nothing.
+
+Exit codes: 0 done, 1 error, 2 refused (nothing changed), 3 nothing to do
+here (no TPM, no event log, no TPM disk, nothing suspended), 4 a disk
+could not be bound, suspended or pruned. Messages are one English line;
+the words users see are Raye Settings'.
+
+Tests
+-----
+  python3 -B -m unittest discover -s tests
+
+tests/fixtures/ holds three real boots recorded by tests/make-fixtures.sh
+(OVMF with Secure Boot and the Microsoft keys, a software TPM with the
+sha1 and sha256 banks, the signed shim and GRUB, kernel 7.0.0-42):
+
+  stock  the kernel as signed by its vendor
+  mok    the same kernel signed by a throwaway key enrolled in MokList
+         (mok-cert.der), the way the Raye kernel is verified
+  dbx    "stock" after a hash was appended to dbx
+
+Each has the event log, the Secure Boot variables and the PCR 7 the TPM
+showed. The tests predict one boot from another (stock -> mok, mok ->
+stock, stock -> dbx) and must get the value the TPM really showed.

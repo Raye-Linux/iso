@@ -1,0 +1,9 @@
+2.311s plymouth-quit-wait.service
+1.042s NetworkManager-wait-online.service
+ 812ms dev-nvme0n1p2.device
+ 640ms raye-snapshots.service
+ 233ms systemd-journal-flush.service
+  98ms not a unit line
+1min 3.102s apt-daily-upgrade.timer
+  15ms boot-efi.mount
+ 450us systemd-random-seed.service

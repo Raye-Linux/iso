@@ -1,0 +1,24 @@
+#!/bin/sh
+set -e
+# see raye-release.preinst
+FIXED="/usr/lib/os-release /etc/lsb-release /etc/issue /etc/issue.net /etc/update-motd.d/10-help-text"
+DIVERT="#RAYE_DIVERT#"
+if [ "$1" = configure ]; then
+    # no news ads in the terminal greeting
+    if [ -f "$DPKG_ROOT/etc/default/motd-news" ]; then
+        sed -i 's/^ENABLED=1/ENABLED=0/' "$DPKG_ROOT/etc/default/motd-news"
+    fi
+    if command -v deb-systemd-helper >/dev/null 2>&1; then
+        deb-systemd-helper mask motd-news.timer >/dev/null || true
+    fi
+    # a file this version no longer replaces gets its stock one back
+    # --list does not filter by package: keep the lines that end in ours
+    dpkg-divert --list | while read -r kind _ file _ to _ owner; do
+        [ "$kind" = diversion ] && [ "$owner" = raye-release ] || continue
+        case " $FIXED $DIVERT " in
+            *" $file "*) continue ;;
+        esac
+        dpkg-divert --package raye-release --remove --rename --divert "$to" "$file"
+    done
+fi
+#DEBHELPER#

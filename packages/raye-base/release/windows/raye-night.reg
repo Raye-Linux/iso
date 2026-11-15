@@ -1,0 +1,75 @@
+Windows Registry Editor Version 5.00
+
+; Raye Night inside Windows programs: the 31 system colours, dark mode for
+; programs that ask, flat menus, Inter where a program wants Segoe UI,
+; no crash dialog and no menu entries made behind Raye's back.
+; raye-windows-prepare imports it into every space (with LogPixels from
+; the display scale); change a colour here and in raye-day.reg together.
+
+[HKEY_CURRENT_USER\Control Panel\Colors]
+"ActiveBorder"="38 37 43"
+"ActiveTitle"="44 43 49"
+"AppWorkSpace"="15 14 18"
+"Background"="15 14 18"
+"ButtonAlternateFace"="44 43 49"
+"ButtonDkShadow"="10 9 13"
+"ButtonFace"="38 37 43"
+"ButtonHilight"="74 73 79"
+"ButtonLight"="54 53 59"
+"ButtonShadow"="24 23 29"
+"ButtonText"="241 240 244"
+"GradientActiveTitle"="44 43 49"
+"GradientInactiveTitle"="27 26 31"
+"GrayText"="181 179 188"
+"Hilight"="123 60 255"
+"HilightText"="255 255 255"
+"HotTrackingColor"="180 140 255"
+"InactiveBorder"="27 26 31"
+"InactiveTitle"="27 26 31"
+"InactiveTitleText"="151 148 159"
+"InfoText"="241 240 244"
+"InfoWindow"="42 41 47"
+"Menu"="42 41 47"
+"MenuBar"="20 19 24"
+"MenuHilight"="123 60 255"
+"MenuText"="241 240 244"
+"Scrollbar"="33 32 38"
+"TitleText"="241 240 244"
+"Window"="27 26 31"
+"WindowFrame"="63 62 68"
+"WindowText"="241 240 244"
+
+; flat menus (byte 2, 0x02) and drop shadows, as Windows has them
+[HKEY_CURRENT_USER\Control Panel\Desktop]
+"UserPreferencesMask"=hex:9e,1e,07,80,12,00,00,00
+
+[HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize]
+"AppsUseLightTheme"=dword:00000000
+"SystemUsesLightTheme"=dword:00000000
+
+; the built-in light theme off: controls draw flat in the colours above
+[HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\ThemeManager]
+"ThemeActive"="0"
+
+; MS Shell Dlg is left alone, so old dialogs keep their metrics
+[HKEY_CURRENT_USER\Software\Wine\Fonts\Replacements]
+"Segoe UI"="Inter"
+"Segoe UI Variable"="Inter"
+
+[HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion\FontSubstitutes]
+"Segoe UI"="Inter"
+"Segoe UI Variable"="Inter"
+
+; Raye makes the Start entries itself (raye-windows scan)
+[HKEY_CURRENT_USER\Software\Wine\DllOverrides]
+"winemenubuilder.exe"=""
+
+; a program that crashes gets Raye's own message, not a debugger window
+[HKEY_CURRENT_USER\Software\Wine\WineDbg]
+"ShowCrashDialog"=dword:00000000
+
+; WebView2 (the sign-in page of Roblox Studio, among others) needs
+; DirectComposition from Windows 8.1 on, which is missing here; as Windows 8
+; it draws without it
+[HKEY_CURRENT_USER\Software\Wine\AppDefaults\msedgewebview2.exe]
+"Version"="win8"

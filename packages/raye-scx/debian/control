@@ -1,0 +1,33 @@
+Source: raye-scx
+Section: admin
+Priority: optional
+Maintainer: techoraye <190692880+techoraye@users.noreply.github.com>
+Build-Depends: debhelper-compat (= 13),
+               cargo (>= 1.91),
+               rustc (>= 1.91),
+               clang (>= 16),
+               libbpf-dev,
+               bpftool,
+               libelf-dev,
+               zlib1g-dev,
+               pkg-config,
+               patch,
+               xz-utils,
+               python3:any <!nocheck>,
+               python3-pytest <!nocheck>
+Standards-Version: 4.7.0
+Rules-Requires-Root: no
+Vcs-Git: https://github.com/Raye-Linux/iso.git
+
+Package: raye-scx
+Architecture: amd64
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: sched_ext CPU schedulers used while a game runs
+ Two CPU schedulers written in BPF that the kernel loads at run time
+ and drops by itself if they stop answering:
+  - scx_lavd, which keeps frame times steady in games (the 1 % lows)
+    when the game competes with downloads, a browser or shader
+    compilation;
+  - scx_bpfland, tuned for a responsive desktop under load.
+ Nothing starts them on its own: Raye's Game mode turns one on while a
+ game runs and off when it ends.

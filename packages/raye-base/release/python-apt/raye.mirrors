@@ -1,0 +1,7 @@
+# Servers the system can download from, offered in the sources dialog.
+# Kept to the redirector and the main server: a list of individual
+# servers goes stale and sends people to a mirror that no longer exists.
+# "Best server" measures these and keeps the fastest.
+mirror://mirrors.ubuntu.com/mirrors.txt
+#LOC:Default
+http://archive.ubuntu.com/ubuntu/

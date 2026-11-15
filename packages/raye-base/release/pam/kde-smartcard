@@ -1,0 +1,10 @@
+#%PAM-1.0
+# The lock screen always runs a smartcard check next to the password. The
+# stock service asks pam_sss, which Raye does not ship, so every lock
+# logged "PAM adding faulty module: pam_sss.so". Raye has no smartcard
+# sign-in: say no at once, quietly. This file wins over
+# /usr/lib/pam.d/kde-smartcard.
+auth     requisite  pam_deny.so
+account  requisite  pam_deny.so
+password requisite  pam_deny.so
+session  requisite  pam_deny.so

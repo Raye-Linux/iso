@@ -1,0 +1,266 @@
+raye-base (0.5.6~beta1) resolute; urgency=medium
+
+  * Tests check that ntsync is loaded at boot and handed to the person at
+    the computer by the uaccess tag alone, so Windows programs keep using
+    the kernel's fast waits.
+
+ -- techoraye <190692880+techoraye@users.noreply.github.com>  Sun, 15 Nov 2026 12:00:00 +0000
+
+raye-base (0.5.5~beta1) resolute; urgency=medium
+
+  * raye-run-windows takes --args for a setup's quiet switches, and on
+    request stops what a space keeps running after a setup, so the
+    registry is written at once instead of after a minute.
+  * After login, Start entries of Windows programs get their icons again
+    once, so a scrambled 16-colour small icon from before is replaced.
+
+ -- techoraye <190692880+techoraye@users.noreply.github.com>  Sat, 14 Nov 2026 20:28:01 +0000
+
+raye-base (0.5.3~beta1) resolute; urgency=medium
+
+  * raye-desktop brings in raye-account: sign in to a Raye account from
+    Settings and your settings follow you.
+
+ -- techoraye <190692880+techoraye@users.noreply.github.com>  Sat, 14 Nov 2026 15:00:00 +0000
+
+raye-base (0.5.2~beta1) resolute; urgency=medium
+
+  * Shared folders work out of the box: cifs-utils and smbclient are in
+    the desktop, for network drives and \\server\share.
+  * With the firewall on, the replies of PCs and NAS found on the network
+    get through (UDP 3702 and 5353 only, nothing is offered to the
+    network).
+
+ -- techoraye <190692880+techoraye@users.noreply.github.com>  Fri, 13 Nov 2026 18:11:55 +0000
+
+raye-base (0.5~beta1) resolute; urgency=medium
+
+  * The system now calls itself Raye Linux 0.5 Beta Alpenglow.
+  * Windows programs run on Raye's own Windows layer, with .NET, the web
+    engine some programs embed and DirectX through Vulkan. The outside
+    packages and package source used for them in 0.3 are removed on
+    upgrade.
+  * Windows programs: games blocked by their anti-cheat stop before the
+    installer runs, WebView2 sign-in pages no longer crash, profiles
+    match programs saved in Downloads, VST plugins go into FL Studio's
+    space, programs open the files and links their profile names,
+    uninstallers with spaces in their path work, and a space is brought
+    up to the current Raye settings before it runs.
+  * The .deb of minecraft.net installs.
+  * Crash details and Windows components say root, not administrator.
+  * unattended-upgrades leaves the desktop and boot packages to Raye
+    Update, with every binary of the sources Raye Update keeps for a
+    restart (Kirigami, the NSS modules, locales...), and Raye's Plasma
+    builds are pinned above Ubuntu updates.
+  * The boot menu has a "Raye Linux, earlier states" entry to start from
+    a restore point, named like in Settings and in French too, without
+    the after-update points; going back at boot talks to the boot screen
+    through its own keys.
+  * The last three restore points made by hand are kept out of update
+    cleanup.
+  * Boot failures show again, and an ended session brings back the sign-
+    in screen instead of a text console.
+  * avahi-utils is pulled in for the Device Portal, and Raye Archive
+    replaces Ark.
+  * System Monitor pins from 0.2 become Task Manager pins at sign-in.
+  * Typing notepad, regedit, taskmgr, control or cmd in a terminal opens
+    the Raye app for it; winetricks is no longer a command anyone sees.
+  * Windows programs print nothing in a terminal and never make ~/.wine;
+    a ~/.wine left by 0.3 becomes the default space, nothing lost.
+  * Every Windows program gets a default profile, WinRAR a checked one,
+    and a slow first setup shows "Preparing <program>…".
+  * A shortcut starts its program in the program's own folder.
+  * "Preparing <program>…" stays up until the program starts, then goes
+    away instead of lingering in the notification list.
+  * Microsoft's Visual C++ runtimes 2005 to 2022 and the core fonts are
+    fetched in the background after boot and put in every new Windows
+    space, with nothing on screen. A program no longer fetches again what
+    its space already has, and Paint.NET brings its own .NET.
+  * Programs load Microsoft's Visual C++ runtimes from the ready space
+    instead of the layer's own copies. The ready space is rebuilt as soon
+    as new runtimes arrive, and a first boot without network tries again
+    every 30 minutes instead of 6 hours.
+  * Faster start: network and SAN drivers leave the initramfs (99 to 67
+    MB), the graphics driver check no longer waits for the network on
+    every start, binfmt_misc is not mounted for Python alone, and
+    "Working on updates" shows as soon as the disk is open.
+  * The TPM binding is only suspended when a Secure Boot database really
+    changed, so a dbx update turned down by the firmware no longer leaves
+    the disk opening without PCR 7 every other start.
+  * Disk encryption can be turned on or off from Settings while the PC is
+    running (raye-encryption, an initramfs hook and a polkit action); the
+    plain disk is then mounted by UUID and the boot menu refreshed.
+  * Game mode starts the lavd scheduler while a game runs and stops it
+    afterwards; raye-gaming pulls in raye-scx.
+  * raye-kernel: Settings knows at every start whether the security chip
+    opens the disk, and right after the disk is encrypted from Settings.
+
+ -- techoraye <190692880+techoraye@users.noreply.github.com>  Thu, 12 Nov 2026 20:40:59 +0000
+
+raye-base (0.3~beta1) resolute; urgency=medium
+
+  * The system now calls itself Raye Linux 0.3 Beta.
+  * New in the system: Raye Calendar, Control Panel and Registry Editor.
+    Task Manager replaces System Monitor.
+  * Ubuntu packages come from a mirror list (archive, then ca. and
+    gb.archive.ubuntu.com). Older machines are moved over on upgrade,
+    with a copy of their old ubuntu.sources.
+  * The night background shows from the moment GRUB starts, so no black
+    screen while the system loads. No boot menu after an update restart,
+    and no text at shutdown.
+  * PackageKit no longer installs or restarts during Raye's updates at
+    restart. The quiet boot command line now reaches existing installs,
+    and the disk unlock scripts get the realpath they call.
+  * The sign-in screen comes back when a session is ended from outside
+    (loginctl terminate-user, out of memory) instead of leaving a black
+    screen.
+  * Daily restore points with space limits: fewer of them, at most a
+    tenth of the disk. Btrfs Assistant is installed as Restore Points.
+  * Windows programs use the new Raye Night and Raye Day greys.
+
+ -- techoraye <190692880+techoraye@users.noreply.github.com>  Wed, 11 Nov 2026 13:00:33 +0000
+
+raye-base (0.2~beta2.1) resolute; urgency=medium
+
+  * Firefox shows the bookmarks bar by default.
+  * Ship the signed fwupd EFI binary, so BIOS updates can be installed.
+
+ -- techoraye <190692880+techoraye@users.noreply.github.com>  Mon, 09 Nov 2026 04:40:00 +0000
+
+raye-base (0.2~beta2) resolute; urgency=medium
+
+  * Firefox opens on rayelinux.com.
+  * Moving desktop icons drags the icon alone, not a box around it.
+
+ -- techoraye <190692880+techoraye@users.noreply.github.com>  Sun, 08 Nov 2026 14:30:10 +0000
+
+raye-base (0.2~beta1) resolute; urgency=medium
+
+  * The system now calls itself Raye Linux 0.2 Beta.
+  * No kernel text over the Raye screen at start, at shutdown and while
+    updates install.
+  * Firefox starts clean: no sponsored tiles, no data sent, and no "managed
+    by your organization" notice.
+  * Ctrl+Alt+Del and Ctrl+Shift+Esc open the Raye Task Manager.
+  * Restart now works for every restart notice, and a notice nobody waited
+    for stays on screen.
+  * System notices in plain words, and one help line at a terminal sign-in.
+  * A French session gets French user folders and a French Firefox.
+  * Stock tools leave Start, and stock apps get plain names.
+
+ -- techoraye <190692880+techoraye@users.noreply.github.com>  Sun, 08 Nov 2026 11:07:43 +0000
+
+raye-base (0.1~dev6) resolute; urgency=medium
+
+  * Adding a software source works again. aptsources needs a template
+    named after the system, and there was none: add-apt-repository,
+    software-properties and Synaptic's repository dialog all stopped on
+    NoDistroTemplateException before doing any work. raye-release now
+    ships it, so an upgrade of python-apt cannot take it away.
+  * Raye in a virtual machine works over SPICE with nothing to set: the
+    clipboard, the resize to the window and a visible cursor. The agent
+    was only recommended, and the image build never installs a
+    recommended package, so it was absent from every image so far.
+  * Firefox no longer offers to install a browser add-on named after
+    another desktop.
+  * The boot menu of a machine with two or three systems on it reads in
+    plain names: "Windows" and "Fedora Linux 42" rather than "Windows
+    Boot Manager (on /dev/nvme0n1p1)". Two systems of the same name keep
+    what tells them apart. Only the titles change -- what boots, the
+    entry ids and the icon classes come out byte for byte the same, the
+    new menu is checked before it is put in place, and a pass that fails
+    never fails a kernel update.
+  * The mouse pointer shows up in a virtual machine. The desktop was
+    leaving it to the graphics card's cursor plane, which a console or a
+    SPICE viewer does not show: the pointer worked and was invisible.
+  * Everyday tools come with the system: the two software managers, a
+    drop-down terminal, Google Drive and network shares in the file
+    manager, disk snapshots, the ALSA/JACK/PulseAudio and camera faces of
+    the audio server, and the usual terminal tools.
+  * The repository dialog calls the system by its full name. It was the
+    one place out of six that showed the version without the word the
+    other five carry, so Synaptic listed "Raye Linux 0.1" while the login
+    screen, the terminal banner and the installer all said "Raye Linux
+    0.1 Beta".
+
+ -- techoraye <190692880+techoraye@users.noreply.github.com>  Wed, 04 Nov 2026 11:44:17 +0000
+
+raye-base (0.1~dev5) resolute; urgency=medium
+
+  * zstd for a smaller, faster initramfs.
+  * The KDE wallet opens at login (pam_kwallet5), phones show up over
+    USB (mtp-probe), fingerprint readers work (fprintd).
+  * Windows programs: a ready space is prepared in the background after
+    login (core fonts, DXVK, vkd3d-proton), so a .exe opens in about
+    three seconds with nothing to answer. Free fonts and Xvfb shipped;
+    installers a profile needs run on an invisible screen. winetricks
+    may no longer accept a file whose SHA-256 does not match.
+  * The launcher stopped upgrading every space on each launch: Wine
+    writes its timestamp with a Windows line ending.
+  * Wine 11 from WineHQ (key checked by fingerprint, pinned; the
+    archive's Wine 10 kept out), with ntsync loaded at boot and opened
+    for the person at the computer. gamescope and vulkan-tools for games.
+  * "Restart to Windows" on computers that have it: one click starts
+    Windows next time only (BootNext), without the boot menu. Allowed
+    for the person at the computer, like a restart; the menu entry shows
+    only when a Windows entry is found at boot.
+  * raye-kernel: the Raye key and the steps to switch kernels safely. The
+    key is queued for MokManager with a six-digit code, and the kernel is
+    installed at the next boot only once the key is enrolled, so Secure
+    Boot never meets a kernel it does not know. Ubuntu's kernel stays.
+  * raye-kernel: the kernel image is signed with a boot key that
+    MokManager accepts, and modules with a separate key; the kernel gets
+    one trial boot and Ubuntu's stays the default until it has started.
+  * raye-kernel: a disk the TPM opens gets a second TPM binding for the
+    Raye kernel after its first start, so it keeps opening by itself;
+    "raye-kernel-setup rebind" does the same with the disk password.
+  * raye-kernel-setup status says "enrolled" only when the kernel is
+    queued for the next boot, not for a key left in the firmware.
+
+ -- techoraye <190692880+techoraye@users.noreply.github.com>  Thu, 29 Oct 2026 00:16:00 -0400
+
+raye-base (0.1~dev4) resolute; urgency=medium
+
+  * raye-system pulls the Raye boot menu theme and whiptail.
+  * raye-desktop adds fastfetch and Cascadia Code.
+  * raye-desktop installs Raye Settings.
+  * Boot menu entry reads "Raye GNU/Linux" instead of "Raye Linux GNU/Linux".
+  * Security updates install on their own (Ubuntu security and Firefox)
+    until Raye Update exists. The origins are spelled out: the stock
+    ${distro_id} pattern turns into "Raye" here and matches nothing.
+  * apt takes a btrfs snapshot before and after each change, set up by
+    raye-snapshots.service on first boot.
+  * raye-drivers installs the recommended NVIDIA driver with its signed
+    modules, at install or at the first boot with a network. Unsigned
+    (DKMS) drivers are skipped, OEM packages never pulled in.
+  * clevis in the base set, for TPM unlocking of encrypted disks.
+  * raye-desktop ships Raye Update.
+  * raye-desktop ships the Raye Store.
+  * raye-gaming: Wine, GameMode, MangoHud. raye-windows-apps opens .exe
+    and .msi files with a double click, one Wine prefix per program.
+  * zram (half the RAM, zstd), BBR and fq, vm.max_map_count for games.
+  * After a kernel crash the computer restarts on its own after 30 s.
+  * Windows program profiles: known installers get the components they
+    need and one shared space with the installed program (FL Studio,
+    Notepad++, 7-Zip, Paint.NET, Battle.net). For Steam, Epic, Discord,
+    Spotify, OBS, VLC and Chrome the Linux version is offered instead.
+  * raye-drivers --again and raye-drivers-check.service, which the sudo
+    group may start from Raye Settings without a password.
+
+ -- techoraye <190692880+techoraye@users.noreply.github.com>  Wed, 28 Oct 2026 19:58:50 -0400
+
+raye-base (0.1~dev2) resolute; urgency=medium
+
+  * Wired networks are managed by NetworkManager (netplan config).
+  * GRUB stays hidden unless another system is installed.
+  * raye-desktop pulls the Breeze login theme.
+  * Discover is gone and pinned out, the Raye Store will take its place.
+
+ -- techoraye <190692880+techoraye@users.noreply.github.com>  Wed, 28 Oct 2026 16:51:19 -0400
+
+raye-base (0.1~dev1) resolute; urgency=medium
+
+  * First packages of the new Raye: archive keyring, release files and
+    the system and desktop metapackages.
+
+ -- techoraye <190692880+techoraye@users.noreply.github.com>  Wed, 28 Oct 2026 13:30:00 -0400

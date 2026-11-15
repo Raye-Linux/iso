@@ -1,0 +1,8 @@
+### BEGIN /etc/grub.d/30_os-prober ###
+menuentry 'Windows Boot Manager (on /dev/sda1)' --class windows --class os $menuentry_id_option 'osprober-efi-1111-2222' {
+	chainloader /EFI/Microsoft/Boot/bootmgfw.efi
+}
+menuentry 'Windows Boot Manager (on /dev/sdb1)' --class windows --class os $menuentry_id_option 'osprober-efi-3333-4444' {
+	chainloader /EFI/Microsoft/Boot/bootmgfw.efi
+}
+### END /etc/grub.d/30_os-prober ###

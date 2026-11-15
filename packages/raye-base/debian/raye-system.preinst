@@ -1,0 +1,24 @@
+#!/bin/sh
+# Files of other packages that raye-system puts its own in place of (the
+# update-grub wrapper once it ships): the stock file moves aside to
+# <file>.ubuntu, so updates of its package keep landing next to ours.
+#
+# The list is filled in at build time with what the build really shipped
+# (debian/raye-release-paths, "divert"): while a part has not landed,
+# nothing of it is moved aside.
+set -e
+
+DIVERT="#RAYE_DIVERT#"
+
+case "$1" in
+    install|upgrade)
+        for f in $DIVERT; do
+            dpkg-divert --package raye-system --add --rename \
+                --divert "$f.ubuntu" "$f"
+        done
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

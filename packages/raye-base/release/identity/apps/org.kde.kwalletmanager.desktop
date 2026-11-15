@@ -1,0 +1,16 @@
+[Desktop Entry]
+Name=Passwords
+Name[fr]=Mots de passe
+Comment=Store and manage your passwords
+Comment[fr]=Enregistrez et gérez vos mots de passe
+GenericName=Password Manager
+GenericName[fr]=Gestionnaire de mots de passe
+Exec=kwalletmanager5 %F
+MimeType=application/x-kwallet;
+InitialPreference=6
+Icon=kwalletmanager
+Type=Application
+Categories=Qt;KDE;System;Security;
+X-DocPath=kwallet5/index.html
+DBusActivatable=true
+NoDisplay=true

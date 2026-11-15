@@ -1,0 +1,74 @@
+#!/bin/sh
+set -e
+
+# filled in at build time, see raye-system.preinst
+DIVERT="#RAYE_DIVERT#"
+# "yes" once the Raye Windows boot entry (30_raye_windows) ships
+WINDOWS_ENTRY="#RAYE_WINDOWS_ENTRY#"
+
+OS_PROBER=/etc/grub.d/30_os-prober
+# set when this package is the one that turned os-prober's entry off
+OS_PROBER_OFF=/var/lib/raye-system/os-prober-off
+
+if [ "$1" = configure ]; then
+    # netplan refuses to read a config other users can see
+    chmod 600 "$DPKG_ROOT/etc/netplan/01-network-manager-all.yaml"
+
+    # older installs name one server per line in ubuntu.sources
+    if [ -x "$DPKG_ROOT/usr/libexec/raye-ubuntu-mirrors" ]; then
+        "$DPKG_ROOT/usr/libexec/raye-ubuntu-mirrors"
+    fi
+
+    # A file this version no longer replaces gets its stock one back.
+    # --list does not filter by package: keep the lines that end in ours
+    dpkg-divert --list | while read -r kind _ file _ to _ owner; do
+        [ "$kind" = diversion ] && [ "$owner" = raye-system ] || continue
+        case " $DIVERT " in
+            *" $file "*) continue ;;
+        esac
+        dpkg-divert --package raye-system --remove --rename --divert "$to" "$file"
+    done
+
+    # The Raye entry finds Windows itself and names it plainly; the stock
+    # os-prober script would add a second, longer one. update-grub skips
+    # scripts that are not executable, and a statoverride survives grub
+    # updates.
+    if [ -n "$WINDOWS_ENTRY" ]; then
+        if ! dpkg-statoverride --list "$OS_PROBER" >/dev/null 2>&1; then
+            # --update sets the mode now; without the file there is nothing to set
+            update=
+            if [ -e "$DPKG_ROOT$OS_PROBER" ]; then
+                update=--update
+            fi
+            dpkg-statoverride $update --add root root 0644 "$OS_PROBER"
+            mkdir -p "$DPKG_ROOT${OS_PROBER_OFF%/*}"
+            : > "$DPKG_ROOT$OS_PROBER_OFF"
+        fi
+    elif [ -e "$DPKG_ROOT$OS_PROBER_OFF" ]; then
+        dpkg-statoverride --remove "$OS_PROBER" >/dev/null 2>&1 || true
+        if [ -e "$DPKG_ROOT$OS_PROBER" ]; then
+            chmod 755 "$DPKG_ROOT$OS_PROBER"
+        fi
+        rm -f "$DPKG_ROOT$OS_PROBER_OFF"
+    fi
+
+    # The kernel command line of 50-raye.cfg (no text on screen) and the
+    # boot picture only reach the boot menu through update-grub. Run it
+    # when one of them changed since the menu was last written, not on
+    # every upgrade.
+    stamp="$DPKG_ROOT/var/lib/raye-system/grub-cfg.sum"
+    cfg="$DPKG_ROOT/etc/default/grub.d/50-raye.cfg"
+    picture="$DPKG_ROOT/etc/grub.d/05_raye_boot_picture"
+    if [ -z "$DPKG_ROOT" ] && [ -e /boot/grub/grub.cfg ] && [ -x /usr/sbin/update-grub ] \
+        && [ -r "$cfg" ]; then
+        sum=$(cat "$cfg" "$picture" 2>/dev/null | md5sum)
+        if [ "$sum" != "$(cat "$stamp" 2>/dev/null)" ] && update-grub; then
+            mkdir -p "${stamp%/*}"
+            echo "$sum" > "$stamp"
+        fi
+    fi
+fi
+
+#DEBHELPER#
+
+exit 0

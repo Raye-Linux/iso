@@ -1,0 +1,6 @@
+#!/bin/sh
+# Restart into Windows, like "restart to..." on the other side: one
+# click, no boot menu to catch.
+set -u
+pkexec /usr/libexec/raye-boot-windows || exit 1
+exec systemctl reboot

@@ -1,0 +1,130 @@
+#!/usr/bin/python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Sends the local apt tree to both mirrors, in one gesture.
+
+    publish-mirrors               R2, then GitHub Pages
+    publish-mirrors --if-changed  only when the tree changed since the last
+                                  sync that reached both (what the systemd
+                                  units run)
+    publish-mirrors --dry-run     audit, then what each tool would do
+
+The master copy is $STAGE/apt, on the host's SSD (/srv). R2 and GitHub
+are copies of it: a change made on either of them by hand is overwritten
+at the next sync. The tree is audited first (raye_publish.audit_tree);
+a refused tree goes nowhere.
+
+Both mirrors are tried even if the first one fails, so one outage does
+not hold the other back; the command then fails, loudly, naming the
+mirror that did not take the tree, and --if-changed tries again at the
+next run. The apt tree only: the ISO stays private.
+
+The state of the last sync is in $STAGE/mirrors.state (JSON).
+"""
+from __future__ import annotations
+
+import argparse
+import fcntl
+import json
+import os
+import pathlib
+import subprocess
+import sys
+import time
+
+sys.dont_write_bytecode = True  # no __pycache__ in the repo
+HERE = pathlib.Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+import raye_publish as rp  # noqa: E402
+
+MIRRORS = (("r2", "publish-r2"), ("github", "publish-github"))
+LOCK = "/run/lock/raye-publish-mirrors.lock"
+
+
+def tree_stamp(tree, conf):
+    """sha256 of InRelease: it names every index, which name every package.
+
+    The folder pages are not in it; they only change when the tree does.
+    """
+    return rp.sha256(tree / "dists" / conf["SUITE"] / "InRelease")
+
+
+def read_state(path):
+    try:
+        return json.loads(pathlib.Path(path).read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def write_state(path, state):
+    path = pathlib.Path(path)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n")
+    os.chmod(tmp, 0o644)
+    tmp.rename(path)
+
+
+def up_to_date(state, stamp):
+    return all(state.get(name, {}).get("stamp") == stamp for name, _ in MIRRORS)
+
+
+def run_mirror(tool, dry_run, runner=subprocess.run):
+    cmd = [str(HERE / tool), "apt"] + (["--dry-run"] if dry_run else [])
+    print(f"==> {' '.join(cmd)}", flush=True)
+    return runner(cmd).returncode
+
+
+def sync(conf, stage, dry_run=False, if_changed=False, runner=subprocess.run, now=time.time,
+         keyring=rp.KEYRING):
+    tree, state_file = stage / "apt", stage / "mirrors.state"
+    if not (tree / "dists" / conf["SUITE"] / "InRelease").is_file():
+        raise rp.PublishError(f"no signed tree in {tree}: run publish-repo first")
+    problems = rp.audit_tree(tree, conf["SUITE"], keyring)
+    if problems:
+        raise rp.PublishError(f"{tree} must not be published:\n  " + "\n  ".join(problems))
+    stamp = tree_stamp(tree, conf)
+    state = read_state(state_file)
+    if if_changed and up_to_date(state, stamp):
+        print(f"publish-mirrors: both mirrors already carry {stamp[:12]}")
+        return []
+    failed = []
+    for name, tool in MIRRORS:
+        code = run_mirror(tool, dry_run, runner)
+        if dry_run:
+            if code:
+                failed.append(name)
+            continue
+        entry = {"stamp": stamp if code == 0 else state.get(name, {}).get("stamp"),
+                 "tried": stamp, "exit": code, "at": int(now())}
+        state[name] = entry
+        write_state(state_file, state)
+        if code:
+            failed.append(name)
+    return failed
+
+
+def main(argv=None):
+    conf = rp.settings()
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--if-changed", action="store_true",
+                    help="nothing when both mirrors already carry this tree")
+    ap.add_argument("--dry-run", action="store_true", help="what would be sent, nothing is")
+    args = ap.parse_args(argv)
+    stage = pathlib.Path(conf["STAGE"])
+    # one sync at a time: a second one waits, then sees the newest tree
+    with open(LOCK, "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            failed = sync(conf, stage, args.dry_run, args.if_changed)
+        except (rp.PublishError, OSError) as e:
+            print(f"publish-mirrors: {e}", file=sys.stderr)
+            return 1
+    if failed:
+        print("publish-mirrors: FAILED, the tree did not reach: " + ", ".join(failed)
+              + f" (see above; state in {stage / 'mirrors.state'})", file=sys.stderr)
+        return 1
+    print("publish-mirrors: " + ("dry run done" if args.dry_run else "both mirrors carry the tree"))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,97 @@
+# What python-apt knows about this system's software sources.
+# Named after the ID of /etc/os-release (raye), because that is the only
+# name aptsources looks for. See README next to this file.
+# apt_pkg.TagFile does NOT treat "#" as a comment, so there is no comment
+# inside a paragraph below: one would swallow the field after it.
+ChangelogURI: http://changelogs.ubuntu.com/changelogs/pool/%s/%s/%s/%s_%s/changelog
+
+Suite: resolute
+RepositoryType: deb
+BaseURI: http://archive.ubuntu.com/ubuntu/
+MatchURI: archive.ubuntu.com/ubuntu
+BaseURI-amd64: http://archive.ubuntu.com/ubuntu/
+MatchURI-amd64: archive.ubuntu.com/ubuntu
+MirrorsFile: raye.mirrors
+MirrorsFile-amd64: raye.mirrors
+Description: Raye Linux 0.5 Beta Alpenglow
+Component: main
+CompDescription: Supported software
+CompDescriptionLong: Free and open-source software, kept up to date
+Component: universe
+CompDescription: Community software
+CompDescriptionLong: Free and open-source software looked after by its community
+Component: restricted
+CompDescription: Drivers for devices
+CompDescriptionLong: Drivers for graphics cards, Wi-Fi and other hardware whose source code is not published
+Component: multiverse
+ParentComponent: universe
+CompDescription: Software with restrictions
+CompDescriptionLong: Software restricted by copyright or by the law of some countries
+
+Suite: resolute
+ParentSuite: resolute
+RepositoryType: deb-src
+BaseURI: http://archive.ubuntu.com/ubuntu/
+MatchURI: archive.ubuntu.com/ubuntu
+Description: Source code
+
+Suite: resolute-security
+ParentSuite: resolute
+RepositoryType: deb
+BaseURI: http://security.ubuntu.com/ubuntu/
+MatchURI: archive.ubuntu.com/ubuntu|security.ubuntu.com
+BaseURI-amd64: http://security.ubuntu.com/ubuntu/
+MatchURI-amd64: archive.ubuntu.com/ubuntu|security.ubuntu.com
+Description: Security updates
+
+Suite: resolute-security
+ParentSuite: resolute
+RepositoryType: deb-src
+BaseURI: http://archive.ubuntu.com/ubuntu/
+MatchURI: archive.ubuntu.com/ubuntu|security.ubuntu.com
+Description: Security updates (source code)
+
+Suite: resolute-updates
+ParentSuite: resolute
+RepositoryType: deb
+Description: Recommended updates
+
+Suite: resolute-updates
+ParentSuite: resolute
+RepositoryType: deb-src
+BaseURI: http://archive.ubuntu.com/ubuntu/
+MatchURI: archive.ubuntu.com/ubuntu
+Description: Recommended updates (source code)
+
+Suite: resolute-proposed
+ParentSuite: resolute
+RepositoryType: deb
+Description: Updates being tested
+
+Suite: resolute-proposed
+ParentSuite: resolute
+RepositoryType: deb-src
+BaseURI: http://archive.ubuntu.com/ubuntu/
+MatchURI: archive.ubuntu.com/ubuntu
+Description: Updates being tested (source code)
+
+Suite: resolute-backports
+ParentSuite: resolute
+RepositoryType: deb
+Description: Newer versions of some programs
+
+Suite: resolute-backports
+ParentSuite: resolute
+RepositoryType: deb-src
+BaseURI: http://archive.ubuntu.com/ubuntu/
+MatchURI: archive.ubuntu.com/ubuntu
+Description: Newer versions of some programs (source code)
+
+Suite: resolute
+RepositoryType: deb
+BaseURI: mirror+file:/etc/apt/mirrors/raye.list
+MatchURI: dl\.rayelinux\.com/apt|raye-linux\.github\.io/packages|mirror\+file:/etc/apt/mirrors/raye\.list
+Description: Raye Linux software
+Component: main
+CompDescription: Made for Raye Linux
+CompDescriptionLong: The programs, settings and look that make Raye Linux

@@ -1,0 +1,6 @@
+kwin_wayland_wrapper: starting
+js: raye-launch-timer {"t":1793474275532,"cls":"org.kde.dolphin","name":"dolphin","pid":407573}
+Oct 31 19:17:57 raye kwin_wayland[1402]: js: raye-launch-timer {"t":1793474280100,"cls":"firefox","name":"Navigator","pid":407600}
+js: raye-launch-timer {not json}
+js: raye-launch-timer {"cls":"org.raye.settings"}
+js: raye-launch-timer {"t":1793474290250,"cls":"org.raye.settings","name":"raye-settings","pid":407650}

@@ -1,0 +1,180 @@
+Source: raye-base
+Section: misc
+Priority: optional
+Maintainer: techoraye <190692880+techoraye@users.noreply.github.com>
+Build-Depends: debhelper-compat (= 13),
+               python3:any,
+               python3-pytest <!nocheck>
+Standards-Version: 4.7.0
+Rules-Requires-Root: no
+Vcs-Git: https://github.com/Raye-Linux/iso.git
+
+Package: raye-archive-keyring
+Architecture: all
+Multi-Arch: foreign
+Depends: ${misc:Depends}
+Description: OpenPGP key of the Raye Linux package archive
+ The public key apt uses to check packages from the Raye Linux archive,
+ the apt source that points to it and the list of its mirrors
+ (rayelinux.com first, GitHub second).
+
+Package: raye-release
+Architecture: all
+Depends: raye-archive-keyring, base-files, ${misc:Depends}
+Description: Raye Linux release files
+ Identifies the system as Raye Linux (os-release, lsb-release, issue)
+ and sets up apt the Raye way: snaps are blocked, Firefox comes from
+ Mozilla's own archive as a regular package, and the crash reporters
+ and advertising hooks of the base system are kept out.
+ .
+ Raye Linux is based on Ubuntu. It is not affiliated with or endorsed
+ by Canonical Ltd.
+
+Package: raye-system
+Architecture: amd64
+Depends: raye-release,
+         linux-generic-hwe-26.04,
+         linux-firmware, intel-microcode, amd64-microcode,
+         shim-signed, grub-efi-amd64-signed, grub-efi-amd64-bin, efibootmgr, os-prober,
+         grub-theme-raye, raye-kernel,
+         initramfs-tools, zstd, plymouth, plymouth-label,
+         sudo, locales, tzdata, keyboard-configuration, console-setup,
+         systemd-zram-generator,
+         network-manager, netplan.io, wpasupplicant, iw, rfkill, systemd-resolved, systemd-timesyncd,
+         cryptsetup, cryptsetup-initramfs, btrfs-progs, dosfstools, ntfs-3g, exfatprogs,
+         clevis, clevis-tpm2, clevis-luks, clevis-initramfs,
+         fwupd, fwupd-signed, udisks2, upower, power-profiles-daemon, policykit-1 | polkitd, pkexec,
+         bluez, avahi-daemon, avahi-utils, libnss-mdns, libmtp-runtime,
+         fprintd, libpam-fprintd,
+         nano, less, curl, ca-certificates, zip, unzip, bash-completion, whiptail,
+         unattended-upgrades, snapper,
+         tpm2-tools,
+         ${misc:Depends}
+Description: Raye Linux base system
+ Kernel, firmware, boot chain and the core services every Raye Linux
+ machine runs. Uses the signed kernel, so Secure Boot keeps working.
+
+Package: raye-desktop
+Architecture: all
+Depends: raye-system, raye-theme,
+         raye-style, raye-icon-theme, raye-cursor-theme, raye-sound-theme,
+         papirus-icon-theme, sound-theme-freedesktop,
+         raye-first-run,
+         plasma-desktop, plasma-workspace, plasma-session-wayland, kwin-wayland,
+         sddm, sddm-theme-raye, kde-config-sddm, libpam-kwallet5, breeze, breeze-gtk-theme, kde-config-gtk-style,
+         plasma-nm, plasma-pa, bluedevil, powerdevil, kscreen, kinfocenter,
+         systemsettings, btrfs-assistant, raye-settings, raye-account, raye-update, raye-store, raye-gaming,
+         raye-calendar, raye-controlpanel, raye-regedit, kmenuedit, kde-cli-tools, milou, kactivitymanagerd,
+         ksystemstats, polkit-kde-agent-1,
+         kde-config-screenlocker, plasma-integration, frameworkintegration6,
+         qml6-module-org-kde-breeze, qml6-module-org-kde-desktop,
+         xdg-desktop-portal-kde, xdg-desktop-portal-gtk, xdg-user-dirs, xdg-utils,
+         pipewire, pipewire-audio, wireplumber, gstreamer1.0-pipewire, alsa-utils,
+         libspa-0.2-bluetooth,
+         cups, cups-filters, print-manager, openprinting-ppds,
+         foomatic-db-compressed-ppds, printer-driver-gutenprint,
+         ipp-usb, sane-airscan, skanpage,
+         fonts-inter, fonts-noto-core, fonts-noto-color-emoji, fonts-noto-cjk,
+         fonts-liberation, fonts-dejavu-core, fonts-cascadia-code,
+         raye-files, raye-archive, konsole, fastfetch, kate, gwenview, okular, kcalc, kde-spectacle,
+         haruna, elisa, partitionmanager, plasma-disks, kwalletmanager,
+         konsole-kpart, kclock, krecorder, kolourpaint, kcharselect, krdc, ksystemlog,
+         hunspell-en-us, hunspell-fr, tesseract-ocr-eng, tesseract-ocr-fra, ffmpeg,
+         kio-extras, kio-admin, kio-fuse,
+         cifs-utils, smbclient,
+         ffmpegthumbs, kdegraphics-thumbnailers, kimageformat6-plugins,
+         qt6-image-formats-plugins,
+         flatpak, libfuse2t64,
+         firefox,
+         firefox-l10n-fr,
+         mesa-vulkan-drivers, va-driver-all, mesa-va-drivers, gstreamer1.0-libav,
+         ubuntu-drivers-common, switcheroo-control, iio-sensor-proxy,
+         language-selector-common, at-spi2-core, orca,
+         systemd-coredump,
+# staged: the lines below wait for the Raye package they name. When it is
+# in the image (built by build.sh), replace the "#" of its line by a space.
+# LK-0 (admin prompt)
+         raye-polkit-agent,
+         raye-app-identity,
+# Ctrl+Alt+Del (LK-5): the Processes tab is finished
+         raye-taskmanager,
+# Raye apps. The instruction above -- replace the "#" with a space --
+# was a trap for eleven of these thirteen until 2026-11-06: their stanzas
+# were removed from apps/debian/control because the packages shipped
+# EMPTY (changelog.gz + copyright, 1792 bytes, Installed-Size: 9, and
+# their full Depends), so uncommenting one now fails the ISO build on an
+# unfindable dependency. The two groups below are kept apart for that
+# reason, and iso/tools/tests/test_staged_packages.py derives both from
+# apps/debian/control at run time: a name in the wrong group is red.
+#
+# staged-ready: apps/debian/control declares it, so the "#" may go.
+#        xdg-desktop-portal-raye,
+# staged-todo: NOT WRITTEN YET. The folder has to exist in apps/ first --
+# the root CMakeLists.txt marks each one NOT_WRITTEN_YET. Writing one means
+# dropping that marker AND adding its stanza AND moving its line up here,
+# in the same commit. Tickets: terminal AP-2, notepad AP-10, snip AP-12
+# (drop kde-spectacle above), calculator AP-19 (drop kcalc above), camera
+# AP-21, photos AP-22 (drop gwenview above once AP-23 lands too),
+# devicemanager AP-24, notes GP-22, gamebar GP-18,
+# killer-helper GP-28.
+#        raye-terminal,
+#        raye-notepad,
+#        raye-snip,
+#        raye-calculator,
+#        raye-camera,
+#        raye-photos,
+#        raye-devicemanager,
+#        raye-notes,
+#        raye-gamebar,
+#        raye-killer-helper,
+         spice-vdagent,
+         ${misc:Depends}
+Description: Raye Linux desktop
+ The Plasma desktop as Raye Linux ships it, with the everyday apps,
+ printing, audio and Bluetooth. Nothing else.
+
+Package: raye-gaming
+Architecture: all
+Depends: raye-windows-apps, winetricks, cabextract,
+         gamemode, mangohud, gamescope, vulkan-tools,
+         steam-devices, libgdk-pixbuf-2.0-0,
+         raye-scx,
+         ${misc:Depends}
+# Minecraft's official .deb still depends on the library's pre-24.04 name,
+# which no package has anymore, so it could not be installed at all.
+Provides: libgdk-pixbuf2.0-0 (= 2.44.5)
+Description: Raye Linux games and Windows apps
+ Raye's layer for Windows programs, with the kernel's ntsync for games,
+ GameMode to give games the whole machine while they run, MangoHud for
+ the frame rate overlay, gamescope for upscaling. Steam
+ and the game launchers are offered in the Store, they come with their
+ own licence.
+
+Package: raye-windows-apps
+Architecture: all
+Depends: raye-wine, raye-wine-compat | wine, raye-windows-ui, winetricks, cabextract, unzip, zstd, kdialog, util-linux, xvfb, xauth,
+         libnotify-bin,
+         fonts-liberation, fonts-crosextra-carlito,
+         fonts-crosextra-caladea,
+         osslsigncode, kio-extras,
+# raye-wine-compat gives winetricks the "wine" it asks for; a system that
+# still has WineHQ's package keeps it rather than an update removing it.
+# raye-wine-addons is not needed: raye-wine brings Mono, Gecko, DXVK and
+# vkd3d-proton itself. Drop kdialog above once SW-11's runner lands.
+         ${misc:Depends}
+Description: Open Windows programs with a double click
+ Double-clicking an .exe or .msi file opens it, each program in
+ its own space so one cannot break the others. Every space starts from a
+ ready one, prepared in the background after login with the pieces most
+ programs and games expect (core fonts, DXVK, vkd3d-proton),
+ so a program opens at once and nothing asks a question.
+
+Package: raye-kernel
+Architecture: all
+Depends: mokutil, shim-signed, ${misc:Depends}
+Description: Switch to the Raye kernel safely
+ The Raye kernel is Ubuntu's kernel with the Raye crash screen, signed
+ with the Raye key. This package holds the public key and the steps
+ that enroll it before the kernel is installed, so Secure Boot never
+ meets a kernel it does not know. Ubuntu's signed kernel stays as the
+ fallback.

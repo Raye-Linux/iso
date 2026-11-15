@@ -1,0 +1,228 @@
+#!/usr/bin/python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Publishes the GitHub mirror: the apt tree on GitHub Pages
+(Raye-Linux/packages) and the ISO in the Releases of Raye-Linux/releases.
+
+    publish-github --dry-run     check the way in, the login and the repos; send nothing
+    publish-github               the apt tree only (the ISO stays private)
+    publish-github all           apt tree and ISO release, only once the ISO may be public
+    publish-github apt | iso     only one of them
+
+Runs on the build machine. The GitHub login lives on the GitHub machine only and stays there:
+this writes a small job into $STAGE/github/ (the GitHub machine sees /srv), starts
+it on the GitHub machine through the Proxmox guest agent, and follows its log.
+
+Both repos must be public (Pages and release downloads of a private repo
+are not public), and Raye-Linux/releases needs one commit (create it
+with a README) before a release can be tagged in it.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import pathlib
+import shlex
+import sys
+import time
+
+sys.dont_write_bytecode = True  # no __pycache__ in the repo
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import raye_publish as rp  # noqa: E402
+
+GITHUB_FILE_LIMIT = 100 * 1000 * 1000      # git refuses bigger files
+RELEASE_FILE_LIMIT = 2 * 1024 ** 3          # per release asset
+AUTHOR = "techoraye <190692880+techoraye@users.noreply.github.com>"
+
+
+def check_tree(tree, conf, keyring=rp.KEYRING):
+    """The tree goes to a PUBLIC repo: audit it again right before it leaves.
+
+    publish-repo audits what it writes, but the folder can be touched in
+    between; this is the last look before the push.
+    """
+    problems = rp.audit_tree(tree, conf["SUITE"], keyring)
+    if problems:
+        raise rp.PublishError(f"{tree} must not be published:\n  " + "\n  ".join(problems))
+
+
+def apt_job(conf, tree, stamp):
+    repo = f"{conf['GITHUB_ORG']}/{conf['GITHUB_PACKAGES']}"
+    name, _, mail = AUTHOR.partition(" <")
+    # one commit, pushed over the last one: the repo never grows with old packages
+    return f"""set -eu
+export HOME=/root
+work=$(mktemp -d /var/tmp/raye-pages.XXXXXX)
+trap 'rm -rf "$work"' EXIT
+cp -a {shlex.quote(str(tree))}/. "$work"/
+touch "$work/.nojekyll"
+# last look on the VM itself, after the copy: never an image, never a key
+if find "$work" -type f \\( -iname '*.iso' -o -iname '*.iso.*' \\) | grep -q .; then
+    echo "refused: an image file is in the tree" >&2; exit 3
+fi
+if grep -rlaE 'PRIVATE KEY( BLOCK)?-----' "$work" | grep -q .; then
+    echo "refused: secret key material is in the tree" >&2; exit 3
+fi
+cd "$work"
+git init -q -b main
+git add -A
+git -c user.name={shlex.quote(name)} -c user.email={shlex.quote(mail.rstrip('>'))} \\
+    commit -q -m {shlex.quote(f"Raye packages for {conf['RELEASE']} ({stamp})")}
+git push -q --force git@github.com:{repo}.git main
+gh api repos/{repo}/pages >/dev/null 2>&1 ||
+    gh api -X POST repos/{repo}/pages -f 'source[branch]=main' -f 'source[path]=/' >/dev/null
+echo "pushed $(git rev-parse --short HEAD) to {repo}"
+"""
+
+
+def iso_job(conf, release, info):
+    repo = f"{conf['GITHUB_ORG']}/{conf['GITHUB_RELEASES']}"
+    tag = f"v{info['release']}"
+    files = [release / "parts" / p["name"] for p in info["parts"]]
+    notes = [release / f"release-notes-{info['release']}{s}.md" for s in ("", ".fr")]
+    files += [release / n for n in ("SHA256SUMS", "SHA256SUMS.asc", "raye-archive.asc")] + notes
+    quoted = " ".join(shlex.quote(str(f)) for f in files)
+    return f"""set -eu
+export HOME=/root
+if gh release view {tag} --repo {repo} >/dev/null 2>&1; then
+    gh release upload {tag} --repo {repo} --clobber {quoted}
+else
+    gh release create {tag} --repo {repo} --prerelease \\
+        --title {shlex.quote(info['title'])} \\
+        --notes-file {shlex.quote(str(notes[0]))} {quoted}
+fi
+echo "uploaded {len(files)} files to {info['urls']['github']}"
+"""
+
+
+def start(conf, jobdir, name, script):
+    """Writes the job and starts it on the GitHub machine as a transient unit."""
+    jobdir.mkdir(parents=True, exist_ok=True)
+    path, log, status = jobdir / f"{name}.sh", jobdir / f"{name}.log", jobdir / f"{name}.status"
+    path.write_text(script)
+    log.write_text("")
+    status.write_text("starting\n")
+    wrapper = (f"sh {shlex.quote(str(path))} >{shlex.quote(str(log))} 2>&1; "
+               f"echo \"done $?\" >{shlex.quote(str(status))}")
+    code, out = rp.guest_exec(conf, f"systemd-run --quiet --collect --unit=raye-publish-{name} "
+                                    f"sh -c {shlex.quote(wrapper)}")
+    if code:
+        raise rp.PublishError(f"could not start the job on VM {conf['GITHUB_VM']}: {out.strip()}")
+    return log, status
+
+
+def follow(log, status, every=15):
+    shown = 0
+    while True:
+        text = log.read_text()
+        if len(text) > shown:
+            sys.stdout.write(text[shown:])
+            sys.stdout.flush()
+            shown = len(text)
+        state = status.read_text().split()
+        if state and state[0] == "done":
+            return int(state[1])
+        time.sleep(every)
+
+
+def check(conf, what):
+    """Read-only look at the GitHub machine: login, repos, Pages, existing release."""
+    def orgrepo(r):
+        return f"{conf['GITHUB_ORG']}/{r}"
+
+    script = ["export HOME=/root", "gh auth status >/dev/null 2>&1 && echo login=ok || echo login=no",
+              "df -h /var/tmp | awk 'NR==2 {print \"free=\" $4}'"]
+    repos = []
+    if what in ("all", "apt"):
+        repos.append(conf["GITHUB_PACKAGES"])
+        script.append(f"url=$(gh api repos/{orgrepo(conf['GITHUB_PACKAGES'])}/pages --jq .html_url"
+                      " 2>/dev/null) && echo pages=$url || echo pages=off")
+    if what in ("all", "iso"):
+        repos.append(conf["GITHUB_RELEASES"])
+        script.append(f"gh release view v{conf['RELEASE']} --repo {orgrepo(conf['GITHUB_RELEASES'])}"
+                      " >/dev/null 2>&1 && echo release=exists || echo release=new")
+    for r in repos:
+        script.append(f"gh repo view {orgrepo(r)} --json visibility,isEmpty "
+                      f"--jq '\"repo {r}=\" + .visibility + \" empty=\" + (.isEmpty|tostring)'"
+                      f" 2>/dev/null || echo 'repo {r}=missing'")
+    code, out = rp.guest_exec(conf, "\n".join(script))
+    facts = dict(line.split("=", 1) for line in out.splitlines() if "=" in line)
+    problems = []
+    if not conf["STAGE"].startswith("/srv/"):
+        problems.append(f"STAGE={conf['STAGE']} is not under /srv: VM {conf['GITHUB_VM']} cannot read it")
+    if facts.get("login") != "ok":
+        problems.append(f"gh is not logged in on VM {conf['GITHUB_VM']}")
+    for r in repos:
+        state = facts.get(f"repo {r}", "missing")
+        if state == "missing":
+            problems.append(f"create the public repo {orgrepo(r)}"
+                            + (" with a README" if r == conf["GITHUB_RELEASES"] else ""))
+        elif not state.startswith("PUBLIC"):
+            problems.append(f"{orgrepo(r)} must be public ({state.split()[0].lower()} now)")
+        elif r == conf["GITHUB_RELEASES"] and "empty=true" in state:
+            problems.append(f"{orgrepo(r)} is empty: add a README so a release can be tagged")
+    return facts, problems
+
+
+def main(argv=None):
+    conf = rp.settings()
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("what", nargs="?", choices=("all", "apt", "iso"), default="apt")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="check the way in, the login and the repos; send nothing")
+    args = ap.parse_args(argv)
+    stage = pathlib.Path(conf["STAGE"])
+    tree, release = stage / "apt", stage / "release" / conf["RELEASE"]
+    jobs = []
+    try:
+        if args.what in ("all", "apt"):
+            if not (tree / "dists" / conf["SUITE"] / "InRelease").is_file():
+                raise rp.PublishError(f"no signed tree in {tree}: run publish-repo first")
+            check_tree(tree, conf)
+            print(f"apt: {tree} -> {conf['GITHUB_ORG']}/{conf['GITHUB_PACKAGES']} -> {conf['GITHUB_PAGES']}/")
+            jobs.append(("apt", apt_job(conf, tree, time.strftime("%Y-%m-%d"))))
+        if args.what in ("all", "iso"):
+            if not (release / "SHA256SUMS.asc").is_file():
+                raise rp.PublishError(f"no signed release in {release}: run release-files first")
+            info = json.loads((release / "release.json").read_text())
+            for p in info["parts"]:
+                part = release / "parts" / p["name"]
+                if part.stat().st_size != p["size"] or p["size"] >= RELEASE_FILE_LIMIT:
+                    raise rp.PublishError(f"{part}: wrong size, run release-files again")
+            print(f"iso: {len(info['parts'])} parts of {info['iso']} and the release files"
+                  f" -> {info['urls']['github']}")
+            jobs.append(("iso", iso_job(conf, release, info)))
+        facts, problems = check(conf, args.what)
+    except (rp.PublishError, OSError, KeyError, ValueError) as e:
+        print(f"publish-github: {e}", file=sys.stderr)
+        return 1
+    for key in sorted(facts):
+        print(f"  VM {conf['GITHUB_VM']}: {key} = {facts[key]}")
+    for p in problems:
+        print(f"  to do: {p}")
+    if args.dry_run:
+        for name, script in jobs:
+            print(f"--- job {name} (would run on VM {conf['GITHUB_VM']}) ---\n{script}", end="")
+        print("dry run: nothing sent")
+        return 0
+    if problems:
+        print("publish-github: fix the points above first", file=sys.stderr)
+        return 1
+    for name, script in jobs:
+        print(f"==> {name}")
+        try:
+            log, status = start(conf, stage / "github", name, script)
+        except rp.PublishError as e:
+            print(f"publish-github: {e}", file=sys.stderr)
+            return 1
+        code = follow(log, status)
+        if code:
+            print(f"publish-github: job {name} failed ({code}), log in {log}", file=sys.stderr)
+            return 1
+    if args.what in ("all", "iso"):
+        print(f"the parts can go now: rm -r {release / 'parts'}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

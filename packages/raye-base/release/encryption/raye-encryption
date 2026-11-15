@@ -1,0 +1,711 @@
+#!/usr/bin/python3
+"""Turns disk encryption on or off on an installed Raye, with the PC on.
+
+Encrypting (a TPM is needed, as for Windows' device encryption): the
+system disk (btrfs, with /boot on its own partition) is shrunk by 32 MiB
+while in use, the chosen password and a new recovery key are sealed to
+the TPM, and the initramfs learns to write the LUKS2 header at the next
+start (cryptsetup reencrypt --init-only, data shifted by 32 MiB). From
+that start on the disk is encrypted in place while the PC is used, by
+raye-encryption.service. A power cut only pauses it: the next start
+opens the disk with the sealed password and it goes on. LUKS2 refuses
+new keyslots while it runs, so the recovery key and the TPM binding are
+added at the end.
+
+Decrypting: the header goes to /boot/raye-encryption, then the disk is
+decrypted in place while the PC is used. A cut start finds the header
+there.
+
+    raye-encryption status [--json]   what the page shows; no root needed
+    raye-encryption check encrypt|decrypt
+    raye-encryption encrypt           password on stdin; prints the recovery key
+    raye-encryption decrypt           password on stdin
+    raye-encryption run               the long part (raye-encryption.service)
+    raye-encryption start             go on after a pause
+
+Passwords and keys only go through pipes, TPM-sealed files and a 0600
+file in /run, all removed once the work is done. Exit codes: 0 done,
+1 error, 2 refused (the reason is the first word on stderr), 3 wrong
+password.
+"""
+
+import argparse
+import base64
+import glob
+import json
+import os
+import re
+import secrets
+import shutil
+import signal
+import subprocess
+import sys
+import tempfile
+import time
+import uuid
+
+STATE_DIR = "/var/lib/raye-encryption"
+SECRET_DIR = "/etc/raye-encryption"
+RUN_DIR = "/run/raye-encryption"
+BOOT_DIR = "/boot/raye-encryption"
+CRYPTTAB = "/etc/crypttab"
+POWER = "/sys/class/power_supply"
+TPM = "/dev/tpmrm0"
+
+SHIFT = 32 * 1024 * 1024
+# btrfs needs room to move what sits in the last 32 MiB, and the run
+# leaves some headroom for the system to keep working
+MIN_FREE = 2 * 1024 ** 3
+MIN_BOOT_FREE = 200 * 1024 ** 2
+# below this, on battery, nothing starts; the run pauses under PAUSE_AT
+MIN_BATTERY = 50
+PAUSE_AT = 15
+PCR_CONFIGS = ('{"pcr_bank":"sha256","pcr_ids":"7"}', '{"pcr_bank":"sha1","pcr_ids":"7"}')
+
+EXIT_OK, EXIT_ERROR, EXIT_REFUSED, EXIT_WRONG_PASSWORD = 0, 1, 2, 3
+
+
+class Refused(Exception):
+    """code is the word Raye Settings turns into a sentence."""
+
+    def __init__(self, code, detail=""):
+        super().__init__("%s %s" % (code, detail) if detail else code)
+        self.code = code
+
+
+def new_recovery_key():
+    # same shape as the installer's: eight groups of six digits
+    return "-".join("%06d" % secrets.randbelow(10 ** 6) for _ in range(8))
+
+
+def parse_progress(line):
+    """(done, size) from one --progress-json line, or None."""
+    try:
+        data = json.loads(line)
+        return int(data["device_bytes"]), int(data["device_size"])
+    except (ValueError, KeyError, TypeError):
+        return None
+
+
+class System:
+    """What touches the machine; the tests replace it."""
+
+    def __init__(self, root="/"):
+        self.root = root
+
+    def path(self, p):
+        return os.path.join(self.root, p.lstrip("/"))
+
+    def run(self, argv, data=None, check=False):
+        env = dict(os.environ, LC_ALL="C", PATH="/usr/sbin:/usr/bin:/sbin:/bin")
+        try:
+            p = subprocess.run(argv, input=data, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                               env=env)
+        except FileNotFoundError:
+            return 127, b"", b""
+        if check and p.returncode != 0:
+            raise RuntimeError("%s failed (%d): %s" % (argv[0], p.returncode,
+                                                       p.stderr.decode("utf-8", "replace").strip()[-300:]))
+        return p.returncode, p.stdout, p.stderr
+
+    def popen(self, argv, data=None):
+        env = dict(os.environ, LC_ALL="C", PATH="/usr/sbin:/usr/bin:/sbin:/bin")
+        p = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                             stderr=subprocess.STDOUT, env=env)
+        if data is not None:
+            p.stdin.write(data)
+        p.stdin.close()
+        return p
+
+    def mount(self, target):
+        """(source device, fstype, fs uuid) of what is mounted there."""
+        rc, out, _ = self.run(["findmnt", "-n", "-r", "-o", "SOURCE,FSTYPE,UUID", "--mountpoint", target])
+        fields = out.decode("utf-8", "replace").split()
+        if rc != 0 or len(fields) < 2:
+            return None
+        source = re.sub(r"\[.*\]$", "", fields[0])
+        return source, fields[1], fields[2] if len(fields) > 2 else ""
+
+    def lsblk(self, dev, column):
+        rc, out, _ = self.run(["lsblk", "-dn", "-o", column, dev])
+        return out.decode("utf-8", "replace").strip() if rc == 0 else ""
+
+    def parent(self, dev):
+        """The partition under a dm device, else dev itself."""
+        rc, out, _ = self.run(["lsblk", "-ns", "-o", "PATH,TYPE", dev])
+        for line in out.decode("utf-8", "replace").splitlines()[1:]:
+            fields = line.split()
+            if len(fields) == 2 and fields[1] == "part":
+                return fields[0]
+        return dev
+
+    def free_bytes(self, target):
+        st = os.statvfs(self.path(target))
+        return st.f_bavail * st.f_frsize
+
+    def btrfs_devices(self, target):
+        rc, out, _ = self.run(["btrfs", "filesystem", "show", "--raw", target])
+        return re.findall(r"devid\s+(\d+)\s+size\s+(\d+)\s+used\s+\d+\s+path\s+(\S+)",
+                          out.decode("utf-8", "replace"))
+
+    def device_size(self, dev):
+        rc, out, _ = self.run(["blockdev", "--getsize64", dev])
+        return int(out) if rc == 0 and out.strip().isdigit() else 0
+
+    def has_tpm(self):
+        return os.path.exists(self.path(TPM))
+
+    def power(self):
+        """(on battery, lowest battery percent or None)."""
+        mains, levels, discharging = False, [], False
+        for supply in glob.glob(self.path(POWER) + "/*"):
+            def read(name):
+                try:
+                    with open(os.path.join(supply, name)) as f:
+                        return f.read().strip()
+                except OSError:
+                    return ""
+            kind = read("type")
+            if kind == "Mains" and read("online") == "1":
+                mains = True
+            elif kind == "Battery" and read("scope") != "Device":
+                if read("capacity").isdigit():
+                    levels.append(int(read("capacity")))
+                discharging = discharging or read("status") == "Discharging"
+        level = min(levels) if levels else None
+        return (bool(levels) and not mains and discharging), level
+
+    def boot_id(self):
+        try:
+            with open(self.path("/proc/sys/kernel/random/boot_id")) as f:
+                return f.read().strip()
+        except OSError:
+            return ""
+
+
+# ---------------------------------------------------------------- state
+
+def write_file(path, data, mode):
+    folder = os.path.dirname(path)
+    os.makedirs(folder, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=folder, prefix=".tmp-")
+    try:
+        os.fchmod(fd, mode)
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        raise
+
+
+class Tool:
+    def __init__(self, system, out=None, err=None):
+        self.sys = system
+        self.out = out or sys.stdout
+        self.err = err or sys.stderr
+
+    def p(self, path):
+        return self.sys.path(path)
+
+    def say(self, msg):
+        print(msg, file=self.out, flush=True)
+
+    def warn(self, msg):
+        print(msg, file=self.err, flush=True)
+
+    # -- state (no secret in it: the page reads it)
+    def load(self):
+        try:
+            with open(self.p(STATE_DIR + "/state.json")) as f:
+                state = json.load(f)
+            return state if isinstance(state, dict) else {}
+        except (OSError, ValueError):
+            return {}
+
+    def save(self, state):
+        write_file(self.p(STATE_DIR + "/state.json"),
+                   json.dumps(state, indent=1, sort_keys=True).encode() + b"\n", 0o644)
+        flag = self.p(STATE_DIR + "/active")
+        if state.get("phase") in ("restart", "running", "paused"):
+            write_file(flag, b"", 0o644)
+        elif os.path.exists(flag):
+            os.unlink(flag)
+
+    def progress(self):
+        try:
+            with open(self.p(RUN_DIR + "/progress.json")) as f:
+                data = json.load(f)
+            return int(data["done"]), int(data["size"])
+        except (OSError, ValueError, KeyError, TypeError):
+            return None
+
+    def write_progress(self, done, size):
+        write_file(self.p(RUN_DIR + "/progress.json"),
+                   json.dumps({"done": done, "size": size}).encode(), 0o644)
+
+    # -- facts
+    def root_disk(self):
+        """{source, fstype, partition, encrypted} of the system disk."""
+        found = self.sys.mount("/")
+        if not found:
+            raise Refused("unknown-disk")
+        source, fstype, fsuuid = found
+        mapped = self.sys.lsblk(source, "TYPE") == "crypt"
+        part = self.sys.parent(source) if mapped else source
+        # once decrypted, the mapping stays until the next start, over a plain disk
+        state = self.load()
+        encrypted = mapped and (self.sys.lsblk(part, "FSTYPE") == "crypto_LUKS"
+                                or (state.get("mode") == "decrypt"
+                                    and state.get("phase") in ("running", "paused")))
+        return {"source": source, "fstype": fstype, "fsuuid": fsuuid,
+                "partition": part, "encrypted": encrypted}
+
+    def status(self):
+        state = self.load()
+        on_battery, level = self.sys.power()
+        out = {"phase": state.get("phase", ""), "mode": state.get("mode", ""),
+               "error": state.get("error", ""), "tpm": self.sys.has_tpm(),
+               "on_battery": on_battery, "battery": level}
+        try:
+            disk = self.root_disk()
+            out["encrypted"] = disk["encrypted"]
+            out["fstype"] = disk["fstype"]
+        except Refused:
+            out["encrypted"] = None
+        prog = self.progress() if state.get("phase") in ("running", "paused") else None
+        if prog and prog[1]:
+            out["percent"] = round(100.0 * prog[0] / prog[1], 1)
+        elif state.get("phase") == "done":
+            out["percent"] = 100.0
+        return out
+
+    def check(self, mode):
+        """Raises Refused with the first reason nothing can start."""
+        state = self.load()
+        if state.get("phase") in ("restart", "running", "paused"):
+            raise Refused("busy")
+        disk = self.root_disk()
+        if mode == "encrypt":
+            if disk["encrypted"]:
+                raise Refused("already-encrypted")
+            if disk["fstype"] != "btrfs":
+                raise Refused("unsupported-disk", disk["fstype"])
+            if len(self.sys.btrfs_devices("/")) != 1:
+                raise Refused("unsupported-disk", "several devices")
+            if not self.sys.has_tpm():
+                raise Refused("no-tpm")
+        else:
+            if not disk["encrypted"]:
+                raise Refused("not-encrypted")
+        boot = self.sys.mount("/boot")
+        if not boot or boot[0] == disk["source"] or boot[1] not in ("ext4", "ext3", "ext2", "vfat"):
+            raise Refused("unsupported-disk", "no /boot partition")
+        on_battery, level = self.sys.power()
+        if on_battery and (level is None or level < MIN_BATTERY):
+            raise Refused("battery")
+        if mode == "encrypt" and self.sys.free_bytes("/") < MIN_FREE:
+            raise Refused("space")
+        if self.sys.free_bytes("/boot") < MIN_BOOT_FREE:
+            raise Refused("boot-space")
+        return disk, boot
+
+    # -- TPM-sealed secrets for the start that makes or opens the header
+    def seal(self, name, secret):
+        # no PCR: these live for one or two starts, then they are removed
+        rc, out, err = self.sys.run(["clevis", "encrypt", "tpm2", "{}"], data=secret.encode())
+        if rc != 0 or not out:
+            raise RuntimeError("cannot seal to the TPM: %s" % err.decode("utf-8", "replace").strip()[-200:])
+        write_file(self.p(SECRET_DIR + "/" + name), out, 0o600)
+
+    def unseal(self, name):
+        try:
+            with open(self.p(SECRET_DIR + "/" + name), "rb") as f:
+                jwe = f.read()
+        except OSError:
+            return None
+        rc, out, _ = self.sys.run(["clevis", "decrypt"], data=jwe)
+        return out.decode() if rc == 0 and out else None
+
+    def forget_secrets(self):
+        for name in ("pass.jwe", "recovery.jwe", "plan"):
+            path = self.p(SECRET_DIR + "/" + name)
+            if os.path.exists(path):
+                os.unlink(path)
+
+    def keep_key(self, password):
+        """For raye-encryption.service, until the work is done or the PC stops."""
+        os.makedirs(self.p(RUN_DIR), mode=0o755, exist_ok=True)
+        write_file(self.p(RUN_DIR + "/key"), password.encode(), 0o600)
+
+    def run_key(self, state):
+        path = self.p(RUN_DIR + "/key")
+        if os.path.exists(path):
+            return path
+        password = self.unseal("pass.jwe")
+        if password is None:
+            return None
+        self.keep_key(password)
+        return path
+
+    def forget_run_key(self):
+        path = self.p(RUN_DIR + "/key")
+        if os.path.exists(path):
+            os.unlink(path)
+
+    def write_plan(self, state):
+        plan = "".join("%s=%s\n" % (k.upper(), state[k])
+                       for k in ("mode", "partuuid", "uuid", "name", "boot_uuid"))
+        write_file(self.p(SECRET_DIR + "/plan"), plan.encode(), 0o600)
+
+    def initramfs(self):
+        self.sys.run(["update-initramfs", "-u", "-k", "all"], check=True)
+
+    # -- crypttab
+    def crypttab_lines(self):
+        try:
+            with open(self.p(CRYPTTAB)) as f:
+                return f.read().splitlines(keepends=True)
+        except FileNotFoundError:
+            return []
+
+    def set_crypttab(self, name, uuid_, add):
+        kept = [l for l in self.crypttab_lines() if not (l.split()[:1] == [name])]
+        if add:
+            kept.append("%s UUID=%s none luks,discard\n" % (name, uuid_))
+        write_file(self.p(CRYPTTAB), "".join(kept).encode(), 0o644)
+
+    # -- password from stdin
+    @staticmethod
+    def read_password(stream):
+        data = stream.readline()
+        if isinstance(data, bytes):
+            data = data.decode("utf-8", "replace")
+        password = data.rstrip("\n")
+        if not password or "\n" in password or len(password) > 512:
+            raise Refused("password")
+        return password
+
+    # -- encrypt
+    def cmd_encrypt(self, stdin):
+        password = self.read_password(stdin)
+        disk, boot = self.check("encrypt")
+        part = disk["partition"]
+        partuuid = self.sys.lsblk(part, "PARTUUID")
+        if not partuuid:
+            raise Refused("unsupported-disk", "no PARTUUID")
+        size = self.sys.device_size(part)
+        devices = self.sys.btrfs_devices("/")
+        devid, fs_size, _ = devices[0]
+        target = (size - SHIFT) // 4096 * 4096
+        if size <= SHIFT or target <= 0:
+            raise Refused("unsupported-disk", "too small")
+        if int(fs_size) > target:
+            # online: btrfs moves what lies in the last 32 MiB
+            self.sys.run(["btrfs", "filesystem", "resize", "%s:%d" % (devid, target), "/"], check=True)
+        if int(self.sys.btrfs_devices("/")[0][1]) > target:
+            raise RuntimeError("the file system is still too big for the header")
+        luks_uuid = str(uuid.uuid4())
+        state = {"mode": "encrypt", "phase": "restart", "partuuid": partuuid,
+                 "uuid": luks_uuid, "name": "luks-" + luks_uuid, "boot_uuid": boot[2],
+                 "device": "/dev/disk/by-partuuid/" + partuuid, "since": int(time.time())}
+        key = new_recovery_key()
+        self.seal("pass.jwe", password)
+        self.seal("recovery.jwe", key)
+        self.write_plan(state)
+        try:
+            self.initramfs()
+        except RuntimeError:
+            self.forget_secrets()
+            raise
+        self.save(state)
+        # the only place the key is ever shown: the page that asked
+        self.say("recovery-key %s" % key)
+        return EXIT_OK
+
+    # -- decrypt
+    def cmd_decrypt(self, stdin):
+        password = self.read_password(stdin)
+        disk, boot = self.check("decrypt")
+        part = disk["partition"]
+        rc, _, _ = self.sys.run(["cryptsetup", "open", "--test-passphrase", "--key-file", "-", part],
+                                data=password.encode())
+        if rc != 0:
+            return self.wrong_password()
+        luks_uuid = self.sys.lsblk(part, "UUID")
+        name = os.path.basename(disk["source"])
+        state = {"mode": "decrypt", "phase": "running", "partuuid": self.sys.lsblk(part, "PARTUUID"),
+                 "uuid": luks_uuid, "name": name, "boot_uuid": boot[2],
+                 "device": part, "since": int(time.time())}
+        os.makedirs(self.p(BOOT_DIR), mode=0o700, exist_ok=True)
+        self.header_backup(part, "before-decrypt")
+        if self.sys.has_tpm():
+            self.seal("pass.jwe", password)
+        self.write_plan(state)
+        # from here a cut start finds the header in /boot, not in crypttab
+        self.set_crypttab(name, luks_uuid, add=False)
+        try:
+            self.initramfs()
+        except RuntimeError:
+            self.set_crypttab(name, luks_uuid, add=True)
+            self.forget_secrets()
+            raise
+        header = self.p(BOOT_DIR + "/header.img")
+        if os.path.exists(header):
+            os.unlink(header)
+        self.keep_key(password)
+        self.save(state)
+        self.sys.run(["systemctl", "--no-block", "start", "raye-encryption.service"])
+        return EXIT_OK
+
+    def wrong_password(self):
+        self.warn("wrong-password")
+        return EXIT_WRONG_PASSWORD
+
+    def header_backup(self, part, label):
+        path = self.p("%s/header-%s.img" % (BOOT_DIR, label))
+        if os.path.exists(path):
+            os.unlink(path)
+        os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+        self.sys.run(["cryptsetup", "luksHeaderBackup", part, "--header-backup-file", path], check=True)
+        os.chmod(path, 0o600)
+
+    # -- the long part
+    def add_keys(self, state, part, keyfile):
+        """Once encrypted: the recovery key and the TPM binding get their
+        keyslots (LUKS2 takes none while it is being encrypted), then the
+        disk opens the usual way and the sealed copies go."""
+        key = self.unseal("recovery.jwe")
+        if key and state.get("recovery") != "added":
+            fd, tmp = tempfile.mkstemp(dir=self.p(RUN_DIR))
+            try:
+                os.write(fd, key.encode())
+                os.close(fd)
+                self.sys.run(["cryptsetup", "luksAddKey", "--key-file", keyfile, part, tmp], check=True)
+            finally:
+                os.unlink(tmp)
+            state["recovery"] = "added"
+            self.save(state)
+        del key
+        with open(keyfile, "rb") as f:
+            password = f.read()
+        bound = False
+        for config in PCR_CONFIGS:
+            rc, _, _ = self.sys.run(["clevis", "luks", "bind", "-y", "-k", "-", "-d", part, "tpm2", config],
+                                    data=password + b"\n")
+            if rc == 0:
+                bound = True
+                break
+        del password
+        if not bound:
+            self.warn("the TPM could not be bound: the disk asks its password at start-up")
+        self.set_crypttab(state["name"], state["uuid"], add=True)
+        self.forget_secrets()
+        self.initramfs()
+        state["tpm"] = bound
+
+    def watch(self, proc, state):
+        """Copies the progress to /run; pauses on a low battery."""
+        size = 0
+        for raw in iter(proc.stdout.readline, b""):
+            got = parse_progress(raw.decode("utf-8", "replace"))
+            if got:
+                done, size = got
+                self.write_progress(done, size)
+            on_battery, level = self.sys.power()
+            if on_battery and level is not None and level < PAUSE_AT and state.get("phase") == "running":
+                # cryptsetup stops cleanly on SIGINT and goes on next time
+                proc.send_signal(signal.SIGINT)
+                state["phase"] = "paused"
+                state["error"] = "battery"
+                self.save(state)
+        return proc.wait()
+
+    def cmd_run(self):
+        state = self.load()
+        if state.get("phase") not in ("restart", "running", "paused"):
+            self.say("nothing to do")
+            return EXIT_OK
+        part = os.path.realpath(self.p(state["device"]))
+        name = state["name"]
+        os.makedirs(self.p(RUN_DIR), mode=0o755, exist_ok=True)
+        if not os.path.exists(self.p("/dev/mapper/" + name)):
+            self.warn("the disk is not open as %s; nothing done" % name)
+            return EXIT_ERROR
+        on_battery, level = self.sys.power()
+        if on_battery and level is not None and level < PAUSE_AT:
+            state.update(phase="paused", error="battery")
+            self.save(state)
+            return EXIT_OK
+        state.update(phase="running", error="")
+        self.save(state)
+        keyfile = self.run_key(state)
+        if keyfile is None:
+            state.update(phase="paused", error="no-key")
+            self.save(state)
+            self.warn("no key to go on with; it goes on at the next start")
+            return EXIT_ERROR
+        header = self.p(BOOT_DIR + "/header.img")
+        if state["mode"] == "encrypt":
+            argv = ["cryptsetup", "reencrypt", "--resume-only", "--active-name", name]
+        elif os.path.exists(header):
+            argv = ["cryptsetup", "reencrypt", "--resume-only", "--header", header, "--active-name", name]
+        else:
+            # online: cryptsetup finds the open disk; the header moves to /boot
+            argv = ["cryptsetup", "reencrypt", "--batch-mode", "--decrypt", "--header", header, part]
+        argv += ["--key-file", keyfile, "--progress-json", "--progress-frequency", "2"]
+        try:
+            proc = self.sys.popen(["nice", "-n", "10", "ionice", "-c", "3"] + argv)
+            rc = self.watch(proc, state)
+        except OSError as e:
+            state.update(phase="failed", error=str(e)[:300])
+            self.save(state)
+            self.warn(str(e))
+            return EXIT_ERROR
+        if state.get("phase") == "paused":
+            return EXIT_OK
+        if rc != 0:
+            state.update(phase="paused", error="interrupted")
+            self.save(state)
+            self.warn("cryptsetup stopped (%d); it goes on at the next start" % rc)
+            return EXIT_ERROR
+        try:
+            return self.finished(state, part, keyfile)
+        except (RuntimeError, OSError) as e:
+            state.update(phase="failed", error=str(e)[:300])
+            self.save(state)
+            self.warn(str(e))
+            return EXIT_ERROR
+
+    def finished(self, state, part, keyfile):
+        if state["mode"] == "encrypt":
+            self.add_keys(state, part, keyfile)
+            self.header_backup(part, "encrypted")
+        else:
+            # the disk is plain again: no header, no crypttab line, nothing sealed
+            self.forget_secrets()
+            self.set_crypttab(state["name"], state["uuid"], add=False)
+            self.initramfs()
+            for f in glob.glob(self.p(BOOT_DIR + "/header*.img")):
+                os.unlink(f)
+        # the kernel line names the root file system; make it say what is true now
+        rc, _, _ = self.sys.run(["update-grub"])
+        if rc != 0:
+            self.warn("update-grub failed; the start-up menu keeps its old lines")
+        if state["mode"] == "decrypt":
+            self.point_at_plain_disk(state["name"])
+        self.forget_run_key()
+        # Settings reads the chip's state from a file only root writes
+        self.sys.run(["/usr/libexec/raye-kernel-setup", "tpm-status"])
+        state.update(phase="done", error="", finished=int(time.time()))
+        self.save(state)
+        self.say("done")
+        return EXIT_OK
+
+    def point_at_plain_disk(self, name):
+        """The start-up menu and fstab named the open mapping
+        (/dev/mapper/<name>); it is gone at the next start. grub-probe
+        still sees the mapping, so update-grub alone writes it again."""
+        found = self.sys.mount("/")
+        fsuuid = found[2] if found else ""
+        if not fsuuid:
+            return
+        mapped = ("/dev/mapper/%s" % name, "/dev/disk/by-id/dm-name-%s" % name)
+        path = self.p("/boot/grub/grub.cfg")
+        if os.path.exists(path):
+            with open(path) as f:
+                text = f.read()
+            fixed = text
+            for old in mapped:
+                fixed = fixed.replace("root=%s " % old, "root=UUID=%s " % fsuuid)
+            if fixed != text:
+                write_file(path, fixed.encode(), os.stat(path).st_mode & 0o7777)
+        path = self.p("/etc/fstab")
+        if os.path.exists(path):
+            with open(path) as f:
+                lines = f.read().splitlines(keepends=True)
+            out = []
+            for line in lines:
+                fields = line.split()
+                if fields and fields[0] in mapped:
+                    line = line.replace(fields[0], "UUID=" + fsuuid, 1)
+                out.append(line)
+            if out != lines:
+                write_file(path, "".join(out).encode(), os.stat(path).st_mode & 0o7777)
+
+    def cmd_start(self):
+        """Goes on after a pause (the page's "Resume" button)."""
+        if self.load().get("phase") not in ("running", "paused"):
+            raise Refused("nothing-to-resume")
+        self.sys.run(["systemctl", "--no-block", "start", "raye-encryption.service"], check=True)
+        return EXIT_OK
+
+    def cmd_status(self, as_json):
+        status = self.status()
+        if status.get("phase") not in ("restart", "running", "paused"):
+            mode = "decrypt" if status.get("encrypted") else "encrypt"
+            try:
+                self.check(mode)
+                status["blocked"] = ""
+            except Refused as e:
+                status["blocked"] = e.code
+            except (RuntimeError, OSError):
+                status["blocked"] = "unknown-disk"
+        if as_json:
+            self.say(json.dumps(status, sort_keys=True))
+        else:
+            self.say(" ".join("%s=%s" % kv for kv in sorted(status.items())))
+        return EXIT_OK
+
+    def cmd_check(self, mode):
+        self.check(mode)
+        self.say("ok")
+        return EXIT_OK
+
+
+def build_parser():
+    p = argparse.ArgumentParser(prog="raye-encryption")
+    sub = p.add_subparsers(dest="command", required=True)
+    r = sub.add_parser("status")
+    r.add_argument("--json", action="store_true")
+    r = sub.add_parser("check")
+    r.add_argument("mode", choices=("encrypt", "decrypt"))
+    sub.add_parser("encrypt")
+    sub.add_parser("decrypt")
+    sub.add_parser("run")
+    sub.add_parser("start")
+    return p
+
+
+def main(argv=None, system=None, stdin=None, out=None, err=None):
+    args = build_parser().parse_args(argv)
+    tool = Tool(system or System(), out, err)
+    stdin = stdin or sys.stdin
+    try:
+        if args.command == "status":
+            return tool.cmd_status(args.json)
+        if os.geteuid() != 0 and system is None:
+            tool.warn("refused: run as root")
+            return EXIT_REFUSED
+        if args.command == "check":
+            return tool.cmd_check(args.mode)
+        if args.command == "encrypt":
+            return tool.cmd_encrypt(stdin)
+        if args.command == "decrypt":
+            return tool.cmd_decrypt(stdin)
+        if args.command == "start":
+            return tool.cmd_start()
+        return tool.cmd_run()
+    except Refused as e:
+        tool.warn(str(e))
+        return EXIT_REFUSED
+    except (RuntimeError, OSError) as e:
+        tool.warn("error %s" % e)
+        return EXIT_ERROR
+
+
+if __name__ == "__main__":
+    sys.exit(main())

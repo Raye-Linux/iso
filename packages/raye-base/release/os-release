@@ -1,0 +1,12 @@
+PRETTY_NAME="Raye Linux 0.5 Beta Alpenglow"
+NAME="Raye Linux"
+VERSION_ID="0.5"
+VERSION="0.5 Beta Alpenglow"
+VERSION_CODENAME=resolute
+ID=raye
+ID_LIKE="ubuntu debian"
+HOME_URL="https://github.com/Raye-Linux"
+SUPPORT_URL="https://github.com/Raye-Linux/handbook"
+BUG_REPORT_URL="https://github.com/Raye-Linux/releases/issues"
+LOGO=raye-eye
+UBUNTU_CODENAME=resolute

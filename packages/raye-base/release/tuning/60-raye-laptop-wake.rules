@@ -1,0 +1,9 @@
+# On a laptop, a wired network card may not wake the computer from sleep.
+# With Wake-on-LAN armed, the card keeps its wake signal on during sleep:
+# traffic on the cable wakes the laptop or makes the suspend fail at once
+# ("early wake event"), and some Intel I219 cards do not come back from
+# s2idle that way. Wake-on-LAN from sleep is a desktop feature; a laptop
+# that needs it masks this file:
+#   sudo ln -s /dev/null /etc/udev/rules.d/60-raye-laptop-wake.rules
+# Ethernet controllers only (PCI class 0x020000), Wi-Fi is not touched.
+ACTION=="add", SUBSYSTEM=="pci", ATTR{class}=="0x020000", ATTR{[dmi/id]chassis_type}=="8|9|10|14|30|31|32", ATTR{power/wakeup}="disabled"

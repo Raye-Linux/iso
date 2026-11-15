@@ -1,0 +1,2 @@
+# The person at the computer may use ntsync (Wine opens it for them).
+KERNEL=="ntsync", TAG+="uaccess"

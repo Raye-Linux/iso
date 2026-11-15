@@ -1,0 +1,11 @@
+#!/bin/sh
+# The "earlier states" submenu: written by raye-earlier-states, read at
+# boot so it follows the restore points without a new grub.cfg.
+if [ -x /usr/libexec/raye-earlier-states ] && [ -d /boot/grub ]; then
+    /usr/libexec/raye-earlier-states /boot/grub/raye-earlier-states.cfg >&2 || true
+fi
+cat <<'CFG'
+if [ -f "${config_directory}/raye-earlier-states.cfg" ]; then
+  source "${config_directory}/raye-earlier-states.cfg"
+fi
+CFG

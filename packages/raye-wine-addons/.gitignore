@@ -1,0 +1,8 @@
+# the archives: fetched by fetch-addons.sh, never committed
+upstream/
+debian/raye-wine-addons/
+debian/.debhelper/
+debian/debhelper-build-stamp
+debian/files
+debian/*.substvars
+__pycache__/

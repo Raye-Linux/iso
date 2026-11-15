@@ -1,0 +1,38 @@
+#!/bin/sh
+# Installs the driver this computer needs that the base system does not
+# carry, NVIDIA graphics above all.
+#
+# Only drivers that come with kernel modules already signed for Secure
+# Boot: those keep working without any key enrolment screen. A driver
+# that would have to be built on the machine (DKMS) is left alone and
+# reported, it needs the key enrolment flow that comes later. Ubuntu's
+# OEM enablement packages are never pulled in.
+#
+# Exit 75 means "try again later" (no network yet).
+
+set -u
+done_file=/var/lib/raye/drivers-done
+# --again: asked for from Raye Settings, look even if done once already
+[ "${1:-}" = --again ] || { [ -e "$done_file" ] && exit 0; }
+command -v ubuntu-drivers >/dev/null || exit 0
+
+finish() { mkdir -p "$(dirname "$done_file")"; echo "$1" > "$done_file"; exit 0; }
+
+getent hosts archive.ubuntu.com >/dev/null 2>&1 || exit 75
+
+recommended=$(ubuntu-drivers devices 2>/dev/null |
+    sed -n 's/^driver *: \([^ ]*\) .*recommended.*/\1/p' |
+    grep -E '^(nvidia-driver-[0-9]+(-open)?|bcmwl-kernel-source)$' | head -n 1)
+[ -n "$recommended" ] || finish "nothing to install"
+
+# "nvidia-driver-580, (kernel modules provided by linux-modules-nvidia-580-generic-hwe-26.04)"
+modules=$(ubuntu-drivers list 2>/dev/null |
+    sed -n "s/^$recommended, (kernel modules provided by \(.*\))\$/\1/p" | head -n 1)
+if [ -z "$modules" ]; then
+    echo "raye-drivers: $recommended has no signed modules, not installing it" >&2
+    finish "skipped $recommended (unsigned)"
+fi
+
+apt-get update -q || exit 75
+DEBIAN_FRONTEND=noninteractive apt-get install -y -q "$recommended" "$modules" || exit 1
+finish "installed $recommended $modules"

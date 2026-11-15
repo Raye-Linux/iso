@@ -1,0 +1,15 @@
+[Desktop Entry]
+Name=Synaptic Package Manager
+Name[fr]=Gestionnaire de paquets Synaptic
+GenericName=Package Manager
+GenericName[fr]=Gestionnaire de paquets
+Comment=Install, remove and upgrade software packages
+Comment[fr]=Installer, supprimer et mettre à jour des paquets logiciels
+Exec=synaptic-pkexec
+Icon=synaptic
+Terminal=false
+Type=Application
+Categories=PackageManager;GTK;System;Settings;
+StartupNotify=true
+StartupWMClass=synaptic
+NoDisplay=true

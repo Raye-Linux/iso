@@ -1,0 +1,5 @@
+[Default Applications]
+application/x-ms-dos-executable=raye-run-windows.desktop
+application/x-msdownload=raye-run-windows.desktop
+application/vnd.microsoft.portable-executable=raye-run-windows.desktop
+application/x-msi=raye-run-windows.desktop

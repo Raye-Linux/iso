@@ -1,0 +1,12 @@
+[Unit]
+Description=Fetch the Windows runtimes and fonts a little after boot
+
+[Timer]
+# once everything is there a run only checks the files, offline (about
+# 0.3 s); until then a first boot without network tries again soon
+OnBootSec=1min
+OnUnitActiveSec=30min
+RandomizedDelaySec=30s
+
+[Install]
+WantedBy=timers.target

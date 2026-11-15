@@ -1,0 +1,235 @@
+# Which binary package ships each file of release/ (and the keyring), and
+# where it goes.
+#
+#   package   source   destination   [options]
+#
+# The source is relative to the top of raye-base: a file (the destination
+# is its full path), a folder (the destination is a folder and the tree
+# under it is kept) or a glob with * or [..] (the matching files go under
+# the destination folder, with their path below the glob's fixed part).
+# "?" in front of the source: the part that brings it is not written yet,
+# so the build skips it while it is missing (RAYE_PATHS_STRICT=1 makes
+# that an error).
+#
+# Options:
+#   divert     the destination belongs to another package: it is moved
+#              aside to <path>.ubuntu while ours is installed (one file only)
+#   no-start   a system unit that is enabled but never started or
+#              restarted when the package is installed or upgraded
+#
+# The first line that covers a file ships it, so a precise line goes
+# before a glob or folder line of the same folder. Every file under
+# release/ must be shipped by a line, or the build stops; tests/ folders,
+# README* and *.md files are never shipped. debian/raye_release.py reads
+# this file.
+
+# ---------------------------------------------------------------- keyring
+raye-archive-keyring  keyring/raye-archive-keyring.gpg  usr/share/keyrings/raye-archive-keyring.gpg
+raye-archive-keyring  release/apt/raye.sources          etc/apt/sources.list.d/raye.sources
+raye-archive-keyring  release/apt/raye-mirrors.list     etc/apt/mirrors/raye.list
+
+# ---------------------------------------------------------------- release
+# os-release and friends; raye-release.links puts them in place.
+raye-release  release/os-release   usr/lib/raye/os-release
+raye-release  release/lsb-release  usr/lib/raye/lsb-release
+raye-release  release/issue        usr/lib/raye/issue
+raye-release  release/issue.net    usr/lib/raye/issue.net
+raye-release  release/dpkg/raye    etc/dpkg/origins/raye
+raye-release  release/apt/mozilla.sources              etc/apt/sources.list.d/mozilla.sources
+raye-release  release/apt/raye-pins.pref               etc/apt/preferences.d/raye-pins.pref
+raye-release  release/apt/mozilla-archive-keyring.asc  usr/share/keyrings/mozilla-archive-keyring.asc
+# What python-apt knows about this system's sources. Without it,
+# add-apt-repository, software-properties and Synaptic's repository
+# dialog stop on NoDistroTemplateException before doing anything; in a
+# package, so an upgrade of python-apt cannot take it away.
+raye-release  release/python-apt/raye.info     usr/share/python-apt/templates/raye.info
+raye-release  release/python-apt/raye.mirrors  usr/share/python-apt/templates/raye.mirrors
+# GP-43: one Raye line instead of the help lines at a terminal sign-in.
+# Each file takes the place of the base system's script of the same name:
+# raye-release.links puts it there. Shipped in /etc it was a conffile over
+# base-files' own, and dpkg asked about it at configure.
+raye-release  release/identity/motd/*  usr/lib/raye/motd
+
+# ---------------------------------------------------------------- system
+raye-system  release/netplan/01-network-manager-all.yaml  etc/netplan/01-network-manager-all.yaml
+# Ubuntu's servers, in order; raye-ubuntu-mirrors moves older machines over.
+raye-system  release/apt/ubuntu-mirrors.list           etc/apt/mirrors/ubuntu.list
+raye-system  release/apt/ubuntu-security-mirrors.list  etc/apt/mirrors/ubuntu-security.list
+raye-system  release/apt/raye-ubuntu-mirrors           usr/libexec/raye-ubuntu-mirrors
+raye-system  release/updates/52raye-unattended-upgrades   etc/apt/apt.conf.d/52raye-unattended-upgrades
+raye-system  release/updates/21raye-periodic              etc/apt/apt.conf.d/21raye-periodic
+raye-system  release/snapshots/raye-snapshots-setup       usr/libexec/raye-snapshots-setup
+raye-system  release/snapshots/raye-snapshots.service     usr/lib/systemd/system/raye-snapshots.service
+raye-system  release/snapshots/raye-snapshots-daily       usr/libexec/raye-snapshots-daily
+raye-system  release/snapshots/raye-snapshots-daily.service  usr/lib/systemd/system/raye-snapshots-daily.service
+raye-system  release/snapshots/raye-snapshots-daily.timer    usr/lib/systemd/system/raye-snapshots-daily.timer
+raye-system  release/drivers/raye-drivers                 usr/libexec/raye-drivers
+raye-system  release/drivers/raye-drivers.service         usr/lib/systemd/system/raye-drivers.service
+raye-system  release/drivers/raye-drivers-check.service   usr/lib/systemd/system/raye-drivers-check.service
+raye-system  release/drivers/50-raye-drivers.rules        usr/share/polkit-1/rules.d/50-raye-drivers.rules
+raye-system  release/dualboot/raye-boot-windows           usr/libexec/raye-boot-windows
+raye-system  release/dualboot/raye-dualboot              usr/libexec/raye-dualboot
+raye-system  release/dualboot/raye-restart-to-windows     usr/bin/raye-restart-to-windows
+raye-system  release/dualboot/raye-dualboot.service       usr/lib/systemd/system/raye-dualboot.service
+raye-system  release/dualboot/raye-restart-to-windows.desktop  usr/share/raye/dualboot/raye-restart-to-windows.desktop
+raye-system  release/dualboot/org.raye.boot-windows.policy     usr/share/polkit-1/actions/org.raye.boot-windows.policy
+
+# Tuning (KP-3).
+raye-system  release/tuning/50-raye.conf           usr/lib/systemd/zram-generator.conf.d/50-raye.conf
+raye-system  release/tuning/90-raye.conf           usr/lib/sysctl.d/90-raye.conf
+raye-system  release/tuning/raye-ntsync.conf       usr/lib/modules-load.d/raye-ntsync.conf
+raye-system  release/tuning/60-raye-laptop-wake.rules  usr/lib/udev/rules.d/60-raye-laptop-wake.rules
+raye-system  release/tuning/60-raye-ntsync.rules   usr/lib/udev/rules.d/60-raye-ntsync.rules
+raye-system  release/tuning/60-raye-iosched.rules  usr/lib/udev/rules.d/60-raye-iosched.rules
+raye-system  release/tuning/raye-mglru.conf        usr/lib/tmpfiles.d/raye-mglru.conf
+raye-system  ?release/tuning/raye-net.conf          usr/lib/modules-load.d/raye-net.conf
+raye-system  release/tuning/journald.conf          usr/lib/systemd/journald.conf.d/50-raye.conf
+
+# GRUB of the installed system (IN-12). The wrapper takes the place of
+# update-grub (the stock one stays as update-grub.ubuntu); once
+# 30_raye_windows ships, the stock 30_os-prober is turned off by a
+# statoverride (raye-system.postinst).
+raye-system  release/grub/50-raye.cfg            etc/default/grub.d/50-raye.cfg
+raye-system  ?release/grub/01_raye_repair        etc/grub.d/01_raye_repair
+raye-system  release/grub/05_raye_boot_picture  etc/grub.d/05_raye_boot_picture
+raye-system  ?release/grub/30_raye_windows       etc/grub.d/30_raye_windows
+raye-system  release/grub/raye-update-grub       usr/sbin/update-grub  divert
+raye-system  release/grub/raye-grub-titles       usr/libexec/raye-grub-titles
+raye-system  release/grub/raye-boot-ok.service   usr/lib/systemd/system/raye-boot-ok.service  no-start
+
+# "Raye (more options)" and the recovery boot (GP-1).
+raye-system  release/recovery/grub.d/*                    etc/grub.d
+raye-system  release/recovery/raye-earlier-states          usr/libexec/raye-earlier-states
+raye-system  release/recovery/raye-snapshots-sort          usr/libexec/raye-snapshots-sort
+raye-system  release/recovery/raye-go-back-at-boot         usr/libexec/raye-go-back-at-boot
+raye-system  release/recovery/50-raye                      usr/lib/snapper/plugins/50-raye
+raye-system  release/recovery/raye-snapshots-changed.service  usr/lib/systemd/system/raye-snapshots-changed.service
+raye-system  release/recovery/raye-go-back-at-boot.service    usr/lib/systemd/system/raye-go-back-at-boot.service  no-start
+raye-system  ?release/recovery/raye-recovery.target       usr/lib/systemd/system/raye-recovery.target
+raye-system  ?release/recovery/raye-recovery-boot.service usr/lib/systemd/system/raye-recovery-boot.service  no-start
+
+# "Scanning and repairing drive" (GP-3).
+raye-system  release/fsck/systemd-fsck@.service.d  usr/lib/systemd/system/systemd-fsck@.service.d
+raye-system  release/fsck/raye-fsck-message        usr/libexec/raye-fsck-message
+
+# Boot trim (KP-4): presets, unit drop-ins, initramfs settings.
+raye-system  release/boot/logind-raye.conf          usr/lib/systemd/logind.conf.d/50-raye.conf
+raye-system  release/boot/raye-greeter-back         usr/libexec/raye-greeter-back
+raye-system  release/boot/raye-greeter-back@.service  usr/lib/systemd/system/raye-greeter-back@.service  no-start
+raye-system  release/boot/raye-realpath             usr/share/initramfs-tools/hooks/raye-realpath
+raye-system  release/boot/raye-slim-initramfs       usr/share/initramfs-tools/hooks/raye-slim-initramfs
+raye-system  release/boot/raye-update-screen        usr/share/initramfs-tools/scripts/init-bottom/raye-update-screen
+raye-system  release/boot/raye-binfmt-needed        usr/libexec/raye-binfmt-needed
+raye-system  ?release/boot/*.preset                usr/lib/systemd/system-preset
+raye-system  ?release/boot/initramfs-tools/conf.d  usr/share/initramfs-tools/conf.d
+raye-system  release/boot/*.d/*.conf               usr/lib/systemd/system
+
+# TPM bindings that follow kernel and firmware changes (KP-7, KP-9).
+raye-system  release/tpm/raye-tpm                usr/libexec/raye-tpm
+raye-system  release/tpm/raye-tpm-watch.path     usr/lib/systemd/system/raye-tpm-watch.path
+raye-system  release/tpm/raye-tpm-watch.service  usr/lib/systemd/system/raye-tpm-watch.service  no-start
+raye-system  release/tpm/raye-tpm-check.service  usr/lib/systemd/system/raye-tpm-check.service  no-start
+# Disk encryption turned on or off from Settings, with the PC on.
+raye-system  release/encryption/raye-encryption          usr/libexec/raye-encryption
+raye-system  release/encryption/raye-encryption.service  usr/lib/systemd/system/raye-encryption.service  no-start
+raye-system  release/encryption/initramfs-hook           usr/share/initramfs-tools/hooks/raye-encryption
+raye-system  release/encryption/initramfs-local-top      usr/share/initramfs-tools/scripts/local-top/raye-encryption
+raye-system  release/encryption/org.raye.encryption.policy  usr/share/polkit-1/actions/org.raye.encryption.policy
+
+# ---------------------------------------------------------------- kernel
+raye-kernel  release/kernel/raye-kernel-setup           usr/libexec/raye-kernel-setup
+raye-kernel  release/kernel/raye-kernel-finish.service  usr/lib/systemd/system/raye-kernel-finish.service
+raye-kernel  release/kernel/raye-tpm-status.service     usr/lib/systemd/system/raye-tpm-status.service
+raye-kernel  release/kernel/org.raye.kernel.policy      usr/share/polkit-1/actions/org.raye.kernel.policy
+raye-kernel  release/kernel/raye-boot.der               usr/share/raye/kernel/raye-boot.der
+
+# ---------------------------------------------------------------- Windows programs
+raye-windows-apps  release/windows/raye-run-windows                 usr/bin/raye-run-windows
+raye-windows-apps  release/windows/raye-run-windows.desktop         usr/share/applications/raye-run-windows.desktop
+raye-windows-apps  release/windows/mimeapps.list                    etc/xdg/mimeapps.list
+raye-windows-apps  release/windows/raye-windows.xml                 usr/share/mime/packages/raye-windows.xml
+raye-windows-apps  release/windows/profiles/*.profile               usr/share/raye/windows-profiles
+raye-windows-apps  release/windows/raye-windows-prepare             usr/libexec/raye-windows-prepare
+raye-windows-apps  release/windows/raye-windows-prepare.service     usr/lib/systemd/user/raye-windows-prepare.service
+raye-windows-apps  release/windows/raye-windows-prepare.timer       usr/lib/systemd/user/raye-windows-prepare.timer
+raye-windows-apps  release/windows/raye-windows-prepare.path        usr/lib/systemd/user/raye-windows-prepare.path
+# Double-click hub (SW-9).
+raye-windows-apps  ?release/windows/kiorc                           etc/xdg/kiorc
+raye-windows-apps  ?release/windows/icons/raye-windows-program.svg  usr/share/icons/hicolor/scalable/apps/raye-windows-program.svg
+# Ready space colours and clean-up (SW-12).
+raye-windows-apps  release/windows/raye-night.reg                  usr/share/raye/windows/raye-night.reg
+raye-windows-apps  release/windows/raye-day.reg                    usr/share/raye/windows/raye-day.reg
+raye-windows-apps  release/windows/raye-windows-cleanup            usr/libexec/raye-windows-cleanup
+# Windows command names typed in a terminal, last on the PATH; and which
+# profile each space runs with, for Settings.
+raye-windows-apps  release/windows/raye-windows-command   usr/lib/raye/windows/raye-windows-command
+raye-windows-apps  release/windows/raye-windows-commands.sh  etc/profile.d/raye-windows-commands.sh
+raye-windows-apps  release/windows/raye-windows-profile   usr/libexec/raye-windows-profile
+raye-windows-apps  release/windows/default.profile        usr/share/raye/windows/default.profile
+# Fonts and runtimes Windows programs expect (SW-13).
+raye-windows-apps  release/windows/raye-windows-components         usr/libexec/raye-windows-components
+raye-windows-apps  release/windows/redist-signers.txt              usr/share/raye/windows/redist-signers.txt
+raye-windows-apps  release/windows/org.raye.windows.components.policy  usr/share/polkit-1/actions/org.raye.windows.components.policy
+raye-windows-apps  release/windows/raye-windows-components.service  usr/lib/systemd/system/raye-windows-components.service  no-start
+raye-windows-apps  release/windows/raye-windows-components.timer    usr/lib/systemd/system/raye-windows-components.timer  no-start
+
+# ---------------------------------------------------------------- games
+# Game mode: scheduler while a game runs, quiet updates (KP-6).
+raye-gaming  release/gaming/gamemode.ini                        etc/gamemode.ini
+raye-gaming  release/gaming/raye-game-scheduler.service         usr/lib/systemd/system/raye-game-scheduler.service  no-start
+raye-gaming  ?release/gaming/raye-game-scheduler-guard.service  usr/lib/systemd/user/raye-game-scheduler-guard.service
+raye-gaming  ?release/gaming/raye-game-start                    usr/libexec/raye-game-start
+raye-gaming  ?release/gaming/raye-game-end                      usr/libexec/raye-game-end
+raye-gaming  release/gaming/50-raye-game-scheduler.rules        usr/share/polkit-1/rules.d/50-raye-game-scheduler.rules
+
+# ---------------------------------------------------------------- desktop
+# System notices in Raye words (GP-26). raye-restart-notice is the helper
+# every area calls, so it is on PATH.
+raye-desktop  release/notices/raye-restart-notice   usr/bin/raye-restart-notice
+raye-desktop  release/notices/raye-notices          usr/libexec/raye-notices
+raye-desktop  release/notices/raye-notices.service  usr/lib/systemd/user/raye-notices.service
+# these turn off popups of stock events system-wide
+raye-desktop  release/notices/*.notifyrc            etc/xdg
+
+# "<App> closed unexpectedly" (GP-29).
+raye-desktop  ?release/appcrash/raye-app-crash          usr/libexec/raye-app-crash
+raye-desktop  ?release/appcrash/raye-app-crash.service  usr/lib/systemd/user/raye-app-crash.service
+
+# "Raye restarted after a problem" (KP-12); its other files are data.
+raye-desktop  release/crash/raye-crash-notice          usr/libexec/raye-crash-notice
+raye-desktop  release/crash/raye-crash-notice.service  usr/lib/systemd/user/raye-crash-notice.service
+raye-desktop  release/crash                            usr/share/raye/crash
+
+# Your phone: ports for pairing when the firewall is on (GP-42).
+raye-desktop  ?release/phone/raye-phone  etc/ufw/applications.d/raye-phone
+# Finding PCs and NAS on the network: the replies they send back.
+raye-desktop  release/network/raye-network-discovery  etc/ufw/applications.d/raye-network-discovery
+
+# Start entries of stock apps: hidden from Start, or under a plain name.
+# The apps stay installed and run the same command.
+raye-desktop  release/identity/apps/*.desktop  usr/share/applications  divert
+
+# Account settings an older Raye wrote, moved once at sign-in.
+raye-desktop  release/kconf_update  usr/share/kconf_update
+
+# A new account's first desktop and folders (GP-45).
+raye-desktop  release/skel                    etc/skel
+raye-desktop  release/xdg/user-dirs.defaults  etc/xdg/user-dirs.defaults  divert
+# Light at idle (helpers that start only when they have something to do).
+raye-desktop  release/tuning/raye-start-if-needed  usr/libexec/raye-start-if-needed
+# A visible mouse pointer in a virtual machine: the desktop draws it
+# itself, because a virtual GPU's cursor plane is not shown in a console
+# or over SPICE. Read by the user manager, inherited by the session.
+raye-desktop  release/tuning/raye-vm-cursor  usr/lib/systemd/user-environment-generators/90-raye-vm-cursor
+raye-desktop  release/xdg/autostart/org.kde.kdeconnect.daemon.desktop  etc/xdg/autostart/org.kde.kdeconnect.daemon.desktop  divert
+raye-desktop  release/xdg/autostart/org.kde.kclockd-autostart.desktop  etc/xdg/autostart/org.kde.kclockd-autostart.desktop  divert
+raye-desktop  release/tuning/user/speech-dispatcher.service.d/raye-idle.conf  usr/lib/systemd/user/speech-dispatcher.service.d/raye-idle.conf
+raye-desktop  release/xdg                     etc/xdg
+
+# No smartcard check on the lock screen (pam_sss is not shipped).
+raye-desktop  release/pam/kde-smartcard  etc/pam.d/kde-smartcard
+
+# Firefox as Raye's browser (GP-46). Default prefs only, no policies.json:
+# a policy makes Firefox say the browser is managed by an organization.
+# Measured: this build reads /etc/firefox/defaults/pref, not /etc/firefox/syspref.js.
+raye-desktop  release/firefox/raye-defaults.js  etc/firefox/defaults/pref/raye-defaults.js

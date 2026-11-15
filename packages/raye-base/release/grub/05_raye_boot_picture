@@ -1,0 +1,26 @@
+#!/bin/sh
+# The Raye night background from the moment GRUB starts, instead of a black
+# screen while it reads the kernel and the initramfs (18 s in a slow VM).
+# The boot screen draws its eye on the same picture, stretched the same way,
+# so nothing jumps. GRUB can only read /boot: the picture is copied there.
+set -e
+
+prefix=/usr
+datarootdir=/usr/share
+. "${pkgdatadir:-$datarootdir/grub}/grub-mkconfig_lib"
+
+src=${RAYE_BOOT_PICTURE:-/usr/share/plymouth/themes/raye/background.png}
+dest=${RAYE_BOOT_PICTURE_DEST:-/boot/grub/raye-boot.png}
+
+[ -r "$src" ] || exit 0
+cmp -s "$src" "$dest" 2>/dev/null || cp "$src" "$dest" || exit 0
+dev=$(${grub_probe:-grub-probe} --target=device "$dest") || exit 0
+prepare_grub_to_access_device "$dev"
+path=$(make_system_path_relative_to_its_root "$dest")
+
+# no text terminal can draw it: then nothing is cleared either
+cat <<EOF
+if background_image -m stretch "$path"; then
+  clear
+fi
+EOF

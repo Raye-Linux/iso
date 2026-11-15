@@ -1,0 +1,17 @@
+[Unit]
+Description=Seal the encrypted disk to the TPM again after a firmware or boot update
+# only on the start that follows "raye-tpm suspend"
+ConditionPathExists=/var/lib/raye-tpm/suspended
+After=local-fs.target
+Before=raye-kernel-finish.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/raye-tpm resume
+# 4 means the disk still asks its password: raye-tpm says why in the journal
+SuccessExitStatus=3 4
+Nice=10
+IOSchedulingClass=idle
+
+[Install]
+WantedBy=multi-user.target

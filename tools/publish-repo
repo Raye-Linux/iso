@@ -1,0 +1,346 @@
+#!/usr/bin/python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Builds the signed apt tree of Raye's own packages.
+
+    publish-repo                 from the last image build, into $STAGE/apt
+    publish-repo --dry-run       say what would change, write nothing
+    publish-repo --debs DIR --out DIR [--no-sign]
+    publish-repo --sources DIR   also publish the source packages (.dsc) in DIR
+    publish-repo --check DIR     may this tree go out? (no image, no secret, signed)
+
+The tree (dists/resolute, pool/main) is the same for every mirror:
+publish-r2 and publish-github only copy it. The folder it writes is also
+the published state. A package whose version is already in it keeps its
+published file when its contents did not change; when they did, the
+build stops, because installed systems would never see the change:
+raise the version in its debian/changelog.
+
+Nothing but packages goes in: before the new tree replaces the old one
+it is audited (raye_publish.audit_tree) -- no image under any name, no
+secret key material, every file under GitHub's limits, and a Release
+signed by the shipped keyring. A refused tree is not published.
+
+Every folder also gets an index.html (raye_pages), written after the
+Release is signed: a visitor browses the tree, apt never reads them.
+
+Index files are also kept under by-hash/ for two weeks, so a client that
+read an older InRelease from a cache still finds the files it names.
+"""
+from __future__ import annotations
+
+import argparse
+import gzip
+import io
+import lzma
+import os
+import pathlib
+import shutil
+import subprocess
+import sys
+import tarfile
+import time
+
+sys.dont_write_bytecode = True  # no __pycache__ in the repo
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import raye_pages  # noqa: E402
+import raye_publish as rp  # noqa: E402
+
+BY_HASH_DAYS = 14
+# SHA256 only: apt fetches by-hash files under the strongest hash it sees
+FTPARCHIVE = ["-o", "APT::FTPArchive::MD5=false", "-o", "APT::FTPArchive::SHA1=false",
+              "-o", "APT::FTPArchive::SHA512=false"]
+
+
+def control_of(deb):
+    """(fields, control text, md5sums text) of a .deb."""
+    tar = subprocess.run(["dpkg-deb", "--ctrl-tarfile", str(deb)], capture_output=True)
+    if tar.returncode:
+        raise rp.PublishError(f"{deb}: not a package ({tar.stderr.decode().strip()})")
+    files = {}
+    with tarfile.open(fileobj=io.BytesIO(tar.stdout)) as t:
+        for m in t.getmembers():
+            name = m.name.lstrip("./")
+            if name in ("control", "md5sums") and m.isfile():
+                files[name] = t.extractfile(m).read().decode()
+    fields = parse_paragraph(files.get("control", ""))
+    for key in ("Package", "Version", "Architecture"):
+        if key not in fields:
+            raise rp.PublishError(f"{deb}: no {key} in its control file")
+    return fields, files["control"], files.get("md5sums", "")
+
+
+def parse_paragraph(text):
+    fields, key = {}, None
+    for line in text.splitlines():
+        if line[:1] in (" ", "\t") and key:
+            fields[key] += "\n" + line
+        elif ":" in line:
+            key, _, value = line.partition(":")
+            fields[key] = value.strip()
+    return fields
+
+
+def parse_packages(text):
+    return [parse_paragraph(p) for p in text.split("\n\n") if p.strip()]
+
+
+def pool_dir(fields, component):
+    source = fields.get("Source", fields["Package"]).split()[0]
+    prefix = source[:4] if source.startswith("lib") else source[0]
+    return f"pool/{component}/{prefix}/{source}"
+
+
+def published(tree, conf):
+    """{(package, version, arch): Filename} of the tree as it is now."""
+    found = {}
+    for arch in conf["ARCHES"].split():
+        index = tree / "dists" / conf["SUITE"] / conf["COMPONENT"] / f"binary-{arch}" / "Packages"
+        if index.is_file():
+            for p in parse_packages(index.read_text()):
+                found[(p["Package"], p["Version"], p["Architecture"])] = p["Filename"]
+    return found
+
+
+def plan(debs, tree, conf):
+    """[(file to put in the tree, its path in the tree, note)], or PublishError."""
+    old = published(tree, conf)
+    chosen, errors = {}, []
+    for deb in debs:
+        fields, control, md5sums = control_of(deb)
+        key = (fields["Package"], fields["Version"], fields["Architecture"])
+        if key[2] not in conf["ARCHES"].split() + ["all"]:
+            errors.append(f"{deb.name}: architecture {key[2]} is not published")
+            continue
+        if key in chosen:
+            if chosen[key][3] != (control, md5sums):
+                errors.append(f"{key[0]} {key[1]} is given twice with different contents")
+            continue
+        rel = f"{pool_dir(fields, conf['COMPONENT'])}/{deb.name}"
+        note = "new"
+        if key in old:
+            before = tree / old[key]
+            if not before.is_file():
+                errors.append(f"{key[0]} {key[1]}: {old[key]} is listed but missing")
+                continue
+            if control_of(before)[1:] != (control, md5sums):
+                errors.append(f"{key[0]} {key[1]} is already published with other contents: "
+                              "raise its version (debian/changelog)")
+                continue
+            deb, rel, note = before, old[key], "unchanged"
+        chosen[key] = (deb, rel, note, (control, md5sums))
+    if errors:
+        raise rp.PublishError("\n".join(errors))
+    gone = sorted(f"{k[0]} {k[1]}" for k in old if not any(c[:2] == k[:2] for c in chosen))
+    return [v[:3] for _, v in sorted(chosen.items())], gone
+
+
+def source_files(dsc):
+    """(Source, Version, [file names]) of a .dsc, or PublishError."""
+    text = pathlib.Path(dsc).read_text()
+    if text.startswith("-----BEGIN PGP SIGNED MESSAGE-----"):
+        text = text.split("\n\n", 1)[1].split("\n-----BEGIN PGP SIGNATURE-----", 1)[0]
+    fields = parse_paragraph(text)
+    for key in ("Source", "Version", "Checksums-Sha256"):
+        if key not in fields:
+            raise rp.PublishError(f"{dsc}: no {key}")
+    names, folder = [], pathlib.Path(dsc).parent
+    for line in fields["Checksums-Sha256"].splitlines():
+        parts = line.split()
+        if len(parts) != 3:
+            continue
+        digest, _, name = parts
+        if pathlib.Path(name).name != name:
+            raise rp.PublishError(f"{dsc}: {name} is not a plain file name")
+        if not (folder / name).is_file():
+            raise rp.PublishError(f"{dsc}: {name} is missing beside it")
+        if rp.sha256(folder / name) != digest:
+            raise rp.PublishError(f"{dsc}: {name} does not have the checksum the .dsc names")
+        names.append(name)
+    return fields["Source"], fields["Version"], names
+
+
+def plan_sources(dscs, conf):
+    """[(file, its path in the tree)] for the source packages."""
+    out, seen = [], {}
+    for dsc in dscs:
+        source, version, names = source_files(dsc)
+        if (source, version) in seen:
+            raise rp.PublishError(f"source {source} {version} is given twice")
+        seen[(source, version)] = dsc
+        prefix = source[:4] if source.startswith("lib") else source[0]
+        base = f"pool/{conf['COMPONENT']}/{prefix}/{source}"
+        for f in [dsc.name, *names]:
+            out.append((dsc.parent / f, f"{base}/{f}"))
+    return out
+
+
+def write_indexes(new, conf):
+    suite_dir = new / "dists" / conf["SUITE"]
+    for arch in conf["ARCHES"].split():
+        bdir = suite_dir / conf["COMPONENT"] / f"binary-{arch}"
+        bdir.mkdir(parents=True)
+        out = subprocess.run(["apt-ftparchive", *FTPARCHIVE, "--arch", arch,
+                              "packages", f"pool/{conf['COMPONENT']}"],
+                             cwd=new, capture_output=True, text=True, check=True).stdout
+        data = out.encode()
+        (bdir / "Packages").write_bytes(data)
+        # mtime 0 in the gzip header: the same packages give the same file
+        with gzip.GzipFile(bdir / "Packages.gz", "wb", mtime=0) as f:
+            f.write(data)
+        (bdir / "Packages.xz").write_bytes(lzma.compress(data))
+        (bdir / "Release").write_text(
+            f"Archive: {conf['SUITE']}\nOrigin: Raye\nLabel: Raye\n"
+            f"Component: {conf['COMPONENT']}\nArchitecture: {arch}\n")
+    if any(new.glob(f"pool/{conf['COMPONENT']}/*/*/*.dsc")):
+        sdir = suite_dir / conf["COMPONENT"] / "source"
+        sdir.mkdir(parents=True)
+        out = subprocess.run(["apt-ftparchive", *FTPARCHIVE, "sources", f"pool/{conf['COMPONENT']}"],
+                             cwd=new, capture_output=True, text=True, check=True).stdout
+        data = out.encode()
+        (sdir / "Sources").write_bytes(data)
+        with gzip.GzipFile(sdir / "Sources.gz", "wb", mtime=0) as f:
+            f.write(data)
+        (sdir / "Sources.xz").write_bytes(lzma.compress(data))
+        (sdir / "Release").write_text(
+            f"Archive: {conf['SUITE']}\nOrigin: Raye\nLabel: Raye\n"
+            f"Component: {conf['COMPONENT']}\nArchitecture: source\n")
+    release = subprocess.run(
+        ["apt-ftparchive", *FTPARCHIVE,
+         "-o", "APT::FTPArchive::Release::Origin=Raye",
+         "-o", "APT::FTPArchive::Release::Label=Raye",
+         "-o", f"APT::FTPArchive::Release::Suite={conf['SUITE']}",
+         "-o", f"APT::FTPArchive::Release::Codename={conf['SUITE']}",
+         "-o", f"APT::FTPArchive::Release::Version={conf['RELEASE']}",
+         "-o", f"APT::FTPArchive::Release::Architectures={conf['ARCHES']}",
+         "-o", f"APT::FTPArchive::Release::Components={conf['COMPONENT']}",
+         "-o", "APT::FTPArchive::Release::Description=Raye Linux packages",
+         "-o", "APT::FTPArchive::Release::Acquire-By-Hash=yes",
+         "release", "."],
+        cwd=suite_dir, capture_output=True, text=True, check=True).stdout
+    (suite_dir / "Release").write_text(release)
+    return suite_dir
+
+
+def add_by_hash(new, old, conf, now=None):
+    """Index files by their SHA256, plus the old ones still young enough."""
+    now = time.time() if now is None else now
+    for arch in conf["ARCHES"].split():
+        sub = pathlib.Path("dists", conf["SUITE"], conf["COMPONENT"], f"binary-{arch}")
+        dest = new / sub / "by-hash" / "SHA256"
+        dest.mkdir(parents=True)
+        before = old / sub / "by-hash" / "SHA256"
+        if before.is_dir():
+            for f in before.iterdir():
+                if f.name != raye_pages.INDEX and now - f.stat().st_mtime < BY_HASH_DAYS * 86400:
+                    shutil.copy2(f, dest / f.name)
+        for name in ("Packages", "Packages.gz", "Packages.xz"):
+            path = new / sub / name
+            target = dest / rp.sha256(path)
+            if not target.exists():
+                shutil.copy2(path, target)
+
+
+def sign(suite_dir, conf, keyring=rp.KEYRING):
+    release = suite_dir / "Release"
+    rp.clearsign(conf, release, suite_dir / "InRelease")
+    rp.sign_binary(conf, release, suite_dir / "Release.gpg")
+    # the shipped keyring must accept what was just signed, or every
+    # installed system would refuse the repo
+    if not (rp.verify(keyring, suite_dir / "InRelease")
+            and rp.verify(keyring, suite_dir / "Release.gpg", release)):
+        raise rp.PublishError(f"the signature does not verify with {keyring}")
+
+
+def build(debs, out, conf, signed=True, keyring=rp.KEYRING, dscs=()):
+    files, gone = plan(debs, out, conf)
+    if not files:
+        raise rp.PublishError("no packages to publish")
+    sources = plan_sources(dscs, conf)
+    new = out.with_name(out.name + ".new")
+    shutil.rmtree(new, ignore_errors=True)
+    new.mkdir(parents=True)
+    for src, rel, _ in files:
+        dest = new / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dest)
+        os.chmod(dest, 0o644)
+    for src, rel in sources:
+        dest = new / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dest)
+        os.chmod(dest, 0o644)
+    suite_dir = write_indexes(new, conf)
+    add_by_hash(new, out, conf)
+    if signed:
+        sign(suite_dir, conf, keyring)
+    # last: the folder pages are not apt indexes, Release must not name them
+    raye_pages.write_folder_pages(new)
+    problems = rp.audit_tree(new, conf["SUITE"], keyring, signed=signed)
+    if problems:
+        shutil.rmtree(new, ignore_errors=True)
+        raise rp.PublishError("this tree must not be published:\n  " + "\n  ".join(problems))
+    previous = out.with_name(out.name + ".previous")
+    shutil.rmtree(previous, ignore_errors=True)
+    if out.exists():
+        out.rename(previous)
+    new.rename(out)
+    return files, gone
+
+
+def find_debs(dirs):
+    debs = []
+    for d in dirs:
+        found = sorted(pathlib.Path(d).glob("*.deb"))
+        if not found:
+            raise rp.PublishError(f"no .deb in {d}")
+        debs += found
+    return debs
+
+
+def main(argv=None):
+    conf = rp.settings()
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--debs", action="append", help=f"folder of .debs (default {conf['DEBS']})")
+    ap.add_argument("--out", default=os.path.join(conf["STAGE"], "apt"))
+    ap.add_argument("--dry-run", action="store_true", help="say what would change, write nothing")
+    ap.add_argument("--no-sign", action="store_true", help="for a test tree only")
+    ap.add_argument("--sources", action="append", default=[],
+                    help="folder of source packages (.dsc and the files they name)")
+    ap.add_argument("--check", metavar="DIR", help="audit a tree, change nothing")
+    args = ap.parse_args(argv)
+    out = pathlib.Path(args.out)
+    if args.check:
+        problems = rp.audit_tree(args.check, conf["SUITE"])
+        for p in problems:
+            print(f"  refused   {p}")
+        print(f"{args.check}: " + ("must not be published" if problems else "may be published"))
+        return 1 if problems else 0
+    try:
+        dscs = []
+        for d in args.sources:
+            found = sorted(pathlib.Path(d).glob("*.dsc"))
+            if not found:
+                raise rp.PublishError(f"no .dsc in {d}")
+            dscs += found
+        debs = find_debs(args.debs or [conf["DEBS"]])
+        if args.dry_run:
+            files, gone = plan(debs, out, conf)
+        else:
+            if not args.no_sign and not rp.have_key(conf):
+                raise rp.PublishError(f"no signing key {conf['SIGNING_KEY']} in {conf['GNUPGHOME']}")
+            files, gone = build(debs, out, conf, signed=not args.no_sign, dscs=dscs)
+    except (rp.PublishError, subprocess.CalledProcessError) as e:
+        print(f"publish-repo: {e}", file=sys.stderr)
+        return 1
+    for _, rel, note in files:
+        print(f"  {note:9} {rel}")
+    for name in gone:
+        print(f"  removed   {name}")
+    for dsc in dscs:
+        print(f"  source    {dsc.name}")
+    print(("would write " if args.dry_run else "wrote ") + str(out))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

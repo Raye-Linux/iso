@@ -1,0 +1,21 @@
+#!/bin/sh
+# Makes the next start, and only the next one, go straight to Windows,
+# without the boot menu. Run through pkexec by raye-restart-to-windows.
+#
+#   raye-boot-windows --check   print the Windows entry, exit 1 if none
+#   raye-boot-windows           set it as BootNext
+set -u
+tab=$(printf '\t')
+entry=$(efibootmgr 2>/dev/null |
+    sed -n "s/^Boot\([0-9A-F]\{4\}\)\*\{0,1\} Windows Boot Manager$tab.*/\1/p" | head -n 1)
+if [ -z "$entry" ]; then
+    # some firmware names it differently: look for Windows' own loader
+    entry=$(efibootmgr -v 2>/dev/null | grep -i 'bootmgfw\.efi' |
+        sed -n 's/^Boot\([0-9A-F]\{4\}\).*/\1/p' | head -n 1)
+fi
+[ -n "$entry" ] || { echo "no Windows boot entry" >&2; exit 1; }
+if [ "${1:-}" = --check ]; then
+    echo "$entry"
+    exit 0
+fi
+exec efibootmgr -q -n "$entry"

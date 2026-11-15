@@ -1,0 +1,21 @@
+#!/bin/sh
+# Raye: what the start that encrypts or decrypts the system disk needs,
+# only while /etc/raye-encryption/plan is there.
+PREREQ=""
+prereqs() { echo "$PREREQ"; }
+case $1 in
+prereqs) prereqs; exit 0 ;;
+esac
+
+. /usr/share/initramfs-tools/hook-functions
+
+[ -r /etc/raye-encryption/plan ] || exit 0
+
+copy_exec /usr/sbin/cryptsetup
+copy_exec /usr/bin/btrfs
+manual_add_modules dm_crypt
+mkdir -p "$DESTDIR/etc/raye-encryption"
+for f in plan pass.jwe; do
+    [ -r "/etc/raye-encryption/$f" ] && cp -p "/etc/raye-encryption/$f" "$DESTDIR/etc/raye-encryption/$f"
+done
+exit 0

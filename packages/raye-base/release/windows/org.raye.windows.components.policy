@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<policyconfig>
+  <vendor>Raye Linux</vendor>
+  <action id="org.raye.windows.components">
+    <description>Add or remove Windows compatibility components</description>
+    <description xml:lang="fr">Ajouter ou supprimer les composants de compatibilité Windows</description>
+    <message>Changing Windows compatibility components needs your permission</message>
+    <message xml:lang="fr">Modifier les composants de compatibilité Windows demande votre autorisation</message>
+    <!-- it installs software for everyone: a sudo user says yes -->
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/libexec/raye-windows-components</annotate>
+  </action>
+</policyconfig>

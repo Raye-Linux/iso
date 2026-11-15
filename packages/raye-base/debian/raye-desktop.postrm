@@ -1,0 +1,26 @@
+#!/bin/sh
+# Give the base system back every file raye-desktop took the place of,
+# and the Flatpak default it set.
+set -e
+
+#DEBHELPER#
+
+case "$1" in
+    remove|purge|disappear|abort-install)
+        # --list does not filter by package: keep the lines that end in ours
+        dpkg-divert --list | while read -r kind _ file _ to _ owner; do
+            [ "$kind" = diversion ] && [ "$owner" = raye-desktop ] || continue
+            dpkg-divert --package raye-desktop --remove --rename --divert "$to" "$file"
+        done
+        if command -v flatpak >/dev/null 2>&1; then
+            flatpak override --system --unset-env=ELECTRON_OZONE_PLATFORM_HINT || true
+        fi
+        ;;
+esac
+
+# printing stays on demand; a new install looks at it again
+if [ "$1" = purge ]; then
+    rm -rf "$DPKG_ROOT/var/lib/raye-desktop"
+fi
+
+exit 0

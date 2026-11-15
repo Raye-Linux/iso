@@ -1,0 +1,132 @@
+#!/bin/sh
+# Runs the stock check of one drive and, when it takes more than two
+# seconds, says so on the boot screen: "Scanning and repairing drive
+# (<name>)". The boot theme draws the words from the raye:fsck key and
+# puts its own line back on raye:clear. There is no percent: fsck only
+# reports progress to systemd-fsckd, which systemd no longer ships.
+#
+#   raye-fsck-message CHECK DEVICE
+#
+# runs "CHECK DEVICE" and exits with its status. systemd-fsck@.service
+# calls it (raye-message.conf). Raye's root and home are btrfs and never
+# get here; /boot (ext4) and the EFI partition do.
+set -u
+
+DELAY=2
+# one file per check on screen, named after the wrapper's pid
+state=${RAYE_FSCK_STATE:-/run/raye-fsck}
+
+if [ $# -ne 2 ]; then
+    echo "usage: raye-fsck-message CHECK DEVICE" >&2
+    exit 2
+fi
+check=$1
+dev=$2
+
+# Without the stock check there is nothing to run. Going on beats
+# stopping the boot: systemd-fsck does the same when fsck is missing.
+if [ ! -x "$check" ]; then
+    echo "raye-fsck-message: $check is missing, $dev is not checked" >&2
+    exit 0
+fi
+
+# plymouthd answers at once; the timeout only guards a stuck daemon
+ply() {
+    timeout 5 plymouth "$@" >/dev/null 2>&1 || :
+}
+
+# What the boot screen can show: plain letters, digits, spaces, . _ - /
+# and short enough for one line.
+fits() {
+    case $1 in
+    '' | *[!A-Za-z0-9._/\ -]*) return 1 ;;
+    esac
+    [ "${#1}" -le 32 ]
+}
+
+# The drive's label, else where it is mounted, else the device's name.
+drive_name() {
+    name=$(blkid -o value -s LABEL -- "$dev" 2>/dev/null) || name=
+    if fits "$name"; then
+        printf '%s\n' "$name"
+        return
+    fi
+    name=$(findmnt --fstab --noheadings --output TARGET --source "$dev" 2>/dev/null | head -n 1)
+    if fits "$name"; then
+        printf '%s\n' "$name"
+        return
+    fi
+    name=$(readlink -f -- "$dev" 2>/dev/null) || name=$dev
+    name=${name##*/}
+    if fits "$name"; then
+        printf '%s\n' "$name"
+        return
+    fi
+    printf 'disk\n'
+}
+
+# A check still running somewhere else, other than this one: the last
+# state file whose wrapper is alive.
+other_on_screen() {
+    other=
+    for f in "$state"/[0-9]*; do
+        [ -f "$f" ] || continue
+        p=${f##*/}
+        [ "$p" = "$$" ] && continue
+        kill -0 "$p" 2>/dev/null || continue
+        other=$f
+    done
+    [ -n "$other" ] && cat "$other"
+}
+
+show() {
+    timeout 5 plymouth --ping >/dev/null 2>&1 || return 0
+    name=$(drive_name)
+    mkdir -p "$state" 2>/dev/null || return 0
+    {
+        flock 9 2>/dev/null || :
+        printf '%s\n' "$name" > "$state/$$"
+        ply display-message --text="raye:fsck:$name"
+    } 9>"$state/lock"
+}
+
+# Take this drive's line off the screen (and out of plymouthd's list of
+# messages, which it shows again when the splash comes back), then put
+# back another drive still being checked, or the screen's own line.
+finish() {
+    [ -f "$state/$$" ] || return 0
+    {
+        flock 9 2>/dev/null || :
+        name=$(cat "$state/$$")
+        rm -f "$state/$$"
+        ply hide-message --text="raye:fsck:$name"
+        other=$(other_on_screen)
+        if [ -n "$other" ]; then
+            ply display-message --text="raye:fsck:$other"
+        else
+            ply display-message --text=raye:clear
+            ply hide-message --text=raye:clear
+        fi
+    } 9>"$state/lock"
+}
+
+# systemd stops the unit with TERM to every process in it: the check
+# ends on its own, this script stays to put the screen back.
+trap ': ' TERM INT HUP
+
+(
+    trap 'kill "$timer" 2>/dev/null; exit 0' TERM
+    sleep "$DELAY" &
+    timer=$!
+    wait "$timer" || exit 0
+    show
+) &
+notifier=$!
+
+"$check" "$dev"
+status=$?
+
+kill "$notifier" 2>/dev/null
+wait "$notifier" 2>/dev/null
+finish
+exit "$status"

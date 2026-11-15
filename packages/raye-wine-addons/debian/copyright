@@ -1,0 +1,180 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: raye-wine-addons
+Source: https://github.com/Raye-Linux/iso
+Comment: The four runtimes are shipped as their makers released them
+ (archives listed in addons.sha256, unpacked unchanged). Their source:
+  Wine Mono   https://dl.winehq.org/wine/wine-mono/10.4.1/wine-mono-10.4.1-src.tar.xz
+  Wine Gecko  https://dl.winehq.org/wine/wine-gecko/2.47.4/wine-gecko-2.47.4-src.tar.xz
+  DXVK        https://github.com/doitsujin/dxvk/tree/v2.5.2
+  vkd3d-proton https://github.com/HansKristian-Work/vkd3d-proton/tree/v2.14
+
+Files: *
+Copyright: 2026 techoraye
+License: GPL-3+
+
+Files: upstream/wine-mono-*
+Copyright: 2001-2025 Novell, Inc., Xamarin, Inc., Microsoft Corporation and the Mono contributors
+           2012-2025 Esme Povirk and the Wine Mono contributors
+           FNA, FAudio, FNA3D, MojoShader and SDL contributors
+License: Expat and LGPL-2.1+ and GPL-2+ and Ms-PL and Zlib
+Comment: Wine Mono gathers several projects. Parts of Mono are under the
+ GPL, the LGPL or the MIT X11 licence, and every part shipped is
+ available under the LGPL or the MIT X11 licence; ICSharpCode.SharpZipLib
+ is GPL with a linking exception. The Visual Basic libraries, winforms,
+ wpf, monoDX and System.Speech are MIT X11; FNA is MIT X11 and Ms-PL;
+ FAudio, FNA3D, MojoShader and SDL are zlib. The rest is MIT X11.
+
+Files: upstream/wine-gecko-*
+Copyright: 1998-2016 Mozilla Foundation and the Mozilla contributors
+           2006-2023 Jacek Caban and the Wine contributors
+License: MPL-2.0
+Comment: A few bundled libraries are under the LGPL 2.1 or later
+ (lgpllibs.dll).
+
+Files: upstream/dxvk-*
+Copyright: 2017-2024 Philip Rebohle and the DXVK contributors
+License: Zlib
+
+Files: upstream/vkd3d-proton-*
+Copyright: 2016-2024 Józef Kucia, Hans-Kristian Arntzen, Philip Rebohle,
+           Joshua Ashton and the vkd3d and vkd3d-proton contributors
+License: LGPL-2.1+
+
+License: GPL-3+
+ This program is free software: you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation, either version 3 of the License, or
+ (at your option) any later version.
+ .
+ On Debian systems, the complete text of the GNU General Public License
+ version 3 can be found in "/usr/share/common-licenses/GPL-3".
+
+License: GPL-2+
+ This program is free software; you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation; either version 2 of the License, or
+ (at your option) any later version.
+ .
+ On Debian systems, the complete text of the GNU General Public License
+ version 2 can be found in "/usr/share/common-licenses/GPL-2".
+
+License: LGPL-2.1+
+ This library is free software; you can redistribute it and/or modify
+ it under the terms of the GNU Lesser General Public License as
+ published by the Free Software Foundation; either version 2.1 of the
+ License, or (at your option) any later version.
+ .
+ On Debian systems, the complete text of the GNU Lesser General Public
+ License version 2.1 can be found in
+ "/usr/share/common-licenses/LGPL-2.1".
+
+License: MPL-2.0
+ This Source Code Form is subject to the terms of the Mozilla Public
+ License, v. 2.0. If a copy of the MPL was not distributed with this
+ file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ .
+ On Debian systems, the complete text of the Mozilla Public License
+ version 2.0 can be found in "/usr/share/common-licenses/MPL-2.0".
+
+License: Expat
+ Permission is hereby granted, free of charge, to any person obtaining
+ a copy of this software and associated documentation files (the
+ "Software"), to deal in the Software without restriction, including
+ without limitation the rights to use, copy, modify, merge, publish,
+ distribute, sublicense, and/or sell copies of the Software, and to
+ permit persons to whom the Software is furnished to do so, subject to
+ the following conditions:
+ .
+ The above copyright notice and this permission notice shall be
+ included in all copies or substantial portions of the Software.
+ .
+ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+ NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+ LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+License: Zlib
+ This software is provided 'as-is', without any express or implied
+ warranty. In no event will the authors be held liable for any damages
+ arising from the use of this software.
+ .
+ Permission is granted to anyone to use this software for any purpose,
+ including commercial applications, and to alter it and redistribute it
+ freely, subject to the following restrictions:
+ .
+ 1. The origin of this software must not be misrepresented; you must
+    not claim that you wrote the original software. If you use this
+    software in a product, an acknowledgment in the product
+    documentation would be appreciated but is not required.
+ 2. Altered source versions must be plainly marked as such, and must
+    not be misrepresented as being the original software.
+ 3. This notice may not be removed or altered from any source
+    distribution.
+
+License: Ms-PL
+ Microsoft Public License (Ms-PL)
+ .
+ This license governs use of the accompanying software. If you use the
+ software, you accept this license. If you do not accept the license,
+ do not use the software.
+ .
+ 1. Definitions
+ .
+ The terms "reproduce," "reproduction," "derivative works," and
+ "distribution" have the same meaning here as under U.S. copyright
+ law.
+ .
+ A "contribution" is the original software, or any additions or
+ changes to the software.
+ .
+ A "contributor" is any person that distributes its contribution under
+ this license.
+ .
+ "Licensed patents" are a contributor's patent claims that read
+ directly on its contribution.
+ .
+ 2. Grant of Rights
+ .
+ (A) Copyright Grant- Subject to the terms of this license, including
+ the license conditions and limitations in section 3, each contributor
+ grants you a non-exclusive, worldwide, royalty-free copyright license
+ to reproduce its contribution, prepare derivative works of its
+ contribution, and distribute its contribution or any derivative works
+ that you create.
+ .
+ (B) Patent Grant- Subject to the terms of this license, including the
+ license conditions and limitations in section 3, each contributor
+ grants you a non-exclusive, worldwide, royalty-free license under its
+ licensed patents to make, have made, use, sell, offer for sale,
+ import, and/or otherwise dispose of its contribution in the software
+ or derivative works of the contribution in the software.
+ .
+ 3. Conditions and Limitations
+ .
+ (A) No Trademark License- This license does not grant you rights to
+ use any contributors' name, logo, or trademarks.
+ .
+ (B) If you bring a patent claim against any contributor over patents
+ that you claim are infringed by the software, your patent license from
+ such contributor to the software ends automatically.
+ .
+ (C) If you distribute any portion of the software, you must retain
+ all copyright, patent, trademark, and attribution notices that are
+ present in the software.
+ .
+ (D) If you distribute any portion of the software in source code form,
+ you may do so only under this license by including a complete copy of
+ this license with your distribution. If you distribute any portion of
+ the software in compiled or object code form, you may only do so under
+ a license that complies with this license.
+ .
+ (E) The software is licensed "as-is." You bear the risk of using it.
+ The contributors give no express warranties, guarantees or
+ conditions. You may have additional consumer rights under your local
+ laws which this license cannot change. To the extent permitted under
+ your local laws, the contributors exclude the implied warranties of
+ merchantability, fitness for a particular purpose and
+ non-infringement.

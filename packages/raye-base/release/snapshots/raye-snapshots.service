@@ -1,0 +1,11 @@
+[Unit]
+Description=Set up system restore points
+ConditionPathExists=!/var/lib/raye/snapshots-v3
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/raye-snapshots-setup
+
+[Install]
+WantedBy=multi-user.target

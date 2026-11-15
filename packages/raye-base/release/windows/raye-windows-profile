@@ -1,0 +1,120 @@
+#!/usr/bin/python3 -I
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Which profile a Windows program runs with, for Settings.
+
+    raye-windows-profile [SPACE...]    JSON: {space: {profile, name, optimized}}
+
+A space runs with its own profile (the name raye-run-windows wrote in
+SPACE/.raye-profile, or a profile named like the space, or one whose
+match= patterns fit the space's name) or with the default one alone.
+"optimized" is true only when that profile's title= is a title Raye
+checked itself and marked works (raye-windows-titles --state): a profile
+nobody played through is still the default as far as anyone can tell.
+
+RAYE_WINDOWS_SPACES, RAYE_WINDOWS_PROFILES_PATH and RAYE_WINDOWS_TITLES
+replace the spaces folder, the profiles folder and the titles reader
+(used by the tests).
+"""
+import fnmatch
+import json
+import os
+import re
+import subprocess
+import sys
+
+PROFILES = "/usr/share/raye/windows-profiles"
+TITLES = "raye-windows-titles"
+
+
+def spaces_dir():
+    if os.environ.get("RAYE_WINDOWS_SPACES"):
+        return os.environ["RAYE_WINDOWS_SPACES"]
+    data = os.environ.get("XDG_DATA_HOME") or os.path.join(os.path.expanduser("~"), ".local/share")
+    return os.path.join(data, "raye", "windows")
+
+
+def profiles_dir():
+    return os.environ.get("RAYE_WINDOWS_PROFILES_PATH") or PROFILES
+
+
+def read_profile(path):
+    keys = {}
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                m = re.match(r'^([a-z]+)="(.*)"$', line.rstrip("\n"))
+                if m:
+                    keys[m.group(1)] = m.group(2)
+    except OSError:
+        return None
+    return keys
+
+
+def profile_of(space):
+    """The profile file a space runs with, or None for the default."""
+    folder = profiles_dir()
+    try:
+        with open(os.path.join(spaces_dir(), space, ".raye-profile"), encoding="utf-8") as f:
+            name = f.read().strip()
+    except OSError:
+        name = ""
+    for cand in (name, space):
+        if cand and "/" not in cand and not cand.startswith("."):
+            path = os.path.join(folder, cand + ".profile")
+            if os.path.isfile(path):
+                return path
+    # a space made before .raye-profile: it is named after the installer
+    try:
+        files = sorted(f for f in os.listdir(folder) if f.endswith(".profile"))
+    except OSError:
+        return None
+    for f in files:
+        keys = read_profile(os.path.join(folder, f)) or {}
+        for pattern in keys.get("match", "").split():
+            if fnmatch.fnmatchcase(space + ".exe", pattern):
+                return os.path.join(folder, f)
+    return None
+
+
+def state(title, cache):
+    if title not in cache:
+        reader = os.environ.get("RAYE_WINDOWS_TITLES") or TITLES
+        try:
+            out = subprocess.run([reader, "--state", title], capture_output=True, text=True,
+                                 timeout=30).stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            out = ""
+        cache[title] = out
+    return cache[title]
+
+
+def describe(space, cache):
+    path = profile_of(space)
+    if not path:
+        return {"profile": None, "name": None, "optimized": False}
+    keys = read_profile(path) or {}
+    title = keys.get("title", "")
+    return {"profile": os.path.basename(path)[:-len(".profile")],
+            "name": keys.get("name") or None,
+            "optimized": bool(title) and state(title, cache) == "works"}
+
+
+def main(argv):
+    if any(a.startswith("-") for a in argv):
+        print("usage: raye-windows-profile [SPACE...]", file=sys.stderr)
+        return 2
+    spaces = argv
+    if not spaces:
+        try:
+            spaces = sorted(d for d in os.listdir(spaces_dir())
+                            if not d.startswith(".") and os.path.isdir(os.path.join(spaces_dir(), d)))
+        except OSError:
+            spaces = []
+    cache = {}
+    json.dump({s: describe(s, cache) for s in spaces if "/" not in s}, sys.stdout, indent=1)
+    print()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

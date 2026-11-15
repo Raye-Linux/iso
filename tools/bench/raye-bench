@@ -1,0 +1,395 @@
+#!/usr/bin/python3 -I
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Measures what Raye claims about speed, the same way each time, so the
+numbers can sit next to the ones raye-bench.ps1 takes on Windows.
+
+    raye-bench                         boot, memory, disk and app launch
+    raye-bench --suites all --runs 3   every suite, three runs each
+    raye-bench --text --out a.json     a table on screen, the JSON in a file
+    raye-bench --merge b1.json b2.json b3.json   join three cold boots
+    raye-bench --compare before.json after.json  what changed
+    raye-bench --list                  the suites and what they need
+
+Run it 5 minutes after logging in, on mains power, with nothing else open.
+Each suite is a small script in suites/ that also runs on its own.
+"""
+
+import argparse
+import datetime
+import importlib.util
+import json
+import os
+import pathlib
+import platform
+import re
+import sys
+
+HERE = pathlib.Path(__file__).resolve().parent
+SUITES_DIR = HERE / "suites"
+sys.dont_write_bytecode = True  # keep the tool folder clean
+sys.path.insert(0, str(SUITES_DIR))
+import common  # noqa: E402
+
+FORMAT = 2
+SUITES = ("boot", "memory", "disk", "launch", "latency", "throughput", "io", "underload", "games")
+DEFAULT = ("boot", "memory", "disk", "launch")
+PACKAGES = ("raye-system", "raye-desktop", "systemd", "plasma-workspace", "kwin-wayland",
+            "kwin-common", "libgl1-mesa-dri", "mesa-vulkan-drivers")
+
+# what the numbers are, from the end of their name; longest suffix first
+UNITS = (("_ops_s", "ops/s", +1), ("_mibs", "MiB/s", +1), ("_iops", "IOPS", +1),
+         ("_fps", "FPS", +1), ("_ms", "ms", -1), ("_us", "µs", -1), ("_mib", "MiB", -1),
+         ("_gib", "GiB", -1), ("_s", "s", -1))
+# sizes and counts that say what was measured, not how well
+NEUTRAL = {"memory.total_mib", "disk.size_gib", "games.frames", "games.duration_s"}
+
+
+def load_suite(name):
+    spec = importlib.util.spec_from_file_location(f"raye_bench_{name}", SUITES_DIR / f"{name}.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def unit_of(metric):
+    for suffix, unit, direction in UNITS:
+        if metric.endswith(suffix):
+            return unit, direction
+    return "", 0
+
+
+# ---------------------------------------------------------------- fingerprint
+
+def _read(path, default=""):
+    try:
+        with open(path) as f:
+            return f.read()
+    except OSError:
+        return default
+
+
+def parse_os_release(text):
+    m = re.search(r'^PRETTY_NAME="?([^"\n]*)"?', text, re.M)
+    return m.group(1) if m else None
+
+
+def parse_cpu_model(text):
+    m = re.search(r"^model name\s*:\s*(.+)$", text, re.M)
+    return m.group(1).strip() if m else None
+
+
+def parse_lsblk_model(text):
+    """The disk under / from `lsblk -s -n -P -o MODEL,ROTA,TRAN` (device, then parents)."""
+    for line in text.splitlines():
+        f = dict(re.findall(r'(\w+)="([^"]*)"', line))
+        model = f.get("MODEL", "").strip()
+        if model:
+            kind = "hdd" if f.get("ROTA") == "1" else "ssd"
+            tran = f.get("TRAN", "").strip()
+            return f"{model} ({tran + ', ' if tran else ''}{kind})"
+    return None
+
+
+def power_state(root="/sys/class/power_supply"):
+    """True on mains, False on battery, None when there is no supply info."""
+    try:
+        names = os.listdir(root)
+    except OSError:
+        return None
+    mains = [n for n in names if _read(f"{root}/{n}/type").strip() == "Mains"]
+    batteries = [n for n in names if _read(f"{root}/{n}/type").strip() == "Battery"]
+    if any(_read(f"{root}/{n}/online").strip() == "1" for n in mains):
+        return True
+    if batteries:
+        return False
+    return None
+
+
+def fingerprint():
+    fp = {
+        "os": parse_os_release(_read("/etc/os-release")),
+        "cpu": parse_cpu_model(_read("/proc/cpuinfo")),
+        "threads": os.cpu_count(),
+        "ram_mib": None,
+        "disk": None,
+        "gpu": [],
+        "kernel": platform.release(),
+        "kernel_build": platform.version(),
+        "cmdline": _read("/proc/cmdline").strip(),
+        "governor": _read("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor").strip() or None,
+        "epp": _read("/sys/devices/system/cpu/cpu0/cpufreq/energy_performance_preference").strip() or None,
+        "on_mains": power_state(),
+        "virtual": None,
+        "packages": {},
+    }
+    m = re.search(r"^MemTotal:\s+(\d+) kB", _read("/proc/meminfo"), re.M)
+    if m:
+        fp["ram_mib"] = int(m.group(1)) // 1024
+    src = common.run(["findmnt", "-n", "-o", "SOURCE", "/"], timeout=10)
+    if src and src.returncode == 0:
+        dev = src.stdout.strip().split("[")[0]
+        res = common.run(["lsblk", "-s", "-n", "-P", "-o", "MODEL,ROTA,TRAN", dev], timeout=10)
+        if res and res.returncode == 0:
+            fp["disk"] = parse_lsblk_model(res.stdout)
+    res = common.run(["lspci"], timeout=10)
+    if res and res.returncode == 0:
+        fp["gpu"] = [l.split(": ", 1)[-1] for l in res.stdout.splitlines()
+                     if re.search(r"VGA|3D controller|Display controller", l)]
+    res = common.run(["systemd-detect-virt"], timeout=10)
+    if res and res.returncode == 0 and res.stdout.strip() != "none":
+        fp["virtual"] = res.stdout.strip()
+    res = common.run(["dpkg-query", "-W", "-f", "${Package}\t${Version}\t${db:Status-Status}\n"]
+                     + list(PACKAGES), timeout=30)
+    for line in (res.stdout if res else "").splitlines():
+        parts = line.split("\t")
+        if len(parts) == 3 and parts[2] == "installed":
+            fp["packages"][parts[0]] = parts[1]
+    return fp
+
+
+# ---------------------------------------------------------------- run
+
+def collect(runs_by_suite):
+    """{suite: [run dict, ...]} -> results (median, range) and details."""
+    results, details = {}, {}
+    for suite, runs in runs_by_suite.items():
+        metrics = []
+        for r in runs:
+            for k in r:
+                if not k.startswith("_") and k not in metrics:
+                    metrics.append(k)
+        results[suite] = {k: common.aggregate([r.get(k) for r in runs]) for k in metrics}
+        details[suite] = [r.get("_detail", {}) for r in runs]
+    return results, details
+
+
+def run_suites(names, opts, log=sys.stderr):
+    raw, errors = {}, {}
+    for name in names:
+        mod = load_suite(name)
+        try:
+            if getattr(mod, "FROM_FILES", False):
+                if not opts.mangohud_log:
+                    mod.measure(opts)  # says how to give the logs
+                raw[name] = [mod.read_log(p) for p in opts.mangohud_log]
+            elif getattr(mod, "PER_BOOT", False):
+                raw[name] = [mod.measure(opts)]
+            else:
+                raw[name] = []
+                for i in range(opts.runs):
+                    print(f"raye-bench: {name} {i + 1}/{opts.runs}", file=log)
+                    raw[name].append(mod.measure(opts))
+        except (RuntimeError, OSError, ValueError) as e:
+            errors[name] = str(e)
+            raw.pop(name, None)
+    return raw, errors
+
+
+def build_report(raw, errors, runs, fp, os_name="raye"):
+    results, details = collect(raw)
+    return {
+        "format": FORMAT,
+        "tool": "raye-bench",
+        "os": os_name,
+        "taken": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
+        "runs": runs,
+        "fingerprint": fp,
+        "results": results,
+        "details": details,
+        "errors": errors,
+    }
+
+
+# ---------------------------------------------------------------- merge, compare
+
+def merge(reports):
+    """Joins reports of separate boots: values side by side, new medians."""
+    if not reports:
+        raise ValueError("nothing to merge")
+    raw = {}
+    for rep in reports:
+        if rep.get("format") != FORMAT:
+            raise ValueError("not a raye-bench report of this version")
+        for suite, metrics in rep.get("results", {}).items():
+            n = max((len(m.get("values", [])) for m in metrics.values()), default=0)
+            dets = rep.get("details", {}).get(suite, [])
+            for i in range(n):
+                row = {k: (m["values"][i] if i < len(m.get("values", [])) else None)
+                       for k, m in metrics.items()}
+                row["_detail"] = dets[i] if i < len(dets) else {}
+                raw.setdefault(suite, []).append(row)
+    first = reports[0]
+    out = build_report(raw, {}, max(len(v) for v in raw.values()) if raw else 0,
+                       first.get("fingerprint", {}), first.get("os", "raye"))
+    for i, rep in enumerate(reports):
+        for suite, msg in rep.get("errors", {}).items():
+            out["errors"][f"{suite} (file {i + 1})"] = msg
+    keys = ("os", "cpu", "disk", "kernel", "cmdline", "packages", "virtual")
+    out["fingerprint_differs"] = sorted({k for rep in reports[1:] for k in keys
+                                         if rep.get("fingerprint", {}).get(k) != first.get("fingerprint", {}).get(k)})
+    return out
+
+
+def compare(a, b):
+    """Rows of (metric, a, b, change %, verdict) for metrics in both."""
+    rows = []
+    for suite, metrics in a.get("results", {}).items():
+        for k, ma in metrics.items():
+            mb = b.get("results", {}).get(suite, {}).get(k)
+            name = f"{suite}.{k}"
+            if not mb or ma.get("median") is None or mb.get("median") is None:
+                continue
+            va, vb = ma["median"], mb["median"]
+            change = round((vb - va) / va * 100, 1) if va else None
+            _unit, direction = unit_of(k)
+            if name in NEUTRAL or direction == 0 or change is None:
+                verdict = "-"
+            elif (ma["min"] <= mb["max"] and mb["min"] <= ma["max"]) or abs(change) < 2:
+                verdict = "same"
+            else:
+                verdict = "better" if change * direction > 0 else "worse"
+            rows.append((name, va, vb, change, verdict))
+    return rows
+
+
+# ---------------------------------------------------------------- text
+
+def fmt(v):
+    if v is None:
+        return "-"
+    if isinstance(v, float):
+        return f"{v:.3f}".rstrip("0").rstrip(".") if abs(v) < 100 else f"{v:.0f}"
+    return str(v)
+
+
+def table(rows):
+    widths = [max(len(str(r[i])) for r in rows) for i in range(len(rows[0]))]
+    return "\n".join("  ".join(str(c).ljust(w) for c, w in zip(r, widths)).rstrip() for r in rows)
+
+
+def text_report(rep):
+    fp = rep.get("fingerprint", {})
+    head = [fp.get("os") or rep.get("os"), f"kernel {fp.get('kernel')}", fp.get("cpu"),
+            f"{fp.get('ram_mib')} MiB" if fp.get("ram_mib") else None, fp.get("disk")]
+    lines = [
+        " · ".join(str(h) for h in head if h),
+        f"Runs: {rep.get('runs')} · taken {rep.get('taken')}",
+    ]
+    if fp.get("virtual"):
+        lines.append(f"Virtual machine ({fp['virtual']}): for regressions only, never publish these numbers.")
+    if fp.get("on_mains") is False:
+        lines.append("On battery: plug the computer in and measure again.")
+    if rep.get("fingerprint_differs"):
+        lines.append("The merged files differ in: " + ", ".join(rep["fingerprint_differs"]))
+    rows = [("Measure", "Median", "Min–max", "Unit")]
+    for suite, metrics in rep.get("results", {}).items():
+        for k, m in metrics.items():
+            rng = f"{fmt(m['min'])}–{fmt(m['max'])}" if m["min"] is not None else "-"
+            rows.append((f"{suite}.{k}", fmt(m["median"]), rng, unit_of(k)[0]))
+    lines += ["", table(rows)]
+    for suite, msg in rep.get("errors", {}).items():
+        lines.append(f"{suite}: not measured: {msg}")
+    for suite, dets in rep.get("details", {}).items():
+        for i, d in enumerate(dets):
+            if d.get("note"):
+                lines.append(f"{suite}: {d['note']}")
+            for what, why in sorted((d.get("skipped") or {}).items()):
+                lines.append(f"{suite} run {i + 1}: {what}: {why}")
+    return "\n".join(lines)
+
+
+def compare_text(a, b):
+    rows = [("Measure", "A", "B", "Change", "B is")]
+    for name, va, vb, change, verdict in compare(a, b):
+        rows.append((name, fmt(va), fmt(vb), "-" if change is None else f"{change:+.1f} %", verdict))
+    def who(r):
+        fp = r.get("fingerprint", {})
+        return f"{fp.get('os') or r.get('os')}, kernel {fp.get('kernel')} ({r.get('taken')})"
+    head = (f"A: {who(a)}\nB: {who(b)}\n"
+            "'same' means the ranges overlap or the medians are within 2 %.\n")
+    return head + "\n" + table(rows)
+
+
+# ---------------------------------------------------------------- main
+
+def read_json(path):
+    # utf-8-sig: a report saved by Windows tools may start with a BOM
+    with open(path, encoding="utf-8-sig") as f:
+        return json.load(f)
+
+
+def emit(rep, opts):
+    data = json.dumps(rep, indent=2, ensure_ascii=False)
+    if opts.out:
+        with open(opts.out, "w") as f:
+            f.write(data + "\n")
+    if opts.text:
+        print(text_report(rep))
+    elif not opts.out:
+        print(data)
+
+
+def parse_args(argv):
+    p = argparse.ArgumentParser(prog="raye-bench", description="Raye benchmarks, honest and repeatable.")
+    p.add_argument("--suites", default=",".join(DEFAULT),
+                   help="comma list, or 'all' (default: %(default)s)")
+    p.add_argument("--runs", type=int, default=3, help="runs of each suite (default: 3)")
+    p.add_argument("--quick", action="store_true", help="short runs, to check the tools work")
+    p.add_argument("--text", action="store_true", help="print a table instead of JSON")
+    p.add_argument("--out", help="write the JSON report to this file")
+    p.add_argument("--apps", help="apps for the launch suites: " + ",".join(load_suite("launch").APPS))
+    p.add_argument("--kwin-log", help="read the launch timer from this file instead of the journal")
+    p.add_argument("--io-dir", help="folder for the I/O and copy test files (default ~/.cache/raye-bench)")
+    p.add_argument("--io-size", type=int, help="I/O test file size in MiB (default 1024)")
+    p.add_argument("--mangohud-log", action="append", default=[], help="a MangoHud CSV log, once per run")
+    p.add_argument("--merge", nargs="+", metavar="JSON", help="join reports of separate boots")
+    p.add_argument("--compare", nargs=2, metavar="JSON", help="compare two reports")
+    p.add_argument("--list", action="store_true", help="list the suites")
+    opts = p.parse_args(argv)
+    if opts.runs < 1:
+        p.error("--runs must be at least 1")
+    if opts.suites == "all":
+        names = [s for s in SUITES if s != "games" or opts.mangohud_log]
+    else:
+        names = [s.strip() for s in opts.suites.split(",") if s.strip()]
+        bad = [s for s in names if s not in SUITES]
+        if bad:
+            p.error("unknown suite: " + ", ".join(bad))
+    opts.names = names
+    if opts.apps:
+        apps = load_suite("launch").APPS
+        opts.apps = [a.strip() for a in opts.apps.split(",") if a.strip()]
+        bad = [a for a in opts.apps if a not in apps]
+        if bad:
+            p.error("unknown app: " + ", ".join(bad))
+    return opts
+
+
+def main(argv):
+    opts = parse_args(argv)
+    try:
+        return _main(opts)
+    except (OSError, ValueError) as e:
+        print(f"raye-bench: {e}", file=sys.stderr)
+        return 2
+
+
+def _main(opts):
+    if opts.list:
+        for name in SUITES:
+            doc = (load_suite(name).__doc__ or "").strip().splitlines()[0]
+            print(f"{name:11} {doc}")
+        return 0
+    if opts.compare:
+        print(compare_text(read_json(opts.compare[0]), read_json(opts.compare[1])))
+        return 0
+    if opts.merge:
+        emit(merge([read_json(p) for p in opts.merge]), opts)
+        return 0
+    raw, errors = run_suites(opts.names, opts)
+    emit(build_report(raw, errors, opts.runs, fingerprint()), opts)
+    return 0 if raw else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

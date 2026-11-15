@@ -1,0 +1,13 @@
+[Unit]
+Description=Switch to the Raye kernel step by step: key, one trial boot, keep it
+ConditionDirectoryNotEmpty=/var/lib/raye-kernel
+# No network-online.target: it would hold every boot back. The script
+# waits for the network itself, only when the kernel must be downloaded.
+After=NetworkManager.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/raye-kernel-setup finish
+
+[Install]
+WantedBy=multi-user.target

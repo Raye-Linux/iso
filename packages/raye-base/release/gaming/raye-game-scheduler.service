@@ -1,0 +1,13 @@
+[Unit]
+Description=Game scheduler while a game runs
+Documentation=https://github.com/sched-ext/scx
+ConditionPathExists=/sys/kernel/sched_ext
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/scx_lavd
+# The kernel drops back to its own scheduler when this stops or stalls.
+# Six hours covers a long session; a game that never reports its end
+# cannot leave this running for days.
+RuntimeMaxSec=6h
+Restart=no

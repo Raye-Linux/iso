@@ -1,0 +1,6 @@
+# Raye says these itself, in its own words (raye-notices). Sounds stay.
+[Event/lowbattery]
+Action=Sound
+
+[Event/criticalbattery]
+Action=Sound

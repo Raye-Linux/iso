@@ -1,0 +1,12 @@
+#!/bin/sh
+# snapper plugin: after a restore point of / comes or goes, sort the ones
+# made by hand and rewrite the boot menu's list. Snapper may not be run
+# from here, so a unit does it.
+case $1 in
+create-snapshot-post | delete-snapshot-post | modify-snapshot-post) ;;
+*) exit 0 ;;
+esac
+[ "${2:-}" = / ] || exit 0
+[ -d "${RAYE_SYSTEMD_RUN:-/run/systemd/system}" ] || exit 0
+systemctl --no-block start raye-snapshots-changed.service 2>/dev/null || true
+exit 0

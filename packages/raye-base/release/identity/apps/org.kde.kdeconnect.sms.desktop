@@ -1,0 +1,16 @@
+[Desktop Entry]
+Name=Phone Messages
+Name[fr]=Messages du téléphone
+GenericName=Text Messaging
+GenericName[fr]=Envoi de messages textuels
+Comment=Read and send text messages on your phone
+Comment[fr]=Lire et envoyer des messages texte depuis votre téléphone
+Exec=kdeconnect-sms
+Icon=kdeconnect
+Type=Application
+Terminal=false
+Categories=Qt;KDE;Network;InstantMessaging
+SingleMainWindow=true
+X-DBUS-StartupType=Unique
+X-DBUS-ServiceName=org.kde.kdeconnect.sms
+NoDisplay=true

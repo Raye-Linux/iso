@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Name=Disk Management
+Name[fr]=Gestion des disques
+GenericName=Partition Editor
+GenericName[fr]=Éditeur de partitions
+Comment=Manage disks, partitions and file systems
+Comment[fr]=Gérer les disques, les partitions et les systèmes de fichiers
+Exec=partitionmanager
+Icon=partitionmanager
+Categories=System;Filesystem;KDE;Qt;
+SingleMainWindow=true
+StartupNotify=true
+Keywords=partition;disk;
+Keywords[fr]=partition;disque;

@@ -1,0 +1,26 @@
+#!/bin/sh
+# Machines installed before 0.3 have ubuntu.sources pointing straight at
+# archive.ubuntu.com and security.ubuntu.com. Point those two lines at the
+# mirror lists instead. Lines naming any other server are the owner's
+# choice and stay as they are. Safe to run again.
+set -e
+
+src=${DPKG_ROOT:-}/etc/apt/sources.list.d/ubuntu.sources
+keep=${DPKG_ROOT:-}/var/lib/raye-system/ubuntu.sources.before-mirrors
+
+archive='^\(URIs:[[:space:]]*\)http://archive\.ubuntu\.com/ubuntu/\{0,1\}[[:space:]]*$'
+security='^\(URIs:[[:space:]]*\)http://security\.ubuntu\.com/ubuntu/\{0,1\}[[:space:]]*$'
+
+[ -f "$src" ] || exit 0
+grep -q -e "$archive" -e "$security" "$src" || exit 0
+
+mkdir -p "${keep%/*}"
+[ -e "$keep" ] || cp -p "$src" "$keep"
+
+# apt skips *.dpkg-tmp without a word, should this ever be left behind
+tmp=$src.dpkg-tmp
+cp -p "$src" "$tmp"
+sed -e "s#$archive#\1mirror+file:/etc/apt/mirrors/ubuntu.list#" \
+    -e "s#$security#\1mirror+file:/etc/apt/mirrors/ubuntu-security.list#" \
+    "$src" > "$tmp"
+mv -f "$tmp" "$src"

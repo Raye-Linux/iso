@@ -1,0 +1,1 @@
+rm_conffile /etc/firefox/policies/policies.json 0.1~dev7~ raye-desktop

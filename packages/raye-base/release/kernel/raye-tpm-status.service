@@ -1,0 +1,15 @@
+[Unit]
+Description=Note whether the security chip opens the encrypted disk
+# Settings reads this note as the user; nothing else writes it at a
+# start that has no kernel step to finish.
+After=cryptsetup.target local-fs.target
+
+[Service]
+# asking the chip takes seconds: never hold the start-up for it
+Type=exec
+Nice=10
+ExecStart=/usr/libexec/raye-kernel-setup tpm-status
+StandardOutput=null
+
+[Install]
+WantedBy=multi-user.target

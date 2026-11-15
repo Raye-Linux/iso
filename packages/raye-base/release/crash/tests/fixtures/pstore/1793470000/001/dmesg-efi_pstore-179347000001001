@@ -1,0 +1,4 @@
+Restart#1 Part1
+<6>[ 2210.441002] systemd-shutdown[1]: Syncing filesystems and block devices.
+<6>[ 2210.512113] systemd-shutdown[1]: Sending SIGTERM to remaining processes...
+<5>[ 2211.019876] reboot: Restarting system

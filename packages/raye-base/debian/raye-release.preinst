@@ -1,0 +1,15 @@
+#!/bin/sh
+set -e
+# These files belong to base-files. Move the originals aside so ours can
+# take their place, and so base-files updates keep landing next to them.
+# FIXED is always replaced; DIVERT is filled in at build time with what
+# the build really shipped (debian/raye-release-paths, "divert").
+FIXED="/usr/lib/os-release /etc/lsb-release /etc/issue /etc/issue.net /etc/update-motd.d/10-help-text"
+DIVERT="#RAYE_DIVERT#"
+if [ "$1" = install ] || [ "$1" = upgrade ]; then
+    for f in $FIXED $DIVERT; do
+        dpkg-divert --package raye-release --add --rename \
+            --divert "$f.ubuntu" "$f"
+    done
+fi
+#DEBHELPER#

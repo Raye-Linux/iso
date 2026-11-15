@@ -1,0 +1,84 @@
+Why this folder exists
+======================
+
+python-apt describes a system's software sources from a template named
+after the ID of /etc/os-release.  Ours says `ID=raye`, so aptsources
+opens /usr/share/python-apt/templates/raye.info.  When that file is not
+there, `aptsources.distro.get_distro().get_sources()` raises
+NoDistroTemplateException and everything built on it stops before doing
+any work: `add-apt-repository`, `remove-apt-repository`,
+software-properties-gtk and the repository dialog of Synaptic.
+
+raye-release ships both files, so an upgrade of python-apt cannot take
+them away.
+
+Four traps, each one worth a test in release/apt/tests:
+
+1. The file name is the os-release ID, lower case, exactly.  The matcher
+   globs `*.info` and uses the base name as the distribution of every
+   template it reads; `Distribution.id` is the ID lower-cased, and the
+   two have to be equal.
+
+   Measured in the image on 2026-11-05 (python3-apt 3.1.0ubuntu1.1): the
+   same file under the name `Raye.info` reproduces the owner's error word
+   for word -- "could not find a distribution template for
+   raye/resolute" -- because the matcher then registers it under `Raye`.
+   A capitalised name (`Ubuntu.info`) was the rule of the old python-apt;
+   resolute ships `ubuntu.info`, `debian.info`, `kali.info`, all lower
+   case.  `get_distro()` takes the ID straight from os-release and does
+   not capitalise anything.
+
+2. No brace in a Suite field.  A braced suite is a template that
+   python-apt expands from /usr/share/distro-info/<id>.csv, and
+   distro-info-data has no file for us.  Every suite is written out, so
+   the CSV is never opened.  A new codename is added by hand.
+
+3. A suite needs a MatchURI, or the matcher drops it and get_sources
+   never sees it.  A suite with a ParentSuite inherits the parent's.
+
+4. apt_pkg.TagFile does not know about comments.  A `#` line inside a
+   paragraph is read as a field, and its continuation lines swallow the
+   real field that follows it: a comment above `Suite:` makes the whole
+   suite disappear, with no error anywhere.  Comments live in the leading
+   paragraph only, and this README carries the rest.
+
+The suite of the current codename comes first in the file: get_sources
+keeps the first template whose name is the codename, and that one has to
+be the archive the system installs from, not Raye's own archive.
+
+
+Two things measured on 2026-11-05 that are not traps in this file, but
+that anyone editing it needs to know
+====================================================================
+
+`MirrorsFile` widens MatchURI.  DistInfo adds every server of the mirror
+list to the suite's match_uri.  The base suite therefore claims
+`archive.ubuntu.com` through `raye.mirrors` as well as through its own
+`MatchURI`, and changing only the MatchURI does not stop it matching.
+That is why the base suite wins the Ubuntu archive line even though
+`ubuntu.info` claims the same URI.
+
+Which .info is read first is not decided anywhere.  SourceEntryMatcher
+globs `*.info` and does not sort; `match()` keeps the FIRST template
+whose MatchURI and suite name fit.  The image's `archive.ubuntu.com` +
+`resolute` line fits both this file's base suite and `ubuntu.info`'s
+(resolute is in ubuntu.csv, and ubuntu.info is templated from it).
+Measured in the image, `raye.info` is read before `ubuntu.info` and
+wins; forced the other way round, the repository dialog shows
+"Ubuntu 26.04 'Resolute Raccoon'" and "Officially supported" for Raye's
+own distribution line.  Nothing breaks -- get_sources still picks this
+file's template, because it also matches on the distribution -- but
+Ubuntu's and Canonical's wording would appear in Raye's dialog.  Today's
+order is luck, not design; `tests/test_apt_template.sh` fails if it ever
+flips.
+
+Not about this file, and open: add-apt-repository computes the file it
+edits as `<sourceparts>/<ID>.sources`, which is
+`/etc/apt/sources.list.d/raye.sources` -- the name raye-archive-keyring
+already uses for Raye's own archive.  Measured: `add-apt-repository -c
+universe` adds `universe` to the Raye archive, and `-p proposed` creates
+`resolute-proposed` on it, instead of touching the base archive in
+`ubuntu.sources`; both would 404 on the next `apt update`, and both edit
+a file dpkg ships.  Adding or removing a PPA is unaffected (it writes its
+own file).  Fixing it is a packaging decision: ship Raye's archive under
+another name, or the base archive under this one.

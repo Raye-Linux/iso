@@ -1,0 +1,52 @@
+# The servers are read from /etc/apt/mirrors (raye-system): if the first
+# one does not answer, apt takes the file from the next.
+Types: deb
+URIs: mirror+file:/etc/apt/mirrors/ubuntu.list
+Suites: resolute resolute-updates resolute-backports
+Components: main restricted universe multiverse
+Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+
+Types: deb
+URIs: mirror+file:/etc/apt/mirrors/ubuntu-security.list
+Suites: resolute-security
+Components: main restricted universe multiverse
+Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+
+# The source packages, off until someone needs them.
+#
+# Building Raye's own packages of the desktop needs them: that build runs
+# "apt-get source" inside a Raye system, and the version its patch series
+# is written against lives in resolute-updates, not in resolute. Measured
+# on 2026-11-05 against the archive itself:
+#
+#     resolute/universe          plasma-workspace  4:6.6.4-0ubuntu2
+#     resolute-updates/universe  plasma-workspace  4:6.6.6-0ubuntu0.1
+#
+# So the suites below have to include resolute-updates, or the build
+# unpacks 6.6.4 and refuses to go on.
+#
+# They are "Enabled: no" because every Raye machine would otherwise fetch
+# them: 18 MiB of source indexes on every "apt update", 16 of them for
+# resolute/universe alone (measured). Ubuntu's own ubuntu.sources ships
+# deb-src off for the same reason. To build the desktop, turn it on in
+# that machine only:
+#
+#     sudo sed -i 's/^Enabled: no$/Enabled: yes/' \
+#         /etc/apt/sources.list.d/ubuntu.sources && sudo apt-get update
+#
+# Checked with apt 3.2.1 in the image: "Enabled: no" leaves apt with
+# nothing at all to fetch from this group, and "Enabled: yes" gives it
+# the Sources index of every suite and component named here.
+Types: deb-src
+URIs: mirror+file:/etc/apt/mirrors/ubuntu.list
+Suites: resolute resolute-updates resolute-backports
+Components: main restricted universe multiverse
+Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+Enabled: no
+
+Types: deb-src
+URIs: mirror+file:/etc/apt/mirrors/ubuntu-security.list
+Suites: resolute-security
+Components: main restricted universe multiverse
+Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+Enabled: no

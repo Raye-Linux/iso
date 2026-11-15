@@ -1,0 +1,21 @@
+# Which Wine Mono and Wine Gecko each Wine version looks for.
+#
+# Wine finds them in /usr/share/wine/mono and /usr/share/wine/gecko only
+# when the version number is exactly the one it was built for; any other
+# version is ignored and the program goes without .NET or HTML. This
+# table says what to ship when Wine moves, and the ready-space test of
+# raye-base fails when the installed Wine is not in it.
+#
+# First column: a Wine version as `wine --version` prints it, without
+# "wine-". A row applies to that version and to every version that
+# starts with it followed by a dot ("11.0" covers 11.0.1, 11.0.2...);
+# the longest matching row wins. Last column: "yes" when this package
+# ships those exact versions. The "yes" rows must agree with
+# addons.sha256 (fetch-addons.sh --check makes sure).
+#
+# Source: MONO_VERSION and GECKO_VERSION in dlls/appwiz.cpl/addons.c of
+# each Wine release.
+#
+# wine    mono     gecko    shipped
+11.0      10.4.1   2.47.4   yes
+10.0      9.4.0    2.47.4   no

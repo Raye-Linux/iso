@@ -1,0 +1,7 @@
+[Unit]
+Description=Keep the TPM opening the disk after a Secure Boot database update
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/raye-tpm prepare-firmware --if-changed
+SuccessExitStatus=3

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Windows Components
+Name[fr]=Composants Windows
+Comment=Install components for Windows programs
+Comment[fr]=Installer des composants pour les programmes Windows
+Exec=winetricks --gui
+Terminal=false
+Icon=winetricks
+Type=Application
+Categories=Utility;
+NoDisplay=true

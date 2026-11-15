@@ -1,0 +1,24 @@
+#!/bin/sh
+# In a virtual machine, the desktop draws the mouse pointer itself.
+#
+# A virtual GPU offers a hardware cursor plane, and the desktop uses it:
+# the pointer is then composed by the display, outside the picture the
+# machine produces. Neither the Proxmox console nor a SPICE viewer shows
+# that plane, so the pointer is simply invisible -- the desktop answers
+# the mouse perfectly, nothing is in the log, and there is nothing to
+# find in the settings.
+#
+# On real hardware this stays off on purpose: a pointer drawn by the
+# desktop follows the hand with one frame of delay and makes the screen
+# redraw at every move.
+#
+# systemd reads this from the user manager's environment, so the desktop
+# session inherits it. Installed as a user-environment generator.
+set -u
+
+# One guard, three cases: the command is missing, it answers nothing, or
+# it answers none. systemd-detect-virt exits 1 when it finds nothing.
+virt=$(systemd-detect-virt 2>/dev/null || true)
+[ -n "$virt" ] && [ "$virt" != none ] || exit 0
+
+echo KWIN_FORCE_SW_CURSOR=1

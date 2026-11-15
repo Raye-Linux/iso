@@ -1,0 +1,6 @@
+# Firefox as a regular package, straight from Mozilla.
+Types: deb
+URIs: https://packages.mozilla.org/apt
+Suites: mozilla
+Components: main
+Signed-By: /usr/share/keyrings/mozilla-archive-keyring.asc

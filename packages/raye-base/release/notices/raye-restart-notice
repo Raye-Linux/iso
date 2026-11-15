@@ -1,0 +1,99 @@
+#!/usr/bin/python3 -I
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""The one "Restart required" notice every part of Raye calls:
+
+    raye-restart-notice --reason drivers
+    raye-restart-notice --reason app --app "Name"
+
+Restart now / Later. It leaves [Start] RestartNeeded in rayeshellrc, which
+puts a dot on Start's power button, and this boot's id next to it:
+raye-notices clears the mark once the PC has restarted.
+"""
+import argparse
+import os
+import pathlib
+import subprocess
+import sys
+
+REASONS = {
+    "en": {
+        "updates": "Restart your PC to finish installing updates.",
+        "drivers": "Restart your PC to finish setting up your drivers.",
+        "kernel": "Restart your PC to start using the new system core.",
+        "firmware": "Restart your PC to finish updating its firmware.",
+        "language": "Restart your PC to finish changing the language.",
+        "app": "Restart your PC to finish setting up {app}.",
+    },
+    "fr": {
+        "updates": "Redémarrez votre PC pour terminer l'installation des mises à jour.",
+        "drivers": "Redémarrez votre PC pour terminer la configuration de vos pilotes.",
+        "kernel": "Redémarrez votre PC pour utiliser le nouveau cœur du système.",
+        "firmware": "Redémarrez votre PC pour terminer la mise à jour de son micrologiciel.",
+        "language": "Redémarrez votre PC pour terminer le changement de langue.",
+        "app": "Redémarrez votre PC pour terminer la configuration de {app}.",
+    },
+}
+WORDS = {
+    "en": {"app": "System", "title": "Restart required", "now": "Restart now", "later": "Later"},
+    "fr": {"app": "Système", "title": "Redémarrage requis", "now": "Redémarrer maintenant", "later": "Plus tard"},
+}
+RESTART = ["sh", "-c", "busctl --user call org.kde.Shutdown /Shutdown org.kde.Shutdown logoutAndReboot"
+                       " || systemctl reboot"]
+
+
+def language(env=os.environ):
+    for key in ("LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"):
+        value = env.get(key, "")
+        if value:
+            return "fr" if value.split(":")[0].lower().startswith("fr") else "en"
+    return "en"
+
+
+def boot_id():
+    try:
+        return pathlib.Path("/proc/sys/kernel/random/boot_id").read_text().strip()
+    except OSError:
+        return ""
+
+
+def mark(reason):
+    for group, key, value in (("Power", "RestartNeededBoot", boot_id()), ("Start", "RestartNeeded", reason)):
+        subprocess.run(["kwriteconfig6", "--file", "rayeshellrc", "--notify", "--group", group, "--key", key, value],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--reason", required=True)
+    parser.add_argument("--app", default="")
+    parser.add_argument("--no-wait", action="store_true", help="kept for older callers: the notice never waits")
+    args = parser.parse_args()
+    lang = language()
+    if args.reason not in REASONS[lang]:
+        print("raye-restart-notice: unknown reason: " + args.reason, file=sys.stderr)
+        return 2
+    if args.reason == "app" and not args.app:
+        print("raye-restart-notice: --reason app needs --app", file=sys.stderr)
+        return 2
+    mark(args.reason)
+    words = WORDS[lang]
+    cmd = ["notify-send", "--app-name=" + words["app"], "--icon=system-reboot", "--urgency=critical",
+           "--action=now=" + words["now"], "--action=later=" + words["later"],
+           words["title"], REASONS[lang][args.reason].format(app=args.app)]
+    # The caller is back at once: a child out of its session waits for the
+    # answer, with no hold on the caller's pipes, and restarts on "now".
+    # --no-wait is kept for older callers; it is what always happens.
+    if os.fork():
+        return 0
+    os.setsid()
+    devnull = os.open(os.devnull, os.O_RDWR)
+    for fd in (0, 1, 2):
+        os.dup2(devnull, fd)
+    res = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    if res.stdout.strip() == "now":
+        subprocess.run(RESTART, check=False)
+    os._exit(0)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

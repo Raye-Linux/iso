@@ -1,0 +1,4417 @@
+{
+ "format": 1,
+ "image": "raye-0.1-20261030-amd64.iso",
+ "note": "Virtual machine (QEMU/KVM, 4 vCPU, 4 GiB, virtio, cache=none), image 20261030, started by UEFI straight into the kernel. For comparing two images on the same VM only; never publish. See baseline.md.",
+ "time_base": "times are seconds since the kernel started; *_s fields of a duration (blame, nm_wait_online_s) are durations",
+ "scenarios": {
+  "base": {
+   "runs": [
+    {
+     "name": "base-1",
+     "kernel_s": 7.374,
+     "userspace_s": 7.56,
+     "graphical_userspace_s": 7.499,
+     "graphical_s": 14.873,
+     "sddm_started_s": 14.331807,
+     "greeter_started_s": 14.876062,
+     "greeter_connected_s": 19.490671,
+     "login_screen_s": 21.634573,
+     "network_online_s": 14.493698,
+     "nm_wait_online_start_s": 14.042386,
+     "nm_wait_online_done_s": 14.489888,
+     "multi_user_s": 14.495111,
+     "kernel_finish_skipped_s": 14.49481,
+     "drivers_skipped_s": 14.494622,
+     "nm_wait_online_s": 0.448,
+     "memory_used_mib": 681,
+     "disk_used_gib": 3.58,
+     "blame_top": [
+      [
+       1.72,
+       "NetworkManager.service"
+      ],
+      [
+       1.545,
+       "dev-vda2.device"
+      ],
+      [
+       1.362,
+       "accounts-daemon.service"
+      ],
+      [
+       1.232,
+       "udisks2.service"
+      ],
+      [
+       0.968,
+       "gpu-manager.service"
+      ],
+      [
+       0.869,
+       "snapper-boot.service"
+      ],
+      [
+       0.766,
+       "systemd-logind.service"
+      ],
+      [
+       0.622,
+       "systemd-udev-trigger.service"
+      ],
+      [
+       0.563,
+       "e2scrub_reap.service"
+      ],
+      [
+       0.541,
+       "snapperd.service"
+      ],
+      [
+       0.524,
+       "user@103.service"
+      ],
+      [
+       0.508,
+       "systemd-binfmt.service"
+      ],
+      [
+       0.465,
+       "systemd-hostnamed.service"
+      ],
+      [
+       0.447,
+       "NetworkManager-wait-online.service"
+      ],
+      [
+       0.443,
+       "polkit.service"
+      ],
+      [
+       0.412,
+       "wpa_supplicant.service"
+      ],
+      [
+       0.411,
+       "proc-sys-fs-binfmt_misc.mount"
+      ],
+      [
+       0.368,
+       "power-profiles-daemon.service"
+      ],
+      [
+       0.343,
+       "keyboard-setup.service"
+      ],
+      [
+       0.324,
+       "systemd-sysctl.service"
+      ],
+      [
+       0.322,
+       "raye-dualboot.service"
+      ],
+      [
+       0.309,
+       "systemd-udevd.service"
+      ],
+      [
+       0.303,
+       "cups.service"
+      ],
+      [
+       0.295,
+       "systemd-timesyncd.service"
+      ],
+      [
+       0.287,
+       "avahi-daemon.service"
+      ]
+     ],
+     "host_load": 66.62,
+     "cmdline_extra": ""
+    },
+    {
+     "name": "base-2",
+     "kernel_s": 6.528,
+     "userspace_s": 7.823,
+     "graphical_userspace_s": 7.179,
+     "graphical_s": 13.707,
+     "sddm_started_s": 13.102226,
+     "greeter_started_s": 13.500846,
+     "greeter_connected_s": 17.115068,
+     "login_screen_s": 19.529902,
+     "network_online_s": 13.326831,
+     "nm_wait_online_start_s": 12.860555,
+     "nm_wait_online_done_s": 13.32617,
+     "multi_user_s": 13.327895,
+     "kernel_finish_skipped_s": 13.327229,
+     "drivers_skipped_s": 13.327074,
+     "nm_wait_online_s": 0.466,
+     "memory_used_mib": 680,
+     "disk_used_gib": 3.58,
+     "blame_top": [
+      [
+       1.971,
+       "dev-vda2.device"
+      ],
+      [
+       1.186,
+       "accounts-daemon.service"
+      ],
+      [
+       1.082,
+       "udisks2.service"
+      ],
+      [
+       0.887,
+       "NetworkManager.service"
+      ],
+      [
+       0.831,
+       "gpu-manager.service"
+      ],
+      [
+       0.774,
+       "systemd-binfmt.service"
+      ],
+      [
+       0.743,
+       "snapper-boot.service"
+      ],
+      [
+       0.727,
+       "systemd-logind.service"
+      ],
+      [
+       0.716,
+       "proc-sys-fs-binfmt_misc.mount"
+      ],
+      [
+       0.709,
+       "systemd-udev-trigger.service"
+      ],
+      [
+       0.644,
+       "user@103.service"
+      ],
+      [
+       0.555,
+       "snapperd.service"
+      ],
+      [
+       0.546,
+       "e2scrub_reap.service"
+      ],
+      [
+       0.5,
+       "systemd-modules-load.service"
+      ],
+      [
+       0.465,
+       "NetworkManager-wait-online.service"
+      ],
+      [
+       0.424,
+       "switcheroo-control.service"
+      ],
+      [
+       0.377,
+       "keyboard-setup.service"
+      ],
+      [
+       0.373,
+       "power-profiles-daemon.service"
+      ],
+      [
+       0.37,
+       "raye-dualboot.service"
+      ],
+      [
+       0.366,
+       "polkit.service"
+      ],
+      [
+       0.359,
+       "systemd-resolved.service"
+      ],
+      [
+       0.328,
+       "systemd-sysctl.service"
+      ],
+      [
+       0.311,
+       "avahi-daemon.service"
+      ],
+      [
+       0.305,
+       "systemd-timesyncd.service"
+      ],
+      [
+       0.298,
+       "systemd-journald.service"
+      ]
+     ],
+     "host_load": 71.34,
+     "cmdline_extra": ""
+    },
+    {
+     "name": "base-3",
+     "kernel_s": 6.272,
+     "userspace_s": 7.822,
+     "graphical_userspace_s": 6.94,
+     "graphical_s": 13.212,
+     "sddm_started_s": 12.525663,
+     "greeter_started_s": 12.930246,
+     "greeter_connected_s": 17.23075,
+     "login_screen_s": 19.643175,
+     "network_online_s": 12.639726,
+     "nm_wait_online_start_s": 12.177633,
+     "nm_wait_online_done_s": 12.63822,
+     "multi_user_s": 12.641567,
+     "kernel_finish_skipped_s": 12.64114,
+     "drivers_skipped_s": 12.64064,
+     "nm_wait_online_s": 0.461,
+     "memory_used_mib": 673,
+     "disk_used_gib": 3.58,
+     "blame_top": [
+      [
+       2.027,
+       "dev-vda2.device"
+      ],
+      [
+       1.257,
+       "accounts-daemon.service"
+      ],
+      [
+       1.225,
+       "udisks2.service"
+      ],
+      [
+       0.974,
+       "NetworkManager.service"
+      ],
+      [
+       0.799,
+       "user@103.service"
+      ],
+      [
+       0.688,
+       "systemd-logind.service"
+      ],
+      [
+       0.67,
+       "gpu-manager.service"
+      ],
+      [
+       0.61,
+       "snapper-boot.service"
+      ],
+      [
+       0.564,
+       "power-profiles-daemon.service"
+      ],
+      [
+       0.504,
+       "systemd-udev-trigger.service"
+      ],
+      [
+       0.463,
+       "systemd-hostnamed.service"
+      ],
+      [
+       0.46,
+       "NetworkManager-wait-online.service"
+      ],
+      [
+       0.436,
+       "polkit.service"
+      ],
+      [
+       0.372,
+       "snapperd.service"
+      ],
+      [
+       0.356,
+       "systemd-modules-load.service"
+      ],
+      [
+       0.354,
+       "e2scrub_reap.service"
+      ],
+      [
+       0.352,
+       "keyboard-setup.service"
+      ],
+      [
+       0.345,
+       "boot-efi.mount"
+      ],
+      [
+       0.333,
+       "switcheroo-control.service"
+      ],
+      [
+       0.291,
+       "console-setup.service"
+      ],
+      [
+       0.28,
+       "systemd-udevd.service"
+      ],
+      [
+       0.274,
+       "systemd-sysctl.service"
+      ],
+      [
+       0.262,
+       "systemd-journald.service"
+      ],
+      [
+       0.262,
+       "netplan-configure.service"
+      ],
+      [
+       0.253,
+       "systemd-tmpfiles-setup-dev-early.service"
+      ]
+     ],
+     "host_load": 67.08,
+     "cmdline_extra": ""
+    },
+    {
+     "name": "base-4",
+     "kernel_s": 6.498,
+     "userspace_s": 7.215,
+     "graphical_userspace_s": 7.151,
+     "graphical_s": 13.649,
+     "sddm_started_s": 13.339508,
+     "greeter_started_s": 13.728421,
+     "greeter_connected_s": 17.418918,
+     "login_screen_s": 19.544292,
+     "network_online_s": 13.28926,
+     "nm_wait_online_start_s": 12.990943,
+     "nm_wait_online_done_s": 13.287475,
+     "multi_user_s": 13.298454,
+     "kernel_finish_skipped_s": 13.289771,
+     "drivers_skipped_s": 13.289541,
+     "nm_wait_online_s": 0.297,
+     "memory_used_mib": 683,
+     "disk_used_gib": 3.58,
+     "blame_top": [
+      [
+       2.202,
+       "dev-vda2.device"
+      ],
+      [
+       0.963,
+       "accounts-daemon.service"
+      ],
+      [
+       0.958,
+       "udisks2.service"
+      ],
+      [
+       0.942,
+       "NetworkManager.service"
+      ],
+      [
+       0.757,
+       "systemd-logind.service"
+      ],
+      [
+       0.655,
+       "snapper-boot.service"
+      ],
+      [
+       0.649,
+       "systemd-binfmt.service"
+      ],
+      [
+       0.642,
+       "gpu-manager.service"
+      ],
+      [
+       0.537,
+       "proc-sys-fs-binfmt_misc.mount"
+      ],
+      [
+       0.514,
+       "snapperd.service"
+      ],
+      [
+       0.507,
+       "systemd-modules-load.service"
+      ],
+      [
+       0.503,
+       "systemd-udev-trigger.service"
+      ],
+      [
+       0.495,
+       "polkit.service"
+      ],
+      [
+       0.46,
+       "user@103.service"
+      ],
+      [
+       0.448,
+       "e2scrub_reap.service"
+      ],
+      [
+       0.414,
+       "systemd-hostnamed.service"
+      ],
+      [
+       0.387,
+       "switcheroo-control.service"
+      ],
+      [
+       0.385,
+       "keyboard-setup.service"
+      ],
+      [
+       0.351,
+       "systemd-journal-flush.service"
+      ],
+      [
+       0.329,
+       "systemd-resolved.service"
+      ],
+      [
+       0.318,
+       "power-profiles-daemon.service"
+      ],
+      [
+       0.306,
+       "systemd-journald.service"
+      ],
+      [
+       0.298,
+       "systemd-fsck@dev-disk-by\\x2duuid-4B0B\\x2d75FB.service"
+      ],
+      [
+       0.296,
+       "NetworkManager-wait-online.service"
+      ],
+      [
+       0.283,
+       "cups.service"
+      ]
+     ],
+     "host_load": 61.46,
+     "cmdline_extra": ""
+    },
+    {
+     "name": "base-5",
+     "kernel_s": 6.305,
+     "userspace_s": 7.932,
+     "graphical_userspace_s": 7.89,
+     "graphical_s": 14.195,
+     "sddm_started_s": 13.641244,
+     "greeter_started_s": 14.232631,
+     "greeter_connected_s": 18.515449,
+     "login_screen_s": 20.426694,
+     "network_online_s": 13.938398,
+     "nm_wait_online_start_s": 13.268716,
+     "nm_wait_online_done_s": 13.936751,
+     "multi_user_s": 13.94107,
+     "kernel_finish_skipped_s": 13.938823,
+     "drivers_skipped_s": 13.93862,
+     "nm_wait_online_s": 0.668,
+     "memory_used_mib": 662,
+     "disk_used_gib": 3.58,
+     "blame_top": [
+      [
+       2.169,
+       "dev-vda2.device"
+      ],
+      [
+       1.973,
+       "accounts-daemon.service"
+      ],
+      [
+       1.826,
+       "udisks2.service"
+      ],
+      [
+       1.731,
+       "snapper-boot.service"
+      ],
+      [
+       1.045,
+       "NetworkManager.service"
+      ],
+      [
+       1.015,
+       "user@103.service"
+      ],
+      [
+       0.749,
+       "boot-efi.mount"
+      ],
+      [
+       0.668,
+       "NetworkManager-wait-online.service"
+      ],
+      [
+       0.664,
+       "snapperd.service"
+      ],
+      [
+       0.637,
+       "cups.service"
+      ],
+      [
+       0.63,
+       "gpu-manager.service"
+      ],
+      [
+       0.593,
+       "e2scrub_reap.service"
+      ],
+      [
+       0.545,
+       "polkit.service"
+      ],
+      [
+       0.443,
+       "systemd-udev-trigger.service"
+      ],
+      [
+       0.437,
+       "systemd-logind.service"
+      ],
+      [
+       0.432,
+       "avahi-daemon.service"
+      ],
+      [
+       0.397,
+       "systemd-journal-flush.service"
+      ],
+      [
+       0.391,
+       "systemd-fsck@dev-disk-by\\x2duuid-4B0B\\x2d75FB.service"
+      ],
+      [
+       0.384,
+       "wpa_supplicant.service"
+      ],
+      [
+       0.335,
+       "keyboard-setup.service"
+      ],
+      [
+       0.334,
+       "switcheroo-control.service"
+      ],
+      [
+       0.312,
+       "systemd-modules-load.service"
+      ],
+      [
+       0.307,
+       "raye-dualboot.service"
+      ],
+      [
+       0.275,
+       "dbus.service"
+      ],
+      [
+       0.262,
+       "systemd-udevd.service"
+      ]
+     ],
+     "host_load": 55.28,
+     "cmdline_extra": ""
+    }
+   ],
+   "summary": {
+    "kernel_s": {
+     "median": 6.498,
+     "min": 6.272,
+     "max": 7.374,
+     "values": [
+      7.374,
+      6.528,
+      6.272,
+      6.498,
+      6.305
+     ],
+     "spread_pct": 17.0
+    },
+    "userspace_s": {
+     "median": 7.822,
+     "min": 7.215,
+     "max": 7.932,
+     "values": [
+      7.56,
+      7.823,
+      7.822,
+      7.215,
+      7.932
+     ],
+     "spread_pct": 9.2
+    },
+    "graphical_userspace_s": {
+     "median": 7.179,
+     "min": 6.94,
+     "max": 7.89,
+     "values": [
+      7.499,
+      7.179,
+      6.94,
+      7.151,
+      7.89
+     ],
+     "spread_pct": 13.2
+    },
+    "graphical_s": {
+     "median": 13.707,
+     "min": 13.212,
+     "max": 14.873,
+     "values": [
+      14.873,
+      13.707,
+      13.212,
+      13.649,
+      14.195
+     ],
+     "spread_pct": 12.1
+    },
+    "sddm_started_s": {
+     "median": 13.34,
+     "min": 12.525663,
+     "max": 14.331807,
+     "values": [
+      14.331807,
+      13.102226,
+      12.525663,
+      13.339508,
+      13.641244
+     ],
+     "spread_pct": 13.5
+    },
+    "greeter_started_s": {
+     "median": 13.728,
+     "min": 12.930246,
+     "max": 14.876062,
+     "values": [
+      14.876062,
+      13.500846,
+      12.930246,
+      13.728421,
+      14.232631
+     ],
+     "spread_pct": 14.2
+    },
+    "greeter_connected_s": {
+     "median": 17.419,
+     "min": 17.115068,
+     "max": 19.490671,
+     "values": [
+      19.490671,
+      17.115068,
+      17.23075,
+      17.418918,
+      18.515449
+     ],
+     "spread_pct": 13.6
+    },
+    "login_screen_s": {
+     "median": 19.643,
+     "min": 19.529902,
+     "max": 21.634573,
+     "values": [
+      21.634573,
+      19.529902,
+      19.643175,
+      19.544292,
+      20.426694
+     ],
+     "spread_pct": 10.7
+    },
+    "network_online_s": {
+     "median": 13.327,
+     "min": 12.639726,
+     "max": 14.493698,
+     "values": [
+      14.493698,
+      13.326831,
+      12.639726,
+      13.28926,
+      13.938398
+     ],
+     "spread_pct": 13.9
+    },
+    "nm_wait_online_start_s": {
+     "median": 12.991,
+     "min": 12.177633,
+     "max": 14.042386,
+     "values": [
+      14.042386,
+      12.860555,
+      12.177633,
+      12.990943,
+      13.268716
+     ],
+     "spread_pct": 14.4
+    },
+    "nm_wait_online_done_s": {
+     "median": 13.326,
+     "min": 12.63822,
+     "max": 14.489888,
+     "values": [
+      14.489888,
+      13.32617,
+      12.63822,
+      13.287475,
+      13.936751
+     ],
+     "spread_pct": 13.9
+    },
+    "multi_user_s": {
+     "median": 13.328,
+     "min": 12.641567,
+     "max": 14.495111,
+     "values": [
+      14.495111,
+      13.327895,
+      12.641567,
+      13.298454,
+      13.94107
+     ],
+     "spread_pct": 13.9
+    },
+    "kernel_finish_skipped_s": {
+     "median": 13.327,
+     "min": 12.64114,
+     "max": 14.49481,
+     "values": [
+      14.49481,
+      13.327229,
+      12.64114,
+      13.289771,
+      13.938823
+     ],
+     "spread_pct": 13.9
+    },
+    "drivers_skipped_s": {
+     "median": 13.327,
+     "min": 12.64064,
+     "max": 14.494622,
+     "values": [
+      14.494622,
+      13.327074,
+      12.64064,
+      13.289541,
+      13.93862
+     ],
+     "spread_pct": 13.9
+    },
+    "nm_wait_online_s": {
+     "median": 0.461,
+     "min": 0.297,
+     "max": 0.668,
+     "values": [
+      0.448,
+      0.466,
+      0.461,
+      0.297,
+      0.668
+     ],
+     "spread_pct": 80.5
+    },
+    "memory_used_mib": {
+     "median": 680,
+     "min": 662,
+     "max": 683,
+     "values": [
+      681,
+      680,
+      673,
+      683,
+      662
+     ],
+     "spread_pct": 3.1
+    },
+    "disk_used_gib": {
+     "median": 3.58,
+     "min": 3.58,
+     "max": 3.58,
+     "values": [
+      3.58,
+      3.58,
+      3.58,
+      3.58,
+      3.58
+     ],
+     "spread_pct": 0.0
+    },
+    "host_load": {
+     "median": 66.62,
+     "min": 55.28,
+     "max": 71.34,
+     "values": [
+      66.62,
+      71.34,
+      67.08,
+      61.46,
+      55.28
+     ],
+     "spread_pct": 24.1
+    }
+   }
+  },
+  "nodhcp": {
+   "runs": [
+    {
+     "name": "nodhcp-1",
+     "kernel_s": 6.773,
+     "userspace_s": 67.588,
+     "graphical_userspace_s": 67.559,
+     "graphical_s": 74.332,
+     "sddm_started_s": 14.639502,
+     "greeter_started_s": 14.978413,
+     "greeter_connected_s": 20.499346,
+     "login_screen_s": 23.522665,
+     "network_online_s": 74.196554,
+     "nm_wait_online_start_s": 14.084628,
+     "nm_wait_online_done_s": null,
+     "multi_user_s": 74.196971,
+     "kernel_finish_skipped_s": 74.196823,
+     "drivers_skipped_s": 74.196701,
+     "memory_used_mib": 663,
+     "disk_used_gib": 3.6,
+     "blame_top": [
+      [
+       60.11,
+       "NetworkManager-wait-online.service"
+      ],
+      [
+       1.833,
+       "dev-vda2.device"
+      ],
+      [
+       1.384,
+       "accounts-daemon.service"
+      ],
+      [
+       1.298,
+       "udisks2.service"
+      ],
+      [
+       1.003,
+       "NetworkManager.service"
+      ],
+      [
+       0.935,
+       "systemd-binfmt.service"
+      ],
+      [
+       0.889,
+       "gpu-manager.service"
+      ],
+      [
+       0.8,
+       "snapper-boot.service"
+      ],
+      [
+       0.767,
+       "systemd-logind.service"
+      ],
+      [
+       0.747,
+       "proc-sys-fs-binfmt_misc.mount"
+      ],
+      [
+       0.656,
+       "systemd-udev-trigger.service"
+      ],
+      [
+       0.608,
+       "snapperd.service"
+      ],
+      [
+       0.524,
+       "e2scrub_reap.service"
+      ],
+      [
+       0.441,
+       "user@103.service"
+      ],
+      [
+       0.392,
+       "keyboard-setup.service"
+      ],
+      [
+       0.388,
+       "systemd-hostnamed.service"
+      ],
+      [
+       0.377,
+       "switcheroo-control.service"
+      ],
+      [
+       0.361,
+       "systemd-udevd.service"
+      ],
+      [
+       0.354,
+       "polkit.service"
+      ],
+      [
+       0.34,
+       "systemd-journal-flush.service"
+      ],
+      [
+       0.333,
+       "systemd-modules-load.service"
+      ],
+      [
+       0.328,
+       "cups.service"
+      ],
+      [
+       0.319,
+       "systemd-timesyncd.service"
+      ],
+      [
+       0.316,
+       "avahi-daemon.service"
+      ],
+      [
+       0.31,
+       "raye-dualboot.service"
+      ]
+     ],
+     "host_load": 64.89,
+     "cmdline_extra": ""
+    },
+    {
+     "name": "nodhcp-2",
+     "kernel_s": 6.85,
+     "userspace_s": 69.033,
+     "graphical_userspace_s": 68.976,
+     "graphical_s": 75.826,
+     "sddm_started_s": 15.988466,
+     "greeter_started_s": 16.400191,
+     "greeter_connected_s": 21.298291,
+     "login_screen_s": 23.664996,
+     "network_online_s": 75.600774,
+     "nm_wait_online_start_s": 15.51745,
+     "nm_wait_online_done_s": null,
+     "multi_user_s": 75.601331,
+     "kernel_finish_skipped_s": 75.60116,
+     "drivers_skipped_s": 75.600907,
+     "memory_used_mib": 688,
+     "disk_used_gib": 3.6,
+     "blame_top": [
+      [
+       60.082,
+       "NetworkManager-wait-online.service"
+      ],
+      [
+       2.993,
+       "dev-vda2.device"
+      ],
+      [
+       1.729,
+       "accounts-daemon.service"
+      ],
+      [
+       1.7,
+       "udisks2.service"
+      ],
+      [
+       1.426,
+       "NetworkManager.service"
+      ],
+      [
+       1.248,
+       "gpu-manager.service"
+      ],
+      [
+       1.088,
+       "systemd-logind.service"
+      ],
+      [
+       1.054,
+       "snapper-boot.service"
+      ],
+      [
+       0.857,
+       "snapperd.service"
+      ],
+      [
+       0.855,
+       "e2scrub_reap.service"
+      ],
+      [
+       0.769,
+       "systemd-binfmt.service"
+      ],
+      [
+       0.718,
+       "proc-sys-fs-binfmt_misc.mount"
+      ],
+      [
+       0.697,
+       "switcheroo-control.service"
+      ],
+      [
+       0.676,
+       "user@103.service"
+      ],
+      [
+       0.662,
+       "systemd-sysctl.service"
+      ],
+      [
+       0.637,
+       "systemd-udevd.service"
+      ],
+      [
+       0.617,
+       "systemd-timesyncd.service"
+      ],
+      [
+       0.614,
+       "polkit.service"
+      ],
+      [
+       0.594,
+       "systemd-udev-trigger.service"
+      ],
+      [
+       0.477,
+       "systemd-modules-load.service"
+      ],
+      [
+       0.464,
+       "avahi-daemon.service"
+      ],
+      [
+       0.444,
+       "systemd-journal-flush.service"
+      ],
+      [
+       0.417,
+       "systemd-resolved.service"
+      ],
+      [
+       0.399,
+       "systemd-fsck@dev-disk-by\\x2duuid-4B0B\\x2d75FB.service"
+      ],
+      [
+       0.387,
+       "systemd-journald.service"
+      ]
+     ],
+     "host_load": 60.59,
+     "cmdline_extra": ""
+    }
+   ],
+   "summary": {
+    "kernel_s": {
+     "median": 6.811,
+     "min": 6.773,
+     "max": 6.85,
+     "values": [
+      6.773,
+      6.85
+     ],
+     "spread_pct": 1.1
+    },
+    "userspace_s": {
+     "median": 68.31,
+     "min": 67.588,
+     "max": 69.033,
+     "values": [
+      67.588,
+      69.033
+     ],
+     "spread_pct": 2.1
+    },
+    "graphical_userspace_s": {
+     "median": 68.267,
+     "min": 67.559,
+     "max": 68.976,
+     "values": [
+      67.559,
+      68.976
+     ],
+     "spread_pct": 2.1
+    },
+    "graphical_s": {
+     "median": 75.079,
+     "min": 74.332,
+     "max": 75.826,
+     "values": [
+      74.332,
+      75.826
+     ],
+     "spread_pct": 2.0
+    },
+    "sddm_started_s": {
+     "median": 15.314,
+     "min": 14.639502,
+     "max": 15.988466,
+     "values": [
+      14.639502,
+      15.988466
+     ],
+     "spread_pct": 8.8
+    },
+    "greeter_started_s": {
+     "median": 15.689,
+     "min": 14.978413,
+     "max": 16.400191,
+     "values": [
+      14.978413,
+      16.400191
+     ],
+     "spread_pct": 9.1
+    },
+    "greeter_connected_s": {
+     "median": 20.899,
+     "min": 20.499346,
+     "max": 21.298291,
+     "values": [
+      20.499346,
+      21.298291
+     ],
+     "spread_pct": 3.8
+    },
+    "login_screen_s": {
+     "median": 23.594,
+     "min": 23.522665,
+     "max": 23.664996,
+     "values": [
+      23.522665,
+      23.664996
+     ],
+     "spread_pct": 0.6
+    },
+    "network_online_s": {
+     "median": 74.899,
+     "min": 74.196554,
+     "max": 75.600774,
+     "values": [
+      74.196554,
+      75.600774
+     ],
+     "spread_pct": 1.9
+    },
+    "nm_wait_online_start_s": {
+     "median": 14.801,
+     "min": 14.084628,
+     "max": 15.51745,
+     "values": [
+      14.084628,
+      15.51745
+     ],
+     "spread_pct": 9.7
+    },
+    "nm_wait_online_done_s": null,
+    "multi_user_s": {
+     "median": 74.899,
+     "min": 74.196971,
+     "max": 75.601331,
+     "values": [
+      74.196971,
+      75.601331
+     ],
+     "spread_pct": 1.9
+    },
+    "kernel_finish_skipped_s": {
+     "median": 74.899,
+     "min": 74.196823,
+     "max": 75.60116,
+     "values": [
+      74.196823,
+      75.60116
+     ],
+     "spread_pct": 1.9
+    },
+    "drivers_skipped_s": {
+     "median": 74.899,
+     "min": 74.196701,
+     "max": 75.600907,
+     "values": [
+      74.196701,
+      75.600907
+     ],
+     "spread_pct": 1.9
+    },
+    "memory_used_mib": {
+     "median": 675.5,
+     "min": 663,
+     "max": 688,
+     "values": [
+      663,
+      688
+     ],
+     "spread_pct": 3.7
+    },
+    "disk_used_gib": {
+     "median": 3.6,
+     "min": 3.6,
+     "max": 3.6,
+     "values": [
+      3.6,
+      3.6
+     ],
+     "spread_pct": 0.0
+    },
+    "host_load": {
+     "median": 62.74,
+     "min": 60.59,
+     "max": 64.89,
+     "values": [
+      64.89,
+      60.59
+     ],
+     "spread_pct": 6.9
+    }
+   }
+  },
+  "wnet": {
+   "runs": [
+    {
+     "name": "wnet-1",
+     "kernel_s": 7.043,
+     "userspace_s": 9.389,
+     "graphical_userspace_s": 9.342,
+     "graphical_s": 16.385,
+     "sddm_started_s": 14.793195,
+     "greeter_started_s": 16.959867,
+     "greeter_connected_s": 21.937505,
+     "login_screen_s": 24.801978,
+     "network_online_s": null,
+     "nm_wait_online_start_s": null,
+     "nm_wait_online_done_s": null,
+     "multi_user_s": 16.212994,
+     "kernel_finish_skipped_s": null,
+     "drivers_skipped_s": null,
+     "memory_used_mib": 693,
+     "disk_used_gib": 3.58,
+     "blame_top": [
+      [
+       2.057,
+       "dev-vda2.device"
+      ],
+      [
+       1.876,
+       "cups.service"
+      ],
+      [
+       1.254,
+       "udisks2.service"
+      ],
+      [
+       1.229,
+       "accounts-daemon.service"
+      ],
+      [
+       1.102,
+       "NetworkManager.service"
+      ],
+      [
+       0.884,
+       "snapper-boot.service"
+      ],
+      [
+       0.802,
+       "gpu-manager.service"
+      ],
+      [
+       0.701,
+       "systemd-binfmt.service"
+      ],
+      [
+       0.66,
+       "systemd-logind.service"
+      ],
+      [
+       0.592,
+       "proc-sys-fs-binfmt_misc.mount"
+      ],
+      [
+       0.586,
+       "systemd-udev-trigger.service"
+      ],
+      [
+       0.55,
+       "user@103.service"
+      ],
+      [
+       0.475,
+       "boot-efi.mount"
+      ],
+      [
+       0.474,
+       "e2scrub_reap.service"
+      ],
+      [
+       0.466,
+       "keyboard-setup.service"
+      ],
+      [
+       0.459,
+       "systemd-journal-flush.service"
+      ],
+      [
+       0.431,
+       "snapperd.service"
+      ],
+      [
+       0.383,
+       "systemd-modules-load.service"
+      ],
+      [
+       0.381,
+       "systemd-hostnamed.service"
+      ],
+      [
+       0.38,
+       "switcheroo-control.service"
+      ],
+      [
+       0.38,
+       "polkit.service"
+      ],
+      [
+       0.321,
+       "sddm.service"
+      ],
+      [
+       0.319,
+       "systemd-udevd.service"
+      ],
+      [
+       0.31,
+       "systemd-journald.service"
+      ],
+      [
+       0.3,
+       "netplan-configure.service"
+      ]
+     ],
+     "host_load": 63.51,
+     "cmdline_extra": "systemd.mask=raye-kernel-finish.service systemd.mask=raye-drivers.service"
+    },
+    {
+     "name": "wnet-2",
+     "kernel_s": 6.397,
+     "userspace_s": 7.121,
+     "graphical_userspace_s": 7.093,
+     "graphical_s": 13.49,
+     "sddm_started_s": 13.264632,
+     "greeter_started_s": 14.215481,
+     "greeter_connected_s": 18.68373,
+     "login_screen_s": 21.062998,
+     "network_online_s": null,
+     "nm_wait_online_start_s": null,
+     "nm_wait_online_done_s": null,
+     "multi_user_s": 13.138927,
+     "kernel_finish_skipped_s": null,
+     "drivers_skipped_s": null,
+     "memory_used_mib": 677,
+     "disk_used_gib": 3.58,
+     "blame_top": [
+      [
+       1.485,
+       "dev-vda2.device"
+      ],
+      [
+       1.209,
+       "accounts-daemon.service"
+      ],
+      [
+       1.138,
+       "udisks2.service"
+      ],
+      [
+       1.091,
+       "NetworkManager.service"
+      ],
+      [
+       0.746,
+       "snapper-boot.service"
+      ],
+      [
+       0.743,
+       "gpu-manager.service"
+      ],
+      [
+       0.733,
+       "boot-efi.mount"
+      ],
+      [
+       0.65,
+       "user@103.service"
+      ],
+      [
+       0.613,
+       "systemd-udev-trigger.service"
+      ],
+      [
+       0.579,
+       "systemd-logind.service"
+      ],
+      [
+       0.445,
+       "e2scrub_reap.service"
+      ],
+      [
+       0.432,
+       "systemd-hostnamed.service"
+      ],
+      [
+       0.424,
+       "snapperd.service"
+      ],
+      [
+       0.419,
+       "polkit.service"
+      ],
+      [
+       0.349,
+       "cups.service"
+      ],
+      [
+       0.344,
+       "power-profiles-daemon.service"
+      ],
+      [
+       0.329,
+       "systemd-udevd.service"
+      ],
+      [
+       0.301,
+       "keyboard-setup.service"
+      ],
+      [
+       0.282,
+       "systemd-binfmt.service"
+      ],
+      [
+       0.27,
+       "systemd-modules-load.service"
+      ],
+      [
+       0.251,
+       "netplan-configure.service"
+      ],
+      [
+       0.246,
+       "wpa_supplicant.service"
+      ],
+      [
+       0.243,
+       "systemd-sysctl.service"
+      ],
+      [
+       0.239,
+       "avahi-daemon.service"
+      ],
+      [
+       0.229,
+       "raye-dualboot.service"
+      ]
+     ],
+     "host_load": 55.24,
+     "cmdline_extra": "systemd.mask=raye-kernel-finish.service systemd.mask=raye-drivers.service"
+    },
+    {
+     "name": "wnet-3",
+     "kernel_s": 6.569,
+     "userspace_s": 7.836,
+     "graphical_userspace_s": 7.216,
+     "graphical_s": 13.785,
+     "sddm_started_s": 12.948189,
+     "greeter_started_s": 13.468241,
+     "greeter_connected_s": 17.86929,
+     "login_screen_s": 19.90589,
+     "network_online_s": null,
+     "nm_wait_online_start_s": null,
+     "nm_wait_online_done_s": null,
+     "multi_user_s": 13.145373,
+     "kernel_finish_skipped_s": null,
+     "drivers_skipped_s": null,
+     "memory_used_mib": 674,
+     "disk_used_gib": 3.58,
+     "blame_top": [
+      [
+       1.878,
+       "dev-vda2.device"
+      ],
+      [
+       1.504,
+       "accounts-daemon.service"
+      ],
+      [
+       1.34,
+       "udisks2.service"
+      ],
+      [
+       1.085,
+       "NetworkManager.service"
+      ],
+      [
+       0.929,
+       "snapper-boot.service"
+      ],
+      [
+       0.735,
+       "gpu-manager.service"
+      ],
+      [
+       0.662,
+       "user@103.service"
+      ],
+      [
+       0.652,
+       "systemd-logind.service"
+      ],
+      [
+       0.592,
+       "polkit.service"
+      ],
+      [
+       0.586,
+       "power-profiles-daemon.service"
+      ],
+      [
+       0.573,
+       "systemd-udev-trigger.service"
+      ],
+      [
+       0.524,
+       "e2scrub_reap.service"
+      ],
+      [
+       0.482,
+       "snapperd.service"
+      ],
+      [
+       0.424,
+       "systemd-modules-load.service"
+      ],
+      [
+       0.379,
+       "keyboard-setup.service"
+      ],
+      [
+       0.369,
+       "systemd-udevd.service"
+      ],
+      [
+       0.362,
+       "systemd-binfmt.service"
+      ],
+      [
+       0.36,
+       "systemd-journald.service"
+      ],
+      [
+       0.352,
+       "cups.service"
+      ],
+      [
+       0.348,
+       "switcheroo-control.service"
+      ],
+      [
+       0.328,
+       "avahi-daemon.service"
+      ],
+      [
+       0.321,
+       "netplan-configure.service"
+      ],
+      [
+       0.32,
+       "systemd-hostnamed.service"
+      ],
+      [
+       0.281,
+       "systemd-random-seed.service"
+      ],
+      [
+       0.264,
+       "systemd-journal-flush.service"
+      ]
+     ],
+     "host_load": 57.62,
+     "cmdline_extra": "systemd.mask=raye-kernel-finish.service systemd.mask=raye-drivers.service"
+    }
+   ],
+   "summary": {
+    "kernel_s": {
+     "median": 6.569,
+     "min": 6.397,
+     "max": 7.043,
+     "values": [
+      7.043,
+      6.397,
+      6.569
+     ],
+     "spread_pct": 9.8
+    },
+    "userspace_s": {
+     "median": 7.836,
+     "min": 7.121,
+     "max": 9.389,
+     "values": [
+      9.389,
+      7.121,
+      7.836
+     ],
+     "spread_pct": 28.9
+    },
+    "graphical_userspace_s": {
+     "median": 7.216,
+     "min": 7.093,
+     "max": 9.342,
+     "values": [
+      9.342,
+      7.093,
+      7.216
+     ],
+     "spread_pct": 31.2
+    },
+    "graphical_s": {
+     "median": 13.785,
+     "min": 13.49,
+     "max": 16.385,
+     "values": [
+      16.385,
+      13.49,
+      13.785
+     ],
+     "spread_pct": 21.0
+    },
+    "sddm_started_s": {
+     "median": 13.265,
+     "min": 12.948189,
+     "max": 14.793195,
+     "values": [
+      14.793195,
+      13.264632,
+      12.948189
+     ],
+     "spread_pct": 13.9
+    },
+    "greeter_started_s": {
+     "median": 14.215,
+     "min": 13.468241,
+     "max": 16.959867,
+     "values": [
+      16.959867,
+      14.215481,
+      13.468241
+     ],
+     "spread_pct": 24.6
+    },
+    "greeter_connected_s": {
+     "median": 18.684,
+     "min": 17.86929,
+     "max": 21.937505,
+     "values": [
+      21.937505,
+      18.68373,
+      17.86929
+     ],
+     "spread_pct": 21.8
+    },
+    "login_screen_s": {
+     "median": 21.063,
+     "min": 19.90589,
+     "max": 24.801978,
+     "values": [
+      24.801978,
+      21.062998,
+      19.90589
+     ],
+     "spread_pct": 23.2
+    },
+    "network_online_s": null,
+    "nm_wait_online_start_s": null,
+    "nm_wait_online_done_s": null,
+    "multi_user_s": {
+     "median": 13.145,
+     "min": 13.138927,
+     "max": 16.212994,
+     "values": [
+      16.212994,
+      13.138927,
+      13.145373
+     ],
+     "spread_pct": 23.4
+    },
+    "kernel_finish_skipped_s": null,
+    "drivers_skipped_s": null,
+    "memory_used_mib": {
+     "median": 677,
+     "min": 674,
+     "max": 693,
+     "values": [
+      693,
+      677,
+      674
+     ],
+     "spread_pct": 2.8
+    },
+    "disk_used_gib": {
+     "median": 3.58,
+     "min": 3.58,
+     "max": 3.58,
+     "values": [
+      3.58,
+      3.58,
+      3.58
+     ],
+     "spread_pct": 0.0
+    },
+    "host_load": {
+     "median": 57.62,
+     "min": 55.24,
+     "max": 63.51,
+     "values": [
+      63.51,
+      55.24,
+      57.62
+     ],
+     "spread_pct": 14.4
+    }
+   }
+  },
+  "wnodhcp": {
+   "runs": [
+    {
+     "name": "wnodhcp-1",
+     "kernel_s": 6.443,
+     "userspace_s": 7.791,
+     "graphical_userspace_s": 7.762,
+     "graphical_s": 14.205,
+     "sddm_started_s": 13.781819,
+     "greeter_started_s": 14.193311,
+     "greeter_connected_s": 17.889367,
+     "login_screen_s": 19.885441,
+     "network_online_s": null,
+     "nm_wait_online_start_s": null,
+     "nm_wait_online_done_s": null,
+     "multi_user_s": 13.915861,
+     "kernel_finish_skipped_s": null,
+     "drivers_skipped_s": null,
+     "memory_used_mib": 684,
+     "disk_used_gib": 3.58,
+     "blame_top": [
+      [
+       1.523,
+       "dev-vda2.device"
+      ],
+      [
+       1.419,
+       "accounts-daemon.service"
+      ],
+      [
+       1.328,
+       "udisks2.service"
+      ],
+      [
+       1.128,
+       "NetworkManager.service"
+      ],
+      [
+       0.973,
+       "gpu-manager.service"
+      ],
+      [
+       0.819,
+       "snapper-boot.service"
+      ],
+      [
+       0.736,
+       "systemd-logind.service"
+      ],
+      [
+       0.542,
+       "snapperd.service"
+      ],
+      [
+       0.526,
+       "polkit.service"
+      ],
+      [
+       0.497,
+       "e2scrub_reap.service"
+      ],
+      [
+       0.493,
+       "user@103.service"
+      ],
+      [
+       0.483,
+       "systemd-udev-trigger.service"
+      ],
+      [
+       0.47,
+       "keyboard-setup.service"
+      ],
+      [
+       0.47,
+       "systemd-hostnamed.service"
+      ],
+      [
+       0.464,
+       "boot-efi.mount"
+      ],
+      [
+       0.431,
+       "systemd-modules-load.service"
+      ],
+      [
+       0.424,
+       "cups.service"
+      ],
+      [
+       0.41,
+       "switcheroo-control.service"
+      ],
+      [
+       0.366,
+       "systemd-journald.service"
+      ],
+      [
+       0.327,
+       "dev-hugepages.mount"
+      ],
+      [
+       0.325,
+       "dev-mqueue.mount"
+      ],
+      [
+       0.309,
+       "avahi-daemon.service"
+      ],
+      [
+       0.307,
+       "sys-kernel-debug.mount"
+      ],
+      [
+       0.298,
+       "sys-kernel-tracing.mount"
+      ],
+      [
+       0.276,
+       "power-profiles-daemon.service"
+      ]
+     ],
+     "host_load": 57.08,
+     "cmdline_extra": "systemd.mask=raye-kernel-finish.service systemd.mask=raye-drivers.service"
+    },
+    {
+     "name": "wnodhcp-2",
+     "kernel_s": 6.353,
+     "userspace_s": 7.178,
+     "graphical_userspace_s": 7.144,
+     "graphical_s": 13.497,
+     "sddm_started_s": 13.28035,
+     "greeter_started_s": 13.603553,
+     "greeter_connected_s": 17.420615,
+     "login_screen_s": 19.248673,
+     "network_online_s": null,
+     "nm_wait_online_start_s": null,
+     "nm_wait_online_done_s": null,
+     "multi_user_s": 13.226995,
+     "kernel_finish_skipped_s": null,
+     "drivers_skipped_s": null,
+     "memory_used_mib": 674,
+     "disk_used_gib": 3.58,
+     "blame_top": [
+      [
+       1.844,
+       "dev-vda2.device"
+      ],
+      [
+       1.113,
+       "accounts-daemon.service"
+      ],
+      [
+       1.097,
+       "NetworkManager.service"
+      ],
+      [
+       1.06,
+       "udisks2.service"
+      ],
+      [
+       0.799,
+       "gpu-manager.service"
+      ],
+      [
+       0.699,
+       "snapper-boot.service"
+      ],
+      [
+       0.647,
+       "systemd-udev-trigger.service"
+      ],
+      [
+       0.625,
+       "systemd-binfmt.service"
+      ],
+      [
+       0.544,
+       "user@103.service"
+      ],
+      [
+       0.5,
+       "proc-sys-fs-binfmt_misc.mount"
+      ],
+      [
+       0.498,
+       "polkit.service"
+      ],
+      [
+       0.483,
+       "snapperd.service"
+      ],
+      [
+       0.478,
+       "systemd-logind.service"
+      ],
+      [
+       0.442,
+       "e2scrub_reap.service"
+      ],
+      [
+       0.405,
+       "systemd-modules-load.service"
+      ],
+      [
+       0.398,
+       "switcheroo-control.service"
+      ],
+      [
+       0.385,
+       "keyboard-setup.service"
+      ],
+      [
+       0.375,
+       "systemd-hostnamed.service"
+      ],
+      [
+       0.364,
+       "systemd-journald.service"
+      ],
+      [
+       0.355,
+       "systemd-udevd.service"
+      ],
+      [
+       0.344,
+       "boot-efi.mount"
+      ],
+      [
+       0.326,
+       "systemd-timesyncd.service"
+      ],
+      [
+       0.324,
+       "systemd-sysctl.service"
+      ],
+      [
+       0.278,
+       "console-setup.service"
+      ],
+      [
+       0.275,
+       "raye-dualboot.service"
+      ]
+     ],
+     "host_load": 47.86,
+     "cmdline_extra": "systemd.mask=raye-kernel-finish.service systemd.mask=raye-drivers.service"
+    }
+   ],
+   "summary": {
+    "kernel_s": {
+     "median": 6.398,
+     "min": 6.353,
+     "max": 6.443,
+     "values": [
+      6.443,
+      6.353
+     ],
+     "spread_pct": 1.4
+    },
+    "userspace_s": {
+     "median": 7.485,
+     "min": 7.178,
+     "max": 7.791,
+     "values": [
+      7.791,
+      7.178
+     ],
+     "spread_pct": 8.2
+    },
+    "graphical_userspace_s": {
+     "median": 7.453,
+     "min": 7.144,
+     "max": 7.762,
+     "values": [
+      7.762,
+      7.144
+     ],
+     "spread_pct": 8.3
+    },
+    "graphical_s": {
+     "median": 13.851,
+     "min": 13.497,
+     "max": 14.205,
+     "values": [
+      14.205,
+      13.497
+     ],
+     "spread_pct": 5.1
+    },
+    "sddm_started_s": {
+     "median": 13.531,
+     "min": 13.28035,
+     "max": 13.781819,
+     "values": [
+      13.781819,
+      13.28035
+     ],
+     "spread_pct": 3.7
+    },
+    "greeter_started_s": {
+     "median": 13.898,
+     "min": 13.603553,
+     "max": 14.193311,
+     "values": [
+      14.193311,
+      13.603553
+     ],
+     "spread_pct": 4.2
+    },
+    "greeter_connected_s": {
+     "median": 17.655,
+     "min": 17.420615,
+     "max": 17.889367,
+     "values": [
+      17.889367,
+      17.420615
+     ],
+     "spread_pct": 2.7
+    },
+    "login_screen_s": {
+     "median": 19.567,
+     "min": 19.248673,
+     "max": 19.885441,
+     "values": [
+      19.885441,
+      19.248673
+     ],
+     "spread_pct": 3.3
+    },
+    "network_online_s": null,
+    "nm_wait_online_start_s": null,
+    "nm_wait_online_done_s": null,
+    "multi_user_s": {
+     "median": 13.571,
+     "min": 13.226995,
+     "max": 13.915861,
+     "values": [
+      13.915861,
+      13.226995
+     ],
+     "spread_pct": 5.1
+    },
+    "kernel_finish_skipped_s": null,
+    "drivers_skipped_s": null,
+    "memory_used_mib": {
+     "median": 679.0,
+     "min": 674,
+     "max": 684,
+     "values": [
+      684,
+      674
+     ],
+     "spread_pct": 1.5
+    },
+    "disk_used_gib": {
+     "median": 3.58,
+     "min": 3.58,
+     "max": 3.58,
+     "values": [
+      3.58,
+      3.58
+     ],
+     "spread_pct": 0.0
+    },
+    "host_load": {
+     "median": 52.47,
+     "min": 47.86,
+     "max": 57.08,
+     "values": [
+      57.08,
+      47.86
+     ],
+     "spread_pct": 17.6
+    }
+   }
+  },
+  "wtrim": {
+   "runs": [
+    {
+     "name": "wtrim-1",
+     "kernel_s": 5.963,
+     "userspace_s": 5.484,
+     "graphical_userspace_s": 5.45,
+     "graphical_s": 11.413,
+     "sddm_started_s": 11.269476,
+     "greeter_started_s": 11.583172,
+     "greeter_connected_s": 15.442434,
+     "login_screen_s": 17.643106,
+     "network_online_s": null,
+     "nm_wait_online_start_s": null,
+     "nm_wait_online_done_s": null,
+     "multi_user_s": 11.218848,
+     "kernel_finish_skipped_s": null,
+     "drivers_skipped_s": null,
+     "memory_used_mib": 665,
+     "disk_used_gib": 3.58,
+     "blame_top": [
+      [
+       1.655,
+       "dev-vda2.device"
+      ],
+      [
+       0.784,
+       "accounts-daemon.service"
+      ],
+      [
+       0.67,
+       "udisks2.service"
+      ],
+      [
+       0.577,
+       "user@103.service"
+      ],
+      [
+       0.565,
+       "NetworkManager.service"
+      ],
+      [
+       0.477,
+       "systemd-udev-trigger.service"
+      ],
+      [
+       0.31,
+       "keyboard-setup.service"
+      ],
+      [
+       0.304,
+       "systemd-logind.service"
+      ],
+      [
+       0.302,
+       "raye-dualboot.service"
+      ],
+      [
+       0.301,
+       "systemd-modules-load.service"
+      ],
+      [
+       0.282,
+       "avahi-daemon.service"
+      ],
+      [
+       0.266,
+       "systemd-udevd.service"
+      ],
+      [
+       0.248,
+       "polkit.service"
+      ],
+      [
+       0.247,
+       "systemd-journald.service"
+      ],
+      [
+       0.247,
+       "systemd-fsck@dev-disk-by\\x2duuid-4B0B\\x2d75FB.service"
+      ],
+      [
+       0.241,
+       "dbus.service"
+      ],
+      [
+       0.24,
+       "boot-efi.mount"
+      ],
+      [
+       0.2,
+       "systemd-hostnamed.service"
+      ],
+      [
+       0.195,
+       "switcheroo-control.service"
+      ],
+      [
+       0.19,
+       "systemd-resolved.service"
+      ],
+      [
+       0.189,
+       "power-profiles-daemon.service"
+      ],
+      [
+       0.189,
+       "systemd-journal-flush.service"
+      ],
+      [
+       0.185,
+       "dev-hugepages.mount"
+      ],
+      [
+       0.177,
+       "dev-mqueue.mount"
+      ],
+      [
+       0.174,
+       "systemd-timesyncd.service"
+      ]
+     ],
+     "host_load": 42.24,
+     "cmdline_extra": "systemd.mask=raye-kernel-finish.service systemd.mask=raye-drivers.service systemd.mask=systemd-binfmt.service systemd.mask=proc-sys-fs-binfmt_misc.automount systemd.mask=gpu-manager.service systemd.mask=snapperd.service systemd.mask=snapper-boot.timer systemd.mask=e2scrub_reap.service systemd.mask=cups.service"
+    },
+    {
+     "name": "wtrim-2",
+     "kernel_s": 6.068,
+     "userspace_s": 6.319,
+     "graphical_userspace_s": 6.265,
+     "graphical_s": 12.333,
+     "sddm_started_s": 12.151811,
+     "greeter_started_s": 12.598309,
+     "greeter_connected_s": 16.04536,
+     "login_screen_s": 17.910453,
+     "network_online_s": null,
+     "nm_wait_online_start_s": null,
+     "nm_wait_online_done_s": null,
+     "multi_user_s": 12.030365,
+     "kernel_finish_skipped_s": null,
+     "drivers_skipped_s": null,
+     "memory_used_mib": 683,
+     "disk_used_gib": 3.58,
+     "blame_top": [
+      [
+       1.666,
+       "systemd-journal-flush.service"
+      ],
+      [
+       1.329,
+       "dev-vda2.device"
+      ],
+      [
+       0.814,
+       "boot-efi.mount"
+      ],
+      [
+       0.679,
+       "accounts-daemon.service"
+      ],
+      [
+       0.664,
+       "udisks2.service"
+      ],
+      [
+       0.492,
+       "NetworkManager.service"
+      ],
+      [
+       0.42,
+       "user@103.service"
+      ],
+      [
+       0.391,
+       "console-setup.service"
+      ],
+      [
+       0.344,
+       "systemd-logind.service"
+      ],
+      [
+       0.335,
+       "systemd-udev-trigger.service"
+      ],
+      [
+       0.317,
+       "systemd-tmpfiles-setup.service"
+      ],
+      [
+       0.281,
+       "power-profiles-daemon.service"
+      ],
+      [
+       0.263,
+       "polkit.service"
+      ],
+      [
+       0.261,
+       "avahi-daemon.service"
+      ],
+      [
+       0.246,
+       "finalrd.service"
+      ],
+      [
+       0.241,
+       "keyboard-setup.service"
+      ],
+      [
+       0.227,
+       "systemd-udevd.service"
+      ],
+      [
+       0.215,
+       "netplan-configure.service"
+      ],
+      [
+       0.213,
+       "systemd-modules-load.service"
+      ],
+      [
+       0.204,
+       "dbus.service"
+      ],
+      [
+       0.195,
+       "switcheroo-control.service"
+      ],
+      [
+       0.189,
+       "raye-dualboot.service"
+      ],
+      [
+       0.185,
+       "plymouth-read-write.service"
+      ],
+      [
+       0.171,
+       "systemd-hostnamed.service"
+      ],
+      [
+       0.169,
+       "systemd-tmpfiles-setup-dev-early.service"
+      ]
+     ],
+     "host_load": 41.07,
+     "cmdline_extra": "systemd.mask=raye-kernel-finish.service systemd.mask=raye-drivers.service systemd.mask=systemd-binfmt.service systemd.mask=proc-sys-fs-binfmt_misc.automount systemd.mask=gpu-manager.service systemd.mask=snapperd.service systemd.mask=snapper-boot.timer systemd.mask=e2scrub_reap.service systemd.mask=cups.service"
+    },
+    {
+     "name": "wtrim-3",
+     "kernel_s": 5.642,
+     "userspace_s": 5.557,
+     "graphical_userspace_s": 5.531,
+     "graphical_s": 11.173,
+     "sddm_started_s": 11.096329,
+     "greeter_started_s": 11.452799,
+     "greeter_connected_s": 15.418568,
+     "login_screen_s": 17.363677,
+     "network_online_s": null,
+     "nm_wait_online_start_s": null,
+     "nm_wait_online_done_s": null,
+     "multi_user_s": 10.967585,
+     "kernel_finish_skipped_s": null,
+     "drivers_skipped_s": null,
+     "memory_used_mib": 683,
+     "disk_used_gib": 3.58,
+     "blame_top": [
+      [
+       1.635,
+       "dev-vda2.device"
+      ],
+      [
+       1.033,
+       "accounts-daemon.service"
+      ],
+      [
+       1.007,
+       "udisks2.service"
+      ],
+      [
+       0.945,
+       "NetworkManager.service"
+      ],
+      [
+       0.611,
+       "user@103.service"
+      ],
+      [
+       0.523,
+       "polkit.service"
+      ],
+      [
+       0.401,
+       "systemd-hostnamed.service"
+      ],
+      [
+       0.372,
+       "systemd-udev-trigger.service"
+      ],
+      [
+       0.333,
+       "systemd-udevd.service"
+      ],
+      [
+       0.317,
+       "systemd-logind.service"
+      ],
+      [
+       0.306,
+       "netplan-configure.service"
+      ],
+      [
+       0.292,
+       "systemd-timesyncd.service"
+      ],
+      [
+       0.276,
+       "console-setup.service"
+      ],
+      [
+       0.261,
+       "avahi-daemon.service"
+      ],
+      [
+       0.258,
+       "systemd-modules-load.service"
+      ],
+      [
+       0.249,
+       "user-runtime-dir@103.service"
+      ],
+      [
+       0.241,
+       "systemd-sysctl.service"
+      ],
+      [
+       0.239,
+       "keyboard-setup.service"
+      ],
+      [
+       0.231,
+       "switcheroo-control.service"
+      ],
+      [
+       0.229,
+       "dbus.service"
+      ],
+      [
+       0.204,
+       "systemd-journal-flush.service"
+      ],
+      [
+       0.197,
+       "systemd-resolved.service"
+      ],
+      [
+       0.194,
+       "systemd-fsck@dev-disk-by\\x2duuid-4B0B\\x2d75FB.service"
+      ],
+      [
+       0.188,
+       "systemd-journald.service"
+      ],
+      [
+       0.185,
+       "power-profiles-daemon.service"
+      ]
+     ],
+     "host_load": 38.17,
+     "cmdline_extra": "systemd.mask=raye-kernel-finish.service systemd.mask=raye-drivers.service systemd.mask=systemd-binfmt.service systemd.mask=proc-sys-fs-binfmt_misc.automount systemd.mask=gpu-manager.service systemd.mask=snapperd.service systemd.mask=snapper-boot.timer systemd.mask=e2scrub_reap.service systemd.mask=cups.service"
+    }
+   ],
+   "summary": {
+    "kernel_s": {
+     "median": 5.963,
+     "min": 5.642,
+     "max": 6.068,
+     "values": [
+      5.963,
+      6.068,
+      5.642
+     ],
+     "spread_pct": 7.1
+    },
+    "userspace_s": {
+     "median": 5.557,
+     "min": 5.484,
+     "max": 6.319,
+     "values": [
+      5.484,
+      6.319,
+      5.557
+     ],
+     "spread_pct": 15.0
+    },
+    "graphical_userspace_s": {
+     "median": 5.531,
+     "min": 5.45,
+     "max": 6.265,
+     "values": [
+      5.45,
+      6.265,
+      5.531
+     ],
+     "spread_pct": 14.7
+    },
+    "graphical_s": {
+     "median": 11.413,
+     "min": 11.173,
+     "max": 12.333,
+     "values": [
+      11.413,
+      12.333,
+      11.173
+     ],
+     "spread_pct": 10.2
+    },
+    "sddm_started_s": {
+     "median": 11.269,
+     "min": 11.096329,
+     "max": 12.151811,
+     "values": [
+      11.269476,
+      12.151811,
+      11.096329
+     ],
+     "spread_pct": 9.4
+    },
+    "greeter_started_s": {
+     "median": 11.583,
+     "min": 11.452799,
+     "max": 12.598309,
+     "values": [
+      11.583172,
+      12.598309,
+      11.452799
+     ],
+     "spread_pct": 9.9
+    },
+    "greeter_connected_s": {
+     "median": 15.442,
+     "min": 15.418568,
+     "max": 16.04536,
+     "values": [
+      15.442434,
+      16.04536,
+      15.418568
+     ],
+     "spread_pct": 4.1
+    },
+    "login_screen_s": {
+     "median": 17.643,
+     "min": 17.363677,
+     "max": 17.910453,
+     "values": [
+      17.643106,
+      17.910453,
+      17.363677
+     ],
+     "spread_pct": 3.1
+    },
+    "network_online_s": null,
+    "nm_wait_online_start_s": null,
+    "nm_wait_online_done_s": null,
+    "multi_user_s": {
+     "median": 11.219,
+     "min": 10.967585,
+     "max": 12.030365,
+     "values": [
+      11.218848,
+      12.030365,
+      10.967585
+     ],
+     "spread_pct": 9.5
+    },
+    "kernel_finish_skipped_s": null,
+    "drivers_skipped_s": null,
+    "memory_used_mib": {
+     "median": 683,
+     "min": 665,
+     "max": 683,
+     "values": [
+      665,
+      683,
+      683
+     ],
+     "spread_pct": 2.6
+    },
+    "disk_used_gib": {
+     "median": 3.58,
+     "min": 3.58,
+     "max": 3.58,
+     "values": [
+      3.58,
+      3.58,
+      3.58
+     ],
+     "spread_pct": 0.0
+    },
+    "host_load": {
+     "median": 41.07,
+     "min": 38.17,
+     "max": 42.24,
+     "values": [
+      42.24,
+      41.07,
+      38.17
+     ],
+     "spread_pct": 9.9
+    }
+   }
+  },
+  "rbase": {
+   "runs": [
+    {
+     "name": "rbase-1",
+     "kernel_s": 6.067,
+     "userspace_s": 6.766,
+     "graphical_userspace_s": 6.723,
+     "graphical_s": 12.79,
+     "sddm_started_s": 12.352389,
+     "greeter_started_s": 12.844429,
+     "greeter_connected_s": 16.623258,
+     "login_screen_s": 18.663317,
+     "network_online_s": 12.478855,
+     "nm_wait_online_start_s": 12.095305,
+     "nm_wait_online_done_s": 12.477877,
+     "multi_user_s": 12.479428,
+     "kernel_finish_skipped_s": 12.479235,
+     "drivers_skipped_s": 12.479106,
+     "nm_wait_online_s": 0.383,
+     "memory_used_mib": 679,
+     "disk_used_gib": 3.58,
+     "blame_top": [
+      [
+       1.556,
+       "dev-vda2.device"
+      ],
+      [
+       1.141,
+       "accounts-daemon.service"
+      ],
+      [
+       1.106,
+       "udisks2.service"
+      ],
+      [
+       0.904,
+       "systemd-binfmt.service"
+      ],
+      [
+       0.829,
+       "NetworkManager.service"
+      ],
+      [
+       0.77,
+       "gpu-manager.service"
+      ],
+      [
+       0.765,
+       "snapper-boot.service"
+      ],
+      [
+       0.701,
+       "user@103.service"
+      ],
+      [
+       0.519,
+       "systemd-logind.service"
+      ],
+      [
+       0.483,
+       "proc-sys-fs-binfmt_misc.mount"
+      ],
+      [
+       0.47,
+       "e2scrub_reap.service"
+      ],
+      [
+       0.439,
+       "systemd-udev-trigger.service"
+      ],
+      [
+       0.412,
+       "snapperd.service"
+      ],
+      [
+       0.382,
+       "NetworkManager-wait-online.service"
+      ],
+      [
+       0.381,
+       "polkit.service"
+      ],
+      [
+       0.326,
+       "avahi-daemon.service"
+      ],
+      [
+       0.294,
+       "power-profiles-daemon.service"
+      ],
+      [
+       0.287,
+       "systemd-modules-load.service"
+      ],
+      [
+       0.277,
+       "systemd-hostnamed.service"
+      ],
+      [
+       0.264,
+       "wpa_supplicant.service"
+      ],
+      [
+       0.262,
+       "switcheroo-control.service"
+      ],
+      [
+       0.254,
+       "keyboard-setup.service"
+      ],
+      [
+       0.25,
+       "systemd-udevd.service"
+      ],
+      [
+       0.249,
+       "systemd-fsck@dev-disk-by\\x2duuid-4B0B\\x2d75FB.service"
+      ],
+      [
+       0.239,
+       "dbus.service"
+      ]
+     ],
+     "host_load": 36.1,
+     "cmdline_extra": ""
+    },
+    {
+     "name": "rbase-2",
+     "kernel_s": 6.367,
+     "userspace_s": 6.572,
+     "graphical_userspace_s": 5.843,
+     "graphical_s": 12.21,
+     "sddm_started_s": 11.789123,
+     "greeter_started_s": 12.034723,
+     "greeter_connected_s": 15.72971,
+     "login_screen_s": 17.956912,
+     "network_online_s": 11.793771,
+     "nm_wait_online_start_s": 11.421304,
+     "nm_wait_online_done_s": 11.786078,
+     "multi_user_s": 11.797279,
+     "kernel_finish_skipped_s": 11.797077,
+     "drivers_skipped_s": 11.796418,
+     "nm_wait_online_s": 0.365,
+     "memory_used_mib": 679,
+     "disk_used_gib": 3.58,
+     "blame_top": [
+      [
+       1.602,
+       "dev-vda2.device"
+      ],
+      [
+       1.294,
+       "accounts-daemon.service"
+      ],
+      [
+       1.158,
+       "udisks2.service"
+      ],
+      [
+       0.794,
+       "NetworkManager.service"
+      ],
+      [
+       0.705,
+       "user@103.service"
+      ],
+      [
+       0.677,
+       "gpu-manager.service"
+      ],
+      [
+       0.641,
+       "polkit.service"
+      ],
+      [
+       0.624,
+       "snapper-boot.service"
+      ],
+      [
+       0.553,
+       "systemd-logind.service"
+      ],
+      [
+       0.447,
+       "snapperd.service"
+      ],
+      [
+       0.421,
+       "systemd-udev-trigger.service"
+      ],
+      [
+       0.369,
+       "power-profiles-daemon.service"
+      ],
+      [
+       0.364,
+       "NetworkManager-wait-online.service"
+      ],
+      [
+       0.353,
+       "systemd-binfmt.service"
+      ],
+      [
+       0.351,
+       "systemd-hostnamed.service"
+      ],
+      [
+       0.347,
+       "systemd-modules-load.service"
+      ],
+      [
+       0.344,
+       "e2scrub_reap.service"
+      ],
+      [
+       0.309,
+       "netplan-configure.service"
+      ],
+      [
+       0.29,
+       "switcheroo-control.service"
+      ],
+      [
+       0.269,
+       "cups.service"
+      ],
+      [
+       0.257,
+       "systemd-journal-flush.service"
+      ],
+      [
+       0.25,
+       "systemd-udevd.service"
+      ],
+      [
+       0.241,
+       "keyboard-setup.service"
+      ],
+      [
+       0.228,
+       "avahi-daemon.service"
+      ],
+      [
+       0.209,
+       "console-setup.service"
+      ]
+     ],
+     "host_load": 37.73,
+     "cmdline_extra": ""
+    },
+    {
+     "name": "rbase-3",
+     "kernel_s": 6.754,
+     "userspace_s": 6.235,
+     "graphical_userspace_s": 6.197,
+     "graphical_s": 12.951,
+     "sddm_started_s": 12.608315,
+     "greeter_started_s": 12.991762,
+     "greeter_connected_s": 17.834563,
+     "login_screen_s": 20.248864,
+     "network_online_s": 12.651675,
+     "nm_wait_online_start_s": 12.267611,
+     "nm_wait_online_done_s": 12.643398,
+     "multi_user_s": 12.652746,
+     "kernel_finish_skipped_s": 12.652487,
+     "drivers_skipped_s": 12.652225,
+     "nm_wait_online_s": 0.376,
+     "memory_used_mib": 689,
+     "disk_used_gib": 3.58,
+     "blame_top": [
+      [
+       1.668,
+       "dev-vda2.device"
+      ],
+      [
+       0.953,
+       "accounts-daemon.service"
+      ],
+      [
+       0.867,
+       "NetworkManager.service"
+      ],
+      [
+       0.853,
+       "udisks2.service"
+      ],
+      [
+       0.725,
+       "gpu-manager.service"
+      ],
+      [
+       0.697,
+       "systemd-binfmt.service"
+      ],
+      [
+       0.581,
+       "user@103.service"
+      ],
+      [
+       0.529,
+       "proc-sys-fs-binfmt_misc.mount"
+      ],
+      [
+       0.525,
+       "snapper-boot.service"
+      ],
+      [
+       0.423,
+       "systemd-udev-trigger.service"
+      ],
+      [
+       0.405,
+       "systemd-logind.service"
+      ],
+      [
+       0.387,
+       "polkit.service"
+      ],
+      [
+       0.375,
+       "NetworkManager-wait-online.service"
+      ],
+      [
+       0.358,
+       "e2scrub_reap.service"
+      ],
+      [
+       0.35,
+       "snapperd.service"
+      ],
+      [
+       0.344,
+       "systemd-hostnamed.service"
+      ],
+      [
+       0.307,
+       "netplan-configure.service"
+      ],
+      [
+       0.294,
+       "console-setup.service"
+      ],
+      [
+       0.283,
+       "power-profiles-daemon.service"
+      ],
+      [
+       0.282,
+       "avahi-daemon.service"
+      ],
+      [
+       0.273,
+       "systemd-modules-load.service"
+      ],
+      [
+       0.272,
+       "systemd-journal-flush.service"
+      ],
+      [
+       0.263,
+       "keyboard-setup.service"
+      ],
+      [
+       0.256,
+       "systemd-fsck@dev-disk-by\\x2duuid-4B0B\\x2d75FB.service"
+      ],
+      [
+       0.255,
+       "boot-efi.mount"
+      ]
+     ],
+     "host_load": 34.27,
+     "cmdline_extra": ""
+    }
+   ],
+   "summary": {
+    "kernel_s": {
+     "median": 6.367,
+     "min": 6.067,
+     "max": 6.754,
+     "values": [
+      6.067,
+      6.367,
+      6.754
+     ],
+     "spread_pct": 10.8
+    },
+    "userspace_s": {
+     "median": 6.572,
+     "min": 6.235,
+     "max": 6.766,
+     "values": [
+      6.766,
+      6.572,
+      6.235
+     ],
+     "spread_pct": 8.1
+    },
+    "graphical_userspace_s": {
+     "median": 6.197,
+     "min": 5.843,
+     "max": 6.723,
+     "values": [
+      6.723,
+      5.843,
+      6.197
+     ],
+     "spread_pct": 14.2
+    },
+    "graphical_s": {
+     "median": 12.79,
+     "min": 12.21,
+     "max": 12.951,
+     "values": [
+      12.79,
+      12.21,
+      12.951
+     ],
+     "spread_pct": 5.8
+    },
+    "sddm_started_s": {
+     "median": 12.352,
+     "min": 11.789123,
+     "max": 12.608315,
+     "values": [
+      12.352389,
+      11.789123,
+      12.608315
+     ],
+     "spread_pct": 6.6
+    },
+    "greeter_started_s": {
+     "median": 12.844,
+     "min": 12.034723,
+     "max": 12.991762,
+     "values": [
+      12.844429,
+      12.034723,
+      12.991762
+     ],
+     "spread_pct": 7.5
+    },
+    "greeter_connected_s": {
+     "median": 16.623,
+     "min": 15.72971,
+     "max": 17.834563,
+     "values": [
+      16.623258,
+      15.72971,
+      17.834563
+     ],
+     "spread_pct": 12.7
+    },
+    "login_screen_s": {
+     "median": 18.663,
+     "min": 17.956912,
+     "max": 20.248864,
+     "values": [
+      18.663317,
+      17.956912,
+      20.248864
+     ],
+     "spread_pct": 12.3
+    },
+    "network_online_s": {
+     "median": 12.479,
+     "min": 11.793771,
+     "max": 12.651675,
+     "values": [
+      12.478855,
+      11.793771,
+      12.651675
+     ],
+     "spread_pct": 6.9
+    },
+    "nm_wait_online_start_s": {
+     "median": 12.095,
+     "min": 11.421304,
+     "max": 12.267611,
+     "values": [
+      12.095305,
+      11.421304,
+      12.267611
+     ],
+     "spread_pct": 7.0
+    },
+    "nm_wait_online_done_s": {
+     "median": 12.478,
+     "min": 11.786078,
+     "max": 12.643398,
+     "values": [
+      12.477877,
+      11.786078,
+      12.643398
+     ],
+     "spread_pct": 6.9
+    },
+    "multi_user_s": {
+     "median": 12.479,
+     "min": 11.797279,
+     "max": 12.652746,
+     "values": [
+      12.479428,
+      11.797279,
+      12.652746
+     ],
+     "spread_pct": 6.9
+    },
+    "kernel_finish_skipped_s": {
+     "median": 12.479,
+     "min": 11.797077,
+     "max": 12.652487,
+     "values": [
+      12.479235,
+      11.797077,
+      12.652487
+     ],
+     "spread_pct": 6.9
+    },
+    "drivers_skipped_s": {
+     "median": 12.479,
+     "min": 11.796418,
+     "max": 12.652225,
+     "values": [
+      12.479106,
+      11.796418,
+      12.652225
+     ],
+     "spread_pct": 6.9
+    },
+    "nm_wait_online_s": {
+     "median": 0.376,
+     "min": 0.365,
+     "max": 0.383,
+     "values": [
+      0.383,
+      0.365,
+      0.376
+     ],
+     "spread_pct": 4.8
+    },
+    "memory_used_mib": {
+     "median": 679,
+     "min": 679,
+     "max": 689,
+     "values": [
+      679,
+      679,
+      689
+     ],
+     "spread_pct": 1.5
+    },
+    "disk_used_gib": {
+     "median": 3.58,
+     "min": 3.58,
+     "max": 3.58,
+     "values": [
+      3.58,
+      3.58,
+      3.58
+     ],
+     "spread_pct": 0.0
+    },
+    "host_load": {
+     "median": 36.1,
+     "min": 34.27,
+     "max": 37.73,
+     "values": [
+      36.1,
+      37.73,
+      34.27
+     ],
+     "spread_pct": 9.6
+    }
+   }
+  },
+  "initcall": {
+   "runs": [
+    {
+     "name": "initcall-1",
+     "kernel_s": 8.387,
+     "userspace_s": 8.488,
+     "graphical_userspace_s": 7.798,
+     "graphical_s": 16.185,
+     "sddm_started_s": 15.452643,
+     "greeter_started_s": 15.879888,
+     "greeter_connected_s": 20.589974,
+     "login_screen_s": 23.672741,
+     "network_online_s": 15.68694,
+     "nm_wait_online_start_s": 15.062265,
+     "nm_wait_online_done_s": 15.685523,
+     "multi_user_s": 15.688327,
+     "kernel_finish_skipped_s": 15.688172,
+     "drivers_skipped_s": 15.687976,
+     "nm_wait_online_s": 0.623,
+     "memory_used_mib": 676,
+     "disk_used_gib": 3.58,
+     "blame_top": [
+      [
+       1.764,
+       "dev-vda2.device"
+      ],
+      [
+       1.227,
+       "accounts-daemon.service"
+      ],
+      [
+       1.143,
+       "udisks2.service"
+      ],
+      [
+       0.958,
+       "systemd-binfmt.service"
+      ],
+      [
+       0.821,
+       "proc-sys-fs-binfmt_misc.mount"
+      ],
+      [
+       0.813,
+       "NetworkManager.service"
+      ],
+      [
+       0.743,
+       "user@103.service"
+      ],
+      [
+       0.685,
+       "snapper-boot.service"
+      ],
+      [
+       0.669,
+       "gpu-manager.service"
+      ],
+      [
+       0.624,
+       "systemd-udev-trigger.service"
+      ],
+      [
+       0.623,
+       "NetworkManager-wait-online.service"
+      ],
+      [
+       0.575,
+       "systemd-logind.service"
+      ],
+      [
+       0.469,
+       "systemd-modules-load.service"
+      ],
+      [
+       0.464,
+       "systemd-journald.service"
+      ],
+      [
+       0.458,
+       "polkit.service"
+      ],
+      [
+       0.455,
+       "power-profiles-daemon.service"
+      ],
+      [
+       0.401,
+       "snapperd.service"
+      ],
+      [
+       0.383,
+       "systemd-hostnamed.service"
+      ],
+      [
+       0.338,
+       "systemd-udevd.service"
+      ],
+      [
+       0.333,
+       "systemd-timesyncd.service"
+      ],
+      [
+       0.326,
+       "systemd-resolved.service"
+      ],
+      [
+       0.316,
+       "netplan-configure.service"
+      ],
+      [
+       0.311,
+       "keyboard-setup.service"
+      ],
+      [
+       0.298,
+       "avahi-daemon.service"
+      ],
+      [
+       0.292,
+       "console-setup.service"
+      ]
+     ],
+     "host_load": 53.3,
+     "cmdline_extra": "initcall_debug log_buf_len=16M"
+    }
+   ],
+   "summary": {
+    "kernel_s": {
+     "median": 8.387,
+     "min": 8.387,
+     "max": 8.387,
+     "values": [
+      8.387
+     ],
+     "spread_pct": 0.0
+    },
+    "userspace_s": {
+     "median": 8.488,
+     "min": 8.488,
+     "max": 8.488,
+     "values": [
+      8.488
+     ],
+     "spread_pct": 0.0
+    },
+    "graphical_userspace_s": {
+     "median": 7.798,
+     "min": 7.798,
+     "max": 7.798,
+     "values": [
+      7.798
+     ],
+     "spread_pct": 0.0
+    },
+    "graphical_s": {
+     "median": 16.185,
+     "min": 16.185,
+     "max": 16.185,
+     "values": [
+      16.185
+     ],
+     "spread_pct": 0.0
+    },
+    "sddm_started_s": {
+     "median": 15.453,
+     "min": 15.452643,
+     "max": 15.452643,
+     "values": [
+      15.452643
+     ],
+     "spread_pct": 0.0
+    },
+    "greeter_started_s": {
+     "median": 15.88,
+     "min": 15.879888,
+     "max": 15.879888,
+     "values": [
+      15.879888
+     ],
+     "spread_pct": 0.0
+    },
+    "greeter_connected_s": {
+     "median": 20.59,
+     "min": 20.589974,
+     "max": 20.589974,
+     "values": [
+      20.589974
+     ],
+     "spread_pct": 0.0
+    },
+    "login_screen_s": {
+     "median": 23.673,
+     "min": 23.672741,
+     "max": 23.672741,
+     "values": [
+      23.672741
+     ],
+     "spread_pct": 0.0
+    },
+    "network_online_s": {
+     "median": 15.687,
+     "min": 15.68694,
+     "max": 15.68694,
+     "values": [
+      15.68694
+     ],
+     "spread_pct": 0.0
+    },
+    "nm_wait_online_start_s": {
+     "median": 15.062,
+     "min": 15.062265,
+     "max": 15.062265,
+     "values": [
+      15.062265
+     ],
+     "spread_pct": 0.0
+    },
+    "nm_wait_online_done_s": {
+     "median": 15.686,
+     "min": 15.685523,
+     "max": 15.685523,
+     "values": [
+      15.685523
+     ],
+     "spread_pct": 0.0
+    },
+    "multi_user_s": {
+     "median": 15.688,
+     "min": 15.688327,
+     "max": 15.688327,
+     "values": [
+      15.688327
+     ],
+     "spread_pct": 0.0
+    },
+    "kernel_finish_skipped_s": {
+     "median": 15.688,
+     "min": 15.688172,
+     "max": 15.688172,
+     "values": [
+      15.688172
+     ],
+     "spread_pct": 0.0
+    },
+    "drivers_skipped_s": {
+     "median": 15.688,
+     "min": 15.687976,
+     "max": 15.687976,
+     "values": [
+      15.687976
+     ],
+     "spread_pct": 0.0
+    },
+    "nm_wait_online_s": {
+     "median": 0.623,
+     "min": 0.623,
+     "max": 0.623,
+     "values": [
+      0.623
+     ],
+     "spread_pct": 0.0
+    },
+    "memory_used_mib": {
+     "median": 676,
+     "min": 676,
+     "max": 676,
+     "values": [
+      676
+     ],
+     "spread_pct": 0.0
+    },
+    "disk_used_gib": {
+     "median": 3.58,
+     "min": 3.58,
+     "max": 3.58,
+     "values": [
+      3.58
+     ],
+     "spread_pct": 0.0
+    },
+    "host_load": {
+     "median": 53.3,
+     "min": 53.3,
+     "max": 53.3,
+     "values": [
+      53.3
+     ],
+     "spread_pct": 0.0
+    }
+   }
+  },
+  "firstboot": {
+   "runs": [
+    {
+     "name": "firstboot",
+     "kernel_s": 6.619,
+     "userspace_s": 12.6,
+     "graphical_userspace_s": 12.57,
+     "graphical_s": 19.189,
+     "sddm_started_s": 19.031137,
+     "greeter_started_s": 19.147553,
+     "greeter_connected_s": 24.613584,
+     "login_screen_s": 27.020568,
+     "network_online_s": 18.91575,
+     "nm_wait_online_start_s": 18.777839,
+     "nm_wait_online_done_s": 18.912988,
+     "multi_user_s": 18.962619,
+     "kernel_finish_skipped_s": 18.923515,
+     "drivers_skipped_s": 18.923348,
+     "nm_wait_online_s": 0.135,
+     "memory_used_mib": 720,
+     "disk_used_gib": 3.57,
+     "blame_top": [
+      [
+       5.748,
+       "ldconfig.service"
+      ],
+      [
+       2.048,
+       "accounts-daemon.service"
+      ],
+      [
+       1.997,
+       "raye-snapshots.service"
+      ],
+      [
+       1.978,
+       "dev-vda2.device"
+      ],
+      [
+       1.842,
+       "udisks2.service"
+      ],
+      [
+       1.722,
+       "NetworkManager.service"
+      ],
+      [
+       1.068,
+       "avahi-daemon.service"
+      ],
+      [
+       1.002,
+       "e2scrub_reap.service"
+      ],
+      [
+       0.976,
+       "gpu-manager.service"
+      ],
+      [
+       0.927,
+       "snapperd.service"
+      ],
+      [
+       0.919,
+       "polkit.service"
+      ],
+      [
+       0.918,
+       "switcheroo-control.service"
+      ],
+      [
+       0.902,
+       "systemd-hostnamed.service"
+      ],
+      [
+       0.848,
+       "systemd-logind.service"
+      ],
+      [
+       0.746,
+       "wpa_supplicant.service"
+      ],
+      [
+       0.525,
+       "user@103.service"
+      ],
+      [
+       0.448,
+       "systemd-udev-trigger.service"
+      ],
+      [
+       0.346,
+       "keyboard-setup.service"
+      ],
+      [
+       0.338,
+       "netplan-configure.service"
+      ],
+      [
+       0.326,
+       "systemd-modules-load.service"
+      ],
+      [
+       0.303,
+       "systemd-binfmt.service"
+      ],
+      [
+       0.266,
+       "systemd-journald.service"
+      ],
+      [
+       0.264,
+       "systemd-resolved.service"
+      ],
+      [
+       0.258,
+       "console-setup.service"
+      ],
+      [
+       0.256,
+       "raye-dualboot.service"
+      ]
+     ],
+     "host_load": null,
+     "cmdline_extra": ""
+    }
+   ],
+   "summary": {
+    "kernel_s": {
+     "median": 6.619,
+     "min": 6.619,
+     "max": 6.619,
+     "values": [
+      6.619
+     ],
+     "spread_pct": 0.0
+    },
+    "userspace_s": {
+     "median": 12.6,
+     "min": 12.6,
+     "max": 12.6,
+     "values": [
+      12.6
+     ],
+     "spread_pct": 0.0
+    },
+    "graphical_userspace_s": {
+     "median": 12.57,
+     "min": 12.57,
+     "max": 12.57,
+     "values": [
+      12.57
+     ],
+     "spread_pct": 0.0
+    },
+    "graphical_s": {
+     "median": 19.189,
+     "min": 19.189,
+     "max": 19.189,
+     "values": [
+      19.189
+     ],
+     "spread_pct": 0.0
+    },
+    "sddm_started_s": {
+     "median": 19.031,
+     "min": 19.031137,
+     "max": 19.031137,
+     "values": [
+      19.031137
+     ],
+     "spread_pct": 0.0
+    },
+    "greeter_started_s": {
+     "median": 19.148,
+     "min": 19.147553,
+     "max": 19.147553,
+     "values": [
+      19.147553
+     ],
+     "spread_pct": 0.0
+    },
+    "greeter_connected_s": {
+     "median": 24.614,
+     "min": 24.613584,
+     "max": 24.613584,
+     "values": [
+      24.613584
+     ],
+     "spread_pct": 0.0
+    },
+    "login_screen_s": {
+     "median": 27.021,
+     "min": 27.020568,
+     "max": 27.020568,
+     "values": [
+      27.020568
+     ],
+     "spread_pct": 0.0
+    },
+    "network_online_s": {
+     "median": 18.916,
+     "min": 18.91575,
+     "max": 18.91575,
+     "values": [
+      18.91575
+     ],
+     "spread_pct": 0.0
+    },
+    "nm_wait_online_start_s": {
+     "median": 18.778,
+     "min": 18.777839,
+     "max": 18.777839,
+     "values": [
+      18.777839
+     ],
+     "spread_pct": 0.0
+    },
+    "nm_wait_online_done_s": {
+     "median": 18.913,
+     "min": 18.912988,
+     "max": 18.912988,
+     "values": [
+      18.912988
+     ],
+     "spread_pct": 0.0
+    },
+    "multi_user_s": {
+     "median": 18.963,
+     "min": 18.962619,
+     "max": 18.962619,
+     "values": [
+      18.962619
+     ],
+     "spread_pct": 0.0
+    },
+    "kernel_finish_skipped_s": {
+     "median": 18.924,
+     "min": 18.923515,
+     "max": 18.923515,
+     "values": [
+      18.923515
+     ],
+     "spread_pct": 0.0
+    },
+    "drivers_skipped_s": {
+     "median": 18.923,
+     "min": 18.923348,
+     "max": 18.923348,
+     "values": [
+      18.923348
+     ],
+     "spread_pct": 0.0
+    },
+    "nm_wait_online_s": {
+     "median": 0.135,
+     "min": 0.135,
+     "max": 0.135,
+     "values": [
+      0.135
+     ],
+     "spread_pct": 0.0
+    },
+    "memory_used_mib": {
+     "median": 720,
+     "min": 720,
+     "max": 720,
+     "values": [
+      720
+     ],
+     "spread_pct": 0.0
+    },
+    "disk_used_gib": {
+     "median": 3.57,
+     "min": 3.57,
+     "max": 3.57,
+     "values": [
+      3.57
+     ],
+     "spread_pct": 0.0
+    },
+    "host_load": null
+   }
+  }
+ },
+ "units": [
+  {
+   "unit": "NetworkManager-dispatcher.service",
+   "blame_median_s": null,
+   "starts_before_login_screen": 5,
+   "skipped": false,
+   "runs": 5
+  },
+  {
+   "unit": "NetworkManager-wait-online.service",
+   "blame_median_s": 0.46,
+   "starts_before_login_screen": 5,
+   "skipped": false,
+   "runs": 5
+  },
+  {
+   "unit": "NetworkManager.service",
+   "blame_median_s": 0.974,
+   "starts_before_login_screen": 5,
+   "skipped": false,
+   "runs": 5
+  },
+  {
+   "unit": "accounts-daemon.service",
+   "blame_median_s": 1.257,
+   "starts_before_login_screen": 5,
+   "skipped": false,
+   "runs": 5
+  },
+  {
+   "unit": "apt-daily-upgrade.timer",
+   "blame_median_s": null,
+   "starts_before_login_screen": 0,
+   "skipped": false,
+   "runs": 5
+  },
+  {
+   "unit": "apt-daily.timer",
+   "blame_median_s": null,
+   "starts_before_login_screen": 0,
+   "skipped": false,
+   "runs": 5
+  },
+  {
+   "unit": "avahi-daemon.service",
+   "blame_median_s": 0.287,
+   "starts_before_login_screen": 5,
+   "skipped": false,
+   "runs": 5
+  },
+  {
+   "unit": "avahi-daemon.socket",
+   "blame_median_s": 0.0,
+   "starts_before_login_screen": 0,
+   "skipped": false,
+   "runs": 5
+  },
+  {
+   "unit": "bluetooth.service",
+   "blame_median_s": null,
+   "starts_before_login_screen": 0,
+   "skipped": false,
+   "runs": 5
+  },
+  {
+   "unit": "console-setup.service",
+   "blame_median_s": 0.145,
+   "starts_before_login_screen": 5,
+   "skipped": false,
+   "runs": 5
+  },
+  {
+   "unit": "cups.path",
+   "blame_median_s": null,
+   "starts_before_login_screen": 0,
+   "skipped": false,
+   "runs": 5
+  },
+  {
+   "unit": "cups.service",
+   "blame_median_s": 0.283,
+   "starts_before_login_screen": 5,
+   "skipped": false,
+   "runs": 5
+  },
+  {
+   "unit": "cups.socket",
+   "blame_median_s": 0.0,
+   "starts_before_login_screen": 0,
+   "skipped": false,
+   "runs": 5
+  },
+  {
+   "unit": "dpkg-db-backup.timer",
+   "blame_median_s": null,
+   "starts_before_login_screen": 0,
+   "skipped": false,
+   "runs": 5
+  },
+  {
+   "unit": "e2scrub_all.timer",
+   "blame_median_s": null,
+   "starts_before_login_screen": 0,
+   "skipped": false,
+   "runs": 5
+  },
+  {
+   "unit": "e2scrub_reap.service",
+   "blame_median_s": 0.546,
+   "starts_before_login_screen": 5,
+   "skipped": false,
+   "runs": 5
+  },
+  {
+   "unit": "finalrd.service",
+   "blame_median_s": 0.071,
+   "starts_before_login_screen": 5,
+   "skipped": false,
+   "runs": 5
+  },
+  {
+   "unit": "fstrim.timer",
+   "blame_median_s": null,
+   "starts_before_login_screen": 0,
+   "skipped": false,
+   "runs": 5
+  },
+  {
+   "unit": "fwupd-refresh.timer",
+   "blame_median_s": null,
+   "starts_before_login_screen": 0,
+   "skipped": false,
+   "runs": 5
+  },
+  {
+   "unit": "getty@.service",
+   "blame_median_s": null,
+   "starts_before_login_screen": 0,
+   "skipped": false,
+   "runs": 5
+  },
+  {
+   "unit": "gpu-manager.service",
+   "blame_median_s": 0.67,
+   "starts_before_login_screen": 5,
+   "skipped": false,
+   "runs": 5
+  },
+  {
+   "unit": "grub-initrd-fallback.service",
+   "blame_median_s": null,
+   "starts_before_login_screen": 0,
+   "skipped": true,
+   "runs": 5
+  },
+  {
+   "unit": "grub2-common.service",
+   "blame_median_s": null,
+   "starts_before_login_screen": 0,
+   "skipped": true,
+   "runs": 5
+  },
+  {
+   "unit": "keyboard-setup.service",
+   "blame_median_s": 0.352,
+   "starts_before_login_screen": 5,
+   "skipped": false,
+   "runs": 5
+  },
+  {
+   "unit": "motd-news.timer",
+   "blame_median_s": null,
+   "starts_before_login_screen": 0,
+   "skipped": false,
+   "runs": 5
+  },
+  {
+   "unit": "netplan-configure.service",
+   "blame_median_s": 0.212,
+   "starts_before_login_screen": 5,
+   "skipped": false,
+   "runs": 5
+  },
+  {
+   "unit": "polkit-agent-helper.socket",
+   "blame_median_s": 0.004,
+   "starts_before_login_screen": 0,
+   "skipped": false,
+   "runs": 5
+  },
+  {
+   "unit": "power-profiles-daemon.service",
+   "blame_median_s": 0.368,
+   "starts_before_login_screen": 0,
+   "skipped": false,
+   "runs": 5
+  },
+  {
+   "unit": "raye-drivers.service",
+   "blame_median_s": null,
+   "starts_before_login_screen": 0,
+   "skipped": true,
+   "runs": 5
+  },
+  {
+   "unit": "raye-dualboot.service",
+   "blame_median_s": 0.307,
+   "starts_before_login_screen": 5,
+   "skipped": false,
+   "runs": 5
+  },
+  {
+   "unit": "raye-kernel-finish.service",
+   "blame_median_s": null,
+   "starts_before_login_screen": 0,
+   "skipped": true,
+   "runs": 5
+  },
+  {
+   "unit": "raye-snapshots.service",
+   "blame_median_s": null,
+   "starts_before_login_screen": 0,
+   "skipped": true,
+   "runs": 5
+  },
+  {
+   "unit": "raye-store-catalog.timer",
+   "blame_median_s": null,
+   "starts_before_login_screen": 0,
+   "skipped": false,
+   "runs": 5
+  },
+  {
+   "unit": "raye-update.timer",
+   "blame_median_s": null,
+   "starts_before_login_screen": 0,
+   "skipped": false,
+   "runs": 5
+  },
+  {
+   "unit": "remote-fs.target",
+   "blame_median_s": null,
+   "starts_before_login_screen": 0,
+   "skipped": false,
+   "runs": 5
+  },
+  {
+   "unit": "sddm.service",
+   "blame_median_s": 0.087,
+   "starts_before_login_screen": 0,
+   "skipped": false,
+   "runs": 5
+  },
+  {
+   "unit": "setvtrgb.service",
+   "blame_median_s": 0.053,
+   "starts_before_login_screen": 5,
+   "skipped": false,
+   "runs": 5
+  },
+  {
+   "unit": "smartmontools.service",
+   "blame_median_s": null,
+   "starts_before_login_screen": 0,
+   "skipped": true,
+   "runs": 5
+  },
+  {
+   "unit": "snapper-boot.timer",
+   "blame_median_s": null,
+   "starts_before_login_screen": 0,
+   "skipped": false,
+   "runs": 5
+  },
+  {
+   "unit": "snapper-cleanup.timer",
+   "blame_median_s": null,
+   "starts_before_login_screen": 0,
+   "skipped": false,
+   "runs": 5
+  },
+  {
+   "unit": "snapperd.service",
+   "blame_median_s": 0.541,
+   "starts_before_login_screen": 5,
+   "skipped": false,
+   "runs": 5
+  },
+  {
+   "unit": "ssl-cert.service",
+   "blame_median_s": null,
+   "starts_before_login_screen": 0,
+   "skipped": true,
+   "runs": 5
+  },
+  {
+   "unit": "switcheroo-control.service",
+   "blame_median_s": 0.334,
+   "starts_before_login_screen": 5,
+   "skipped": false,
+   "runs": 5
+  },
+  {
+   "unit": "systemd-pstore.service",
+   "blame_median_s": null,
+   "starts_before_login_screen": 0,
+   "skipped": true,
+   "runs": 5
+  },
+  {
+   "unit": "systemd-resolved-monitor.socket",
+   "blame_median_s": 0.0,
+   "starts_before_login_screen": 0,
+   "skipped": false,
+   "runs": 5
+  },
+  {
+   "unit": "systemd-resolved-varlink.socket",
+   "blame_median_s": 0.0,
+   "starts_before_login_screen": 0,
+   "skipped": false,
+   "runs": 5
+  },
+  {
+   "unit": "systemd-resolved.service",
+   "blame_median_s": 0.226,
+   "starts_before_login_screen": 5,
+   "skipped": false,
+   "runs": 5
+  },
+  {
+   "unit": "systemd-timesyncd.service",
+   "blame_median_s": 0.249,
+   "starts_before_login_screen": 5,
+   "skipped": false,
+   "runs": 5
+  },
+  {
+   "unit": "tpm-udev.path",
+   "blame_median_s": null,
+   "starts_before_login_screen": 0,
+   "skipped": true,
+   "runs": 5
+  },
+  {
+   "unit": "udisks2.service",
+   "blame_median_s": 1.225,
+   "starts_before_login_screen": 5,
+   "skipped": false,
+   "runs": 5
+  },
+  {
+   "unit": "ufw.service",
+   "blame_median_s": 0.061,
+   "starts_before_login_screen": 5,
+   "skipped": false,
+   "runs": 5
+  },
+  {
+   "unit": "unattended-upgrades.service",
+   "blame_median_s": null,
+   "starts_before_login_screen": 0,
+   "skipped": false,
+   "runs": 5
+  },
+  {
+   "unit": "uuidd.socket",
+   "blame_median_s": 0.0,
+   "starts_before_login_screen": 0,
+   "skipped": false,
+   "runs": 5
+  },
+  {
+   "unit": "wpa_supplicant.service",
+   "blame_median_s": 0.21,
+   "starts_before_login_screen": 5,
+   "skipped": false,
+   "runs": 5
+  }
+ ],
+ "initcalls": {
+  "count": 1010,
+  "above_50ms": 11,
+  "slowest": [
+   {
+    "ms": 1678.7,
+    "at_s": 16.600416,
+    "initcall": "svm_init",
+    "module": "kvm_amd",
+    "ret": 0
+   },
+   {
+    "ms": 854.0,
+    "at_s": 1.656878,
+    "initcall": "pci_subsys_init",
+    "module": null,
+    "ret": 0
+   },
+   {
+    "ms": 322.9,
+    "at_s": 13.058825,
+    "initcall": "parport_pc_init",
+    "module": "parport_pc",
+    "ret": 0
+   },
+   {
+    "ms": 238.0,
+    "at_s": 2.778489,
+    "initcall": "slab_late_init",
+    "module": null,
+    "ret": 0
+   },
+   {
+    "ms": 184.0,
+    "at_s": 2.440063,
+    "initcall": "sysfb_init",
+    "module": null,
+    "ret": 0
+   },
+   {
+    "ms": 146.0,
+    "at_s": 0.786792,
+    "initcall": "acpi_init",
+    "module": null,
+    "ret": 0
+   },
+   {
+    "ms": 124.2,
+    "at_s": 2.20375,
+    "initcall": "virtio_blk_init",
+    "module": null,
+    "ret": 0
+   },
+   {
+    "ms": 100.0,
+    "at_s": 2.079499,
+    "initcall": "loop_init",
+    "module": null,
+    "ret": 0
+   },
+   {
+    "ms": 80.7,
+    "at_s": 1.785755,
+    "initcall": "inet_init",
+    "module": null,
+    "ret": 0
+   },
+   {
+    "ms": 74.3,
+    "at_s": 1.972305,
+    "initcall": "serial8250_init",
+    "module": null,
+    "ret": 0
+   },
+   {
+    "ms": 72.4,
+    "at_s": 6.416047,
+    "initcall": "init_module",
+    "module": "raid6_pq",
+    "ret": 0
+   },
+   {
+    "ms": 49.0,
+    "at_s": 4.452035,
+    "initcall": "virtio_gpu_driver_init",
+    "module": "virtio_gpu",
+    "ret": 0
+   },
+   {
+    "ms": 37.8,
+    "at_s": 3.537455,
+    "initcall": "init_encrypted",
+    "module": null,
+    "ret": 0
+   },
+   {
+    "ms": 32.0,
+    "at_s": 1.860636,
+    "initcall": "percpu_counter_startup",
+    "module": null,
+    "ret": 0
+   },
+   {
+    "ms": 26.7,
+    "at_s": 2.539817,
+    "initcall": "load_system_certificate_list",
+    "module": null,
+    "ret": 0
+   },
+   {
+    "ms": 24.4,
+    "at_s": 1.897588,
+    "initcall": "virtio_pci_driver_init",
+    "module": null,
+    "ret": 0
+   },
+   {
+    "ms": 23.0,
+    "at_s": 0.625593,
+    "initcall": "crc32_mod_init",
+    "module": null,
+    "ret": 0
+   },
+   {
+    "ms": 23.0,
+    "at_s": 1.699559,
+    "initcall": "chr_dev_init",
+    "module": null,
+    "ret": 0
+   },
+   {
+    "ms": 22.2,
+    "at_s": 2.487623,
+    "initcall": "param_sysfs_builtin_init",
+    "module": null,
+    "ret": 0
+   },
+   {
+    "ms": 21.0,
+    "at_s": 1.826389,
+    "initcall": "jent_mod_init",
+    "module": null,
+    "ret": 0
+   }
+  ]
+ },
+ "initramfs": {
+  "size_mb": 96.3,
+  "modules_setting": "most",
+  "compress": "zstd -1",
+  "parts": [
+   {
+    "what": "AMD microcode",
+    "compression": "none",
+    "mb": 0.3
+   },
+   {
+    "what": "Intel microcode",
+    "compression": "none",
+    "mb": 14.8
+   },
+   {
+    "what": "modules 34.0 MB and firmware 17.2 MB (each file .zst)",
+    "compression": "none",
+    "mb": 51.5
+   },
+   {
+    "what": "programs and libraries",
+    "compression": "zstd",
+    "mb": 29.7,
+    "unpacked_mb": 74.2
+   }
+  ],
+  "unpack_s": [
+   0.59,
+   0.48,
+   0.48,
+   0.45,
+   0.45
+  ],
+  "codec_trial_part4": [
+   {
+    "codec": "zstd -1",
+    "mb": 29.7,
+    "decompress_ms": 221
+   },
+   {
+    "codec": "zstd -3",
+    "mb": 26.6,
+    "decompress_ms": 210
+   },
+   {
+    "codec": "zstd -19",
+    "mb": 22.1,
+    "decompress_ms": 287
+   },
+   {
+    "codec": "lz4 -9",
+    "mb": 31.6,
+    "decompress_ms": 79
+   }
+  ]
+ }
+}

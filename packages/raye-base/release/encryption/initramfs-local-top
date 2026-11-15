@@ -1,0 +1,57 @@
+#!/bin/sh
+# Raye: opens the system disk while it is being encrypted or decrypted,
+# before cryptroot. The first start after "Turn on" writes the header.
+PREREQ=""
+prereqs() { echo "$PREREQ"; }
+case $1 in
+prereqs) prereqs; exit 0 ;;
+esac
+
+[ -r /etc/raye-encryption/plan ] || exit 0
+. /scripts/functions
+. /etc/raye-encryption/plan
+
+dev=/dev/disk/by-partuuid/$PARTUUID
+wait_for_udev 10
+[ -e "$dev" ] || { log_failure_msg "raye-encryption: $dev not found"; exit 0; }
+[ -e "/dev/mapper/$NAME" ] && exit 0
+modprobe -q dm_crypt
+
+password() {
+    if [ -r /etc/raye-encryption/pass.jwe ] && clevis decrypt < /etc/raye-encryption/pass.jwe; then
+        return 0
+    fi
+    if [ -x /bin/plymouth ] && plymouth --ping; then
+        plymouth ask-for-password --prompt "Disk password"
+    else
+        /lib/cryptsetup/askpass "Disk password: "
+    fi
+}
+
+# the service after the switch to the system goes on with the same key
+mkdir -p /run/raye-encryption
+chmod 0755 /run/raye-encryption
+key=/run/raye-encryption/key
+(umask 077; password > "$key")
+
+if [ "$MODE" = encrypt ] && ! cryptsetup isLuks "$dev"; then
+    cryptsetup reencrypt --batch-mode --encrypt --type luks2 --init-only \
+        --reduce-device-size 32M --uuid "$UUID" --key-file "$key" "$dev" "$NAME" ||
+        log_failure_msg "raye-encryption: could not write the header"
+elif [ "$MODE" = decrypt ]; then
+    mkdir -p /run/raye-boot
+    if mount -t ext4 "/dev/disk/by-uuid/$BOOT_UUID" /run/raye-boot 2>/dev/null &&
+       [ -e /run/raye-boot/raye-encryption/header.img ]; then
+        cryptsetup open --header /run/raye-boot/raye-encryption/header.img \
+            --key-file "$key" "$dev" "$NAME"
+    else
+        cryptsetup open --key-file "$key" "$dev" "$NAME"
+    fi
+    umount /run/raye-boot 2>/dev/null
+else
+    cryptsetup open --key-file "$key" "$dev" "$NAME"
+fi
+[ -e "/dev/mapper/$NAME" ] || rm -f "$key"
+btrfs device scan "/dev/mapper/$NAME" >/dev/null 2>&1
+wait_for_udev 10
+exit 0

@@ -1,0 +1,71 @@
+#!/bin/sh
+# Brings the sign-in screen back once a user's last session has ended.
+#
+# When a session is killed from outside (loginctl terminate-user, the
+# out-of-memory killer), sddm-helper goes with it and exits 1, which sddm
+# reads as a wrong password: it keeps the display, starts no greeter, and
+# the screen stays black on the dead session's VT.
+#
+#   raye-greeter-back UID
+#
+# Run by raye-greeter-back@.service when /run/user/UID goes away.
+set -u
+
+uid=${1:-}
+wait=${RAYE_GREETER_WAIT:-3}
+sys=${RAYE_GREETER_SYS:-/sys}
+
+case "$(systemctl is-system-running 2>/dev/null)" in
+running | degraded | starting) ;;
+*) exit 0 ;;
+esac
+systemctl is-active --quiet sddm.service || exit 0
+# the greeter's own runtime dir goes at every sign-in
+[ "$uid" != "$(id -u sddm 2>/dev/null)" ] || exit 0
+
+prop() { # session property
+    loginctl show-session -p "$2" --value "$1" 2>/dev/null
+}
+
+# Prints "ok" when seat0 shows something, else the id of a session left on
+# it that can take the screen (empty when there is none).
+look() {
+    other=""
+    for s in $(loginctl list-sessions --no-legend 2>/dev/null | awk '{print $1}'); do
+        [ "$(prop "$s" Seat)" = seat0 ] || continue
+        class=$(prop "$s" Class)
+        state=$(prop "$s" State)
+        if [ "$class" = greeter ] || [ "$state" = active ]; then
+            echo ok
+            return
+        fi
+        # a text console of someone else is no screen to give back
+        case $(prop "$s" Type) in x11 | wayland) ;; *) continue ;; esac
+        [ "$class" = user ] && other=$s
+    done
+    echo "$other"
+}
+
+# a normal sign-out brings the greeter by itself within a second or two
+i=0
+while [ "$i" -lt "$wait" ]; do
+    [ "$(look)" = ok ] && exit 0
+    sleep 1
+    i=$((i + 1))
+done
+
+# someone is at a text console (Ctrl+Alt+F3): leave the screen with them
+vt=$(cat "$sys/class/tty/tty0/active" 2>/dev/null)
+case $vt in
+tty[0-9]*) systemctl is-active --quiet "getty@$vt.service" "autovt@$vt.service" && exit 0 ;;
+esac
+
+left=$(look)
+case "$left" in
+ok) ;;
+"") systemctl restart sddm.service ;;
+# someone else is still signed in to a desktop: restarting sddm would end
+# that session, so show it instead (its lock screen)
+*) loginctl activate "$left" ;;
+esac
+exit 0

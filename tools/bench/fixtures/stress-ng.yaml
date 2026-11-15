@@ -1,0 +1,45 @@
+---
+build-info:
+      compiler: 'gcc 15.2.0'
+      source-date-epoch: 1771607837
+      stdc-version: '199901L'
+      stdc-hosted: '1'
+
+system-info:
+      stress-ng-version: '0.20.01'
+      run-by: 'root'
+      date-yyyy-mm-dd: '2026:10:31'
+      time-hh-mm-ss: '19:14:20'
+      epoch-secs: 1793474060
+      hostname: 'raye'
+      sysname: 'Linux'
+      nodename: 'raye'
+      release: '7.0.0-42-raye'
+      version: '#1 SMP PREEMPT_DYNAMIC'
+      machine: 'x86_64'
+      compiler: 'gcc 15.2.0'
+      libc: 'glibc 2.42'
+      uptime: 79776
+      totalram: 33659981824
+      freeram: 27621699584
+      sharedram: 15413248
+      bufferram: 592261120
+      totalswap: 0
+      freeswap: 0
+      pagesize: 4096
+      cpus: 16
+      cpus-online: 16
+      ticks-per-second: 100
+
+metrics:
+    - stressor: cpu
+      bogo-ops: 3960
+      bogo-ops-per-second-usr-sys-time: 989.059405
+      bogo-ops-per-second-real-time: 1978.090555
+      wall-clock-time: 2.001931
+      user-time: 3.995813
+      system-time: 0.007991
+      cpu-usage-per-instance: 99.998572
+      max-rss: 9532
+
+...

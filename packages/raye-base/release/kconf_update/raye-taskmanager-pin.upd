@@ -1,0 +1,6 @@
+# 0.3 dropped KDE System Monitor for Raye's Task Manager: pins an account
+# made under 0.2 still name the old app, see raye-taskmanager-pin.py
+Version=6
+
+Id=raye-taskmanager-pin-1
+Script=raye-taskmanager-pin.py,python3

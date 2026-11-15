@@ -1,0 +1,453 @@
+#!/bin/sh
+# Switches this computer to the Raye kernel, without ever leaving it
+# unable to start. Run through pkexec by Raye Settings.
+#
+#   raye-kernel-setup status    enrolled | pending | trial | failed |
+#                               tpm-needs-password | not-enrolled |
+#                               no-secure-boot
+#                               (not-enrolled: not set up, key or not;
+#                               tpm-needs-password: the TPM no longer
+#                               opens an encrypted disk by itself)
+#   raye-kernel-setup tpm-status
+#                               ok | stale | none: does the TPM open the
+#                               encrypted disks by itself. As root it
+#                               checks and keeps the answer in
+#                               /run/raye-kernel/tpm-status, which is
+#                               what a user reads (polkit lets the
+#                               active user run it as root, no password)
+#   raye-kernel-setup enroll    queue the Raye key for MokManager, print
+#                               the one-time code to type at the restart
+#   raye-kernel-setup finish    at boot: once the key is in, install the
+#                               kernel and try it for one boot; after
+#                               that boot, keep it or fall back
+#                               (raye-kernel-finish.service)
+#   raye-kernel-setup rebind    disk password on stdin: let the TPM open
+#                               the disk again with the running kernel
+#   raye-kernel-setup remove    back to Ubuntu's kernel only
+#
+# The kernel is installed only after the key is enrolled, and becomes the
+# default only after it has really started once: GRUB tries it for one
+# boot (grub-reboot) and Ubuntu's signed kernel stays the default until
+# then, so a kernel the firmware refuses never leaves the computer
+# unable to start.
+#
+# apt, GRUB, clevis and raye-tpm write to /var/log/raye/kernel-setup.log;
+# only this script's own lines reach Settings.
+set -u
+
+# tests only: a fake root (pkexec and systemd hand over a clean environment)
+R=${RAYE_KERNEL_TEST_ROOT:-}
+
+cert=$R/usr/share/raye/kernel/raye-boot.der
+debs=$R/usr/share/raye/kernel/debs
+state=$R/var/lib/raye-kernel
+pending=$state/pending
+trial=$state/trial
+failed=$state/failed
+keep_dir=$state/keys
+grubcfg=$R/etc/default/grub.d/60-raye-kernel.cfg
+grub_menu=$R/boot/grub/grub.cfg
+crypttab=$R/etc/crypttab
+tpm_tool=$R/usr/libexec/raye-tpm
+tpm_flag=$R/var/lib/raye-tpm/needs-password   # left by the boot check
+cache_dir=$R/run/raye-kernel
+logdir=$R/var/log/raye
+log=$logdir/kernel-setup.log
+boot_id_file=$R/proc/sys/kernel/random/boot_id
+
+# fd 3 is the log; nothing is written for the read-only commands
+exec 3>/dev/null
+
+open_log() {
+    [ -d "$logdir" ] || (umask 022; mkdir -p "$logdir") 2>/dev/null
+    if (umask 027; : >> "$log") 2>/dev/null; then
+        chmod 640 "$log"
+        chgrp adm "$log" 2>/dev/null
+        exec 3>> "$log"
+        echo "--- $(date '+%Y-%m-%d %H:%M:%S') raye-kernel-setup $1" >&3
+    fi
+}
+
+say() { echo "$*"; echo "$*" >&3; }
+warn() { echo "$*" >&2; echo "$*" >&3; }
+note() { echo "$*" >&3; }
+# a tool's own output goes to the log only
+quietly() { "$@" >&3 2>&3; }
+
+is_root() { [ "$(id -u)" = 0 ]; }
+boot_id() { cat "$boot_id_file" 2>/dev/null; }
+secure_boot() { mokutil --sb-state 2>/dev/null | grep -q "SecureBoot enabled"; }
+enrolled() { mokutil --test-key "$cert" 2>&1 | grep -q "already enrolled"; }
+
+# ------------------------------------------------------------- packages
+in_archive() { apt-cache show linux-image-raye >/dev/null 2>&1; }
+
+# the image, and the headers so drivers built on the computer (NVIDIA
+# through DKMS) follow the new kernel
+shipped_debs() {
+    ls "$debs"/linux-image-*-raye_*.deb "$debs"/linux-headers-*-raye_*.deb 2>/dev/null
+}
+
+# from the Raye archive, or shipped next to this script
+kernel_packages() {
+    if in_archive; then echo linux-image-raye; else shipped_debs; fi
+}
+
+# true when apt still has something to download for these packages
+needs_download() {
+    # shellcheck disable=SC2086  # one package per word
+    apt-get install -y -qq --print-uris $1 2>/dev/null | grep -q "^'"
+}
+
+# At boot nothing waits for the network, so wait here, and only when
+# the kernel has to be downloaded; offline, the copy shipped on the disk
+# does the job.
+boot_packages() {
+    if in_archive; then
+        if ! needs_download linux-image-raye; then
+            echo linux-image-raye
+            return
+        fi
+        if ! command -v nm-online >/dev/null 2>&1 || quietly nm-online -q -t 60; then
+            echo linux-image-raye
+            return
+        fi
+        note "no network after 60 s"
+    fi
+    shipped_debs
+}
+
+install_kernel() {
+    [ -n "$1" ] || { warn "no Raye kernel package found"; return 1; }
+    # shellcheck disable=SC2086  # one package or file per word
+    if ! quietly env DEBIAN_FRONTEND=noninteractive apt-get install -y -q $1; then
+        warn "could not install the Raye kernel"
+        return 1
+    fi
+}
+
+# ----------------------------------------------------------------- GRUB
+# menu ids: the "Advanced options" submenu, and one kernel in it
+submenu_id() { grep -o "gnulinux-advanced-[0-9a-f-]*" "$grub_menu" 2>/dev/null | head -n 1; }
+entry_id() {
+    [ -n "$1" ] || return 0
+    grep -o "gnulinux-$1-advanced-[0-9a-f-]*" "$grub_menu" 2>/dev/null | head -n 1
+}
+# shellcheck disable=SC2012  # kernel file names are plain
+newest() { ls "$R"/boot/vmlinuz-*-"$1" 2>/dev/null | sed 's|.*/vmlinuz-||' | sort -V | tail -n 1; }
+
+# ------------------------------------------------------------------ TPM
+# The TPM releases the disk key only if PCR 7 matches, and PCR 7 records
+# the certificate that verified the kernel: the Raye kernel, checked with
+# the Raye key, changes it. raye-tpm predicts PCR 7 for the next boot
+# and binds the disk to it ahead, so no boot asks the password. When it
+# refuses (a firmware it cannot replay), the old path: the passphrase of
+# each TPM binding is kept on the encrypted disk itself, readable by root
+# only, the trial boot asks the password once, then a binding is added
+# for the running kernel and the copy is erased. The first binding stays
+# either way, so Ubuntu's kernel still opens the disk by itself.
+luks_devices() {
+    awk '!/^[[:space:]]*#/ && NF >= 2 { print $2 }' "$crypttab" 2>/dev/null |
+        while read -r spec; do
+            case "$spec" in
+            UUID=*) dev=$R/dev/disk/by-uuid/${spec#UUID=} ;;
+            PARTUUID=*) dev=$R/dev/disk/by-partuuid/${spec#PARTUUID=} ;;
+            LABEL=*) dev=$R/dev/disk/by-label/${spec#LABEL=} ;;
+            /dev/*) dev=$R$spec ;;
+            *) continue ;;
+            esac
+            if [ -n "$R" ]; then [ -e "$dev" ]; else [ -b "$dev" ]; fi && readlink -f "$dev"
+        done
+}
+tpm_slots() { clevis luks list -d "$1" 2>/dev/null | awk -F: '/ tpm2 /{ print $1 }'; }
+
+# raye-tpm, quietly; 127 when it is not installed
+tpm() {
+    [ -x "$tpm_tool" ] || return 127
+    quietly "$tpm_tool" "$@"
+}
+
+keep_tpm_keys() {
+    mkdir -p "$keep_dir" && chmod 700 "$keep_dir"
+    for dev in $(luks_devices); do
+        for slot in $(tpm_slots "$dev"); do
+            f=$keep_dir/$(basename "$dev")
+            (umask 077; clevis luks pass -d "$dev" -s "$slot" > "$f" 2>/dev/null) && break
+            rm -f "$f"
+        done
+    done
+}
+
+forget_tpm_keys() {
+    [ -d "$keep_dir" ] || return 0
+    find "$keep_dir" -type f -exec shred -u {} + 2>/dev/null
+    rm -rf "$keep_dir"
+}
+
+# bind the TPM as it is now, with a key file that opens the disk
+bind_tpm_now() {
+    for cfg in '{"pcr_bank":"sha256","pcr_ids":"7"}' '{"pcr_bank":"sha1","pcr_ids":"7"}'; do
+        quietly clevis luks bind -y -k "$2" -d "$1" tpm2 "$cfg" && return 0
+    done
+    return 1
+}
+
+# true if one of the TPM bindings of $1 opens it on this boot
+tpm_answers() {
+    for slot in $(tpm_slots "$1"); do
+        clevis luks pass -d "$1" -s "$slot" >/dev/null 2>&1 && return 0
+    done
+    return 1
+}
+
+# old path, after the boot: bind for this kernel with the kept passphrase
+rebind_tpm() {
+    [ -d "$keep_dir" ] || return 0
+    for f in "$keep_dir"/*; do
+        [ -f "$f" ] || continue
+        dev=$R/dev/$(basename "$f")
+        if [ -e "$dev" ] && ! tpm_answers "$dev"; then
+            if bind_tpm_now "$dev" "$f"; then
+                note "the TPM opens $dev with this kernel too"
+            else
+                warn "could not bind the TPM for $dev: the password stays needed"
+            fi
+        fi
+    done
+    forget_tpm_keys
+    settle_tpm
+}
+
+# the disks bound to the TPM
+tpm_disks() {
+    for dev in $(luks_devices); do
+        [ -n "$(tpm_slots "$dev")" ] && echo "$dev"
+    done
+}
+
+# true when there is a TPM disk and the TPM opens every one of them now
+tpm_opens_all() {
+    disks=$(tpm_disks)
+    [ -n "$disks" ] || return 1
+    for dev in $disks; do
+        tpm_answers "$dev" || return 1
+    done
+}
+
+# ok | stale | none, checked now (root)
+tpm_state() {
+    if [ -e "$tpm_flag" ]; then echo stale
+    elif [ -z "$(tpm_disks)" ]; then echo none
+    elif tpm_opens_all; then echo ok
+    else echo stale; fi
+}
+
+# after a binding was made: the boot check's flag goes once the TPM
+# opens every disk again, and users see the new state
+settle_tpm() {
+    if tpm_opens_all; then
+        tpm record
+        rm -f "$tpm_flag"
+    fi
+    tpm_status_now >&3
+}
+
+write_cache() {
+    mkdir -p "$cache_dir" && chmod 755 "$cache_dir" || return
+    tmp=$(mktemp "$cache_dir/.tpm-status.XXXXXX") || return
+    if ! { printf '%s\n' "$1" > "$tmp" && chmod 644 "$tmp" && mv -f "$tmp" "$cache_dir/tpm-status"; }; then
+        rm -f "$tmp"
+    fi
+}
+
+cached_tpm_state() {
+    v=$(head -n 1 "$cache_dir/tpm-status" 2>/dev/null)
+    case "$v" in ok|stale|none) echo "$v" ;; *) echo none ;; esac
+}
+
+# root checks and keeps the answer for users; a user reads it
+tpm_status_now() {
+    if is_root; then
+        s=$(tpm_state)
+        write_cache "$s"
+        echo "$s"
+    else
+        cached_tpm_state
+    fi
+}
+
+tpm_needs_password() {
+    if is_root && [ -e "$tpm_flag" ]; then return 0; fi
+    [ "$(cached_tpm_state)" = stale ]
+}
+
+# ---------------------------------------------------------------- steps
+# Ubuntu's kernel stays the default; the Raye kernel gets one boot
+try_once() {
+    mkdir -p "$(dirname "$grubcfg")"
+    printf 'GRUB_DEFAULT=saved\n' > "$grubcfg"
+    quietly update-grub
+    sub=$(submenu_id)
+    old=$(entry_id "$(newest generic)")
+    new=$(entry_id "$(newest raye)")
+    if [ -z "$sub" ] || [ -z "$old" ] || [ -z "$new" ]; then
+        warn "the start menu has no entry for both kernels: nothing tried"
+        return 1
+    fi
+    # 3: no disk the TPM opens, nothing to prepare
+    tpm bind-next --kernel raye
+    case $? in
+    0|3) ;;
+    *) note "no prediction for the Raye kernel: the password is asked once"
+       keep_tpm_keys ;;
+    esac
+    if quietly grub-set-default "$sub>$old" && quietly grub-reboot "$sub>$new"; then
+        # the boot that set it up: finish leaves it alone until the next one
+        boot_id > "$trial"
+        return 0
+    fi
+    forget_tpm_keys
+    warn "could not set the trial boot"
+    return 1
+}
+
+root_only() {
+    if ! is_root; then
+        echo "raye-kernel-setup $1: run it as root" >&2
+        exit 1
+    fi
+    open_log "$1"
+}
+
+case "${1:-status}" in
+status)
+    if [ -f "$trial" ]; then echo trial
+    elif [ -f "$failed" ]; then echo failed
+    elif tpm_needs_password; then echo tpm-needs-password
+    elif ! secure_boot; then echo no-secure-boot
+    # enrolled: the key is in and the kernel goes in at the next boot.
+    # A key left in the firmware with nothing queued is not that.
+    elif [ -f "$pending" ] && enrolled; then echo enrolled
+    elif [ -f "$pending" ]; then echo pending
+    else echo not-enrolled; fi
+    ;;
+tpm-status)
+    tpm_status_now
+    ;;
+enroll)
+    root_only enroll
+    mkdir -p "$state"
+    rm -f "$failed"            # trying again
+    if ! secure_boot || enrolled; then
+        # nothing to ask the firmware: install now
+        install_kernel "$(kernel_packages)" && try_once
+        exit $?
+    fi
+    # six digits: MokManager only asks to type it, nothing to remember
+    code=$(od -An -N4 -tu4 /dev/urandom | tr -d ' ' | cut -c1-6)
+    while [ ${#code} -lt 6 ]; do code="0$code"; done
+    hash=$(mktemp) || exit 1
+    if mokutil --generate-hash="$code" > "$hash" 2>&3 &&
+        quietly mokutil --import "$cert" --hash-file "$hash"; then
+        rm -f "$hash"
+    else
+        rm -f "$hash"
+        warn "could not queue the key"
+        exit 1
+    fi
+    : > "$pending"
+    note "key queued for the next restart"
+    echo "$code"
+    ;;
+rebind)
+    root_only rebind
+    # the disk password on stdin, for a disk the TPM no longer opens
+    # (kernel switched before this existed, firmware update...)
+    key=$(mktemp "$R/run/raye-rebind.XXXXXX") || exit 1
+    trap 'shred -u "$key" 2>/dev/null; rm -f "$key"' EXIT
+    trap 'exit 1' HUP INT TERM
+    chmod 600 "$key"
+    # one line, without its newline: a key file is used byte for byte
+    IFS= read -r pw || [ -n "${pw:-}" ]
+    printf '%s' "${pw:-}" > "$key"
+    unset pw
+    for dev in $(tpm_disks); do
+        tpm_answers "$dev" && continue
+        if bind_tpm_now "$dev" "$key"; then
+            note "the TPM opens $dev again"
+        else
+            note "the password did not open $dev"
+        fi
+    done
+    shred -u "$key" 2>/dev/null
+    rm -f "$key"
+    settle_tpm
+    # done only when the TPM opens every encrypted disk again
+    tpm_opens_all
+    exit $?
+    ;;
+finish)
+    root_only finish
+    if [ -f "$trial" ]; then
+        # run again on the boot that set it up (a package upgrade restarts
+        # this unit, or someone ran it by hand): the trial boot is still ahead
+        t=$(cat "$trial")
+        if [ -n "$t" ] && [ "$t" = "$(boot_id)" ]; then
+            note "the trial boot is the next one"
+            exit 0
+        fi
+        rm -f "$trial"
+        case "$(uname -r)" in
+        *-raye)
+            # it started: it is now the kernel this computer boots
+            sub=$(submenu_id)
+            id=$(entry_id "$(uname -r)")
+            [ -n "$sub" ] && [ -n "$id" ] && quietly grub-set-default "$sub>$id"
+            rebind_tpm
+            # the bindings no kernel uses any more go; Ubuntu's kernel
+            # keeps one (raye-tpm does nothing when it already has it)
+            tpm prune
+            tpm bind-next --kernel ubuntu
+            say "Raye kernel kept"
+            ;;
+        *)
+            forget_tpm_keys
+            : > "$failed"
+            say "the Raye kernel did not start, staying on $(uname -r)"
+            ;;
+        esac
+        exit 0
+    fi
+    [ -f "$pending" ] || exit 0
+    if enrolled || ! secure_boot; then
+        # no package reachable yet (offline): try again at the next boot,
+        # without leaving a failed unit behind
+        pkgs=$(boot_packages)
+        [ -n "$pkgs" ] || { say "Raye kernel not reachable yet, next boot"; exit 0; }
+        install_kernel "$pkgs" && try_once && rm -f "$pending"
+    elif ! mokutil --list-new 2>/dev/null | grep -q .; then
+        # the key was turned down at the blue screen: start over later
+        note "key turned down at the restart"
+        rm -f "$pending"
+    fi
+    ;;
+remove)
+    root_only remove
+    # leaving the Raye kernel: Ubuntu's must open the disk alone next boot
+    case "$(uname -r)" in
+    *-raye) tpm bind-next --kernel ubuntu ;;
+    esac
+    forget_tpm_keys
+    rm -f "$pending" "$trial" "$failed" "$grubcfg"
+    if ! quietly env DEBIAN_FRONTEND=noninteractive \
+        apt-get purge -y -q 'linux-image-*-raye' 'linux-headers-*-raye'; then
+        warn "could not remove the Raye kernel"
+        exit 1
+    fi
+    quietly update-grub
+    ;;
+*)
+    echo "usage: raye-kernel-setup status|tpm-status|enroll|finish|rebind|remove" >&2
+    exit 2
+    ;;
+esac

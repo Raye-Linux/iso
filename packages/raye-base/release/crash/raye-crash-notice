@@ -1,0 +1,509 @@
+#!/usr/bin/python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Say "Raye restarted after a problem" once, after a crash.
+
+When the kernel stops (a panic), it writes the end of its log into the
+firmware's storage (pstore). At the next boot systemd-pstore moves those
+records into /var/lib/systemd/pstore, readable by root only.
+
+    raye-crash-notice collect   run as root after systemd-pstore (drop-in):
+                                writes a short summary of each record, with
+                                no address or register, into /var/lib/raye/crash
+    raye-crash-notice           run in the user's session: a record that was
+                                not there last time gets one notification with
+                                Details, which opens a report saved in
+                                ~/.local/share/raye/crash-reports/
+"""
+import argparse
+import json
+import os
+import pathlib
+import re
+import subprocess
+import sys
+import tempfile
+import time
+
+PSTORE = pathlib.Path("/var/lib/systemd/pstore")
+SUMMARIES = pathlib.Path("/var/lib/raye/crash")
+LOCALES = (pathlib.Path(__file__).resolve().parent / "locale",
+           pathlib.Path("/usr/share/raye/crash/locale"))
+HANDBOOK = "https://github.com/Raye-Linux/handbook"
+
+# kmsg_dump reasons written on a clean shutdown when printk.always_kmsg_dump
+# is on: nothing went wrong.
+CLEAN = {"Restart", "Halt", "Poweroff", "Shutdown"}
+MAX_TRACE = 16
+MAX_TEXT = 200
+MAX_READ = 1 << 20
+# Without any earlier run, a record archived since this boot started is the
+# reason of this restart. The margin covers a clock set again after the
+# archive was written (a hardware clock kept in local time).
+BOOT_SLACK = 12 * 3600
+# A crash time read from an EFI record id must look like a date.
+EPOCH_MIN = 1_000_000_000
+NAME_SAFE = re.compile(r"[^A-Za-z0-9._-]")
+
+ENGLISH = {
+    "title": "Raye restarted after a problem",
+    "body": "Your files are safe.",
+    "details": "Details",
+    "report_intro": "Your computer ran into a problem and had to restart. Your files are safe.",
+    "problem": "Problem {number}",
+    "problem_at": "When it happened",
+    "restarted_at": "Raye restarted",
+    "stop_code": "Stop code",
+    "kind": "What happened",
+    "process": "Program running",
+    "module": "Problem in",
+    "kernel": "Kernel",
+    "computer": "Computer",
+    "trace": "Call trace",
+    "saved_in": "Saved by the system in",
+    "no_details": "The full details of this problem are saved in {path}, and only root can read them.",
+    "help": "If this keeps happening, the handbook says what to try:",
+    "technical": "Technical details",
+    "kind_Panic": "The whole system stopped",
+    "kind_Oops": "A part of the system failed",
+    "kind_Emergency": "The system restarted in an emergency",
+    "kind_unknown": "Unknown",
+    "colon": ":",
+    "date": "{day} {month} {year}, {time}",
+    "months": ["January", "February", "March", "April", "May", "June", "July",
+               "August", "September", "October", "November", "December"],
+}
+
+
+# ------------------------------------------------------------------ records
+
+class Record:
+    """One crash record archived by systemd-pstore."""
+
+    def __init__(self, key: str, path: pathlib.Path, crash_time, archived: int):
+        self.key = key
+        self.path = path
+        self.crash_time = crash_time
+        self.archived = archived
+
+    @property
+    def when(self) -> int:
+        return self.crash_time or self.archived
+
+
+def _is_chunk(name: str) -> bool:
+    return (name == "dmesg.txt" or name.startswith("dmesg-")) and not name.endswith(".enc.z")
+
+
+def _crash_time(key: str):
+    # EFI records sit in <crash time in seconds>/<count>/
+    first = key.split("/")[0]
+    if not first.isdigit():
+        return None
+    value = int(first)
+    if EPOCH_MIN <= value <= time.time() + 2 * 86400:
+        return value
+    return None
+
+
+def find_records(root: pathlib.Path):
+    """Folders of ROOT (two levels at most) that hold a kernel log record."""
+    root = pathlib.Path(root)
+    if root.is_symlink() or not root.is_dir():
+        return
+    for dirpath, dirnames, filenames in os.walk(root):
+        rel = os.path.relpath(dirpath, root)
+        depth = 0 if rel == "." else rel.count("/") + 1
+        # os.walk lists links to folders among dirnames and never enters them
+        dirnames[:] = sorted(d for d in dirnames
+                             if not os.path.islink(os.path.join(dirpath, d)) and depth < 2)
+        if depth == 0:
+            continue
+        chunks = [n for n in filenames if _is_chunk(n)
+                  and os.path.isfile(os.path.join(dirpath, n))
+                  and not os.path.islink(os.path.join(dirpath, n))]
+        if not chunks:
+            continue
+        times = [os.lstat(os.path.join(dirpath, n)).st_mtime for n in chunks]
+        yield Record(rel, pathlib.Path(dirpath), _crash_time(rel), int(max(times)))
+
+
+def _read(path: pathlib.Path):
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    except OSError:
+        return None
+    with os.fdopen(fd, "rb") as f:
+        return f.read(MAX_READ).decode("utf-8", "replace")
+
+
+def record_text(record: Record):
+    """The record's kernel log, oldest part first, or None if unreadable."""
+    whole = record.path / "dmesg.txt"
+    if whole.is_file() and not whole.is_symlink():
+        return _read(whole)
+    # systemd-pstore joins the chunks in reverse name order: the part with
+    # the highest number holds the oldest lines
+    names = sorted((n for n in os.listdir(record.path)
+                    if n.startswith("dmesg-") and _is_chunk(n)), reverse=True)
+    parts = [_read(record.path / n) for n in names]
+    if not parts or any(p is None for p in parts):
+        return None
+    return "".join(parts)
+
+
+# ------------------------------------------------------------------ parsing
+
+HEADER = re.compile(r"^(\w+)#\d+ Part\d+\s*$")
+PREFIX = re.compile(r"^(?:<\d+>)?(?:\[\s*\d+\.\d+\]\s?)?(?:\[\s*[TC]\d+\]\s?)?")
+PANIC = re.compile(r"^Kernel panic - not syncing: (.*)$")
+BUG = re.compile(r"^(?:BUG: |Oops: (?!Oops)|general protection fault)(.*)$")
+COMM = re.compile(r"\bComm: (\S+)")
+RELEASE = re.compile(r"\s(\d+\.\d+[\w.+~-]*)\s+#")
+HARDWARE = re.compile(r"^Hardware name: (.*)$")
+RIP_MODULE = re.compile(r"^RIP: \w+:[\w.]+\+0x[0-9a-f]+/0x[0-9a-f]+ \[(\w+)\]")
+FRAME = re.compile(r"^\s*(\?\s+)?([A-Za-z_][\w.]*)\+0x[0-9a-f]+/0x[0-9a-f]+")
+# a kernel address is 0x... or 12 to 16 hex digits; dates in BIOS names stay
+ADDRESS = re.compile(r",?(?: for)? address:\s*\S+|\b0x[0-9a-fA-F]+\b|\b[0-9a-fA-F]{12,}\b")
+# the panic says only that an oops came first: its own line says more
+FATAL = ("Fatal exception", "Fatal exception in interrupt")
+
+
+def _clean(text: str):
+    text = "".join(c for c in text if c.isprintable())
+    text = ADDRESS.sub("", text)
+    text = re.sub(r"\s+", " ", text).strip(" ,:")
+    return text[:MAX_TEXT] or None
+
+
+def parse_dmesg(text: str) -> dict:
+    """What a person can read in a crash record: never an address."""
+    out = {"reason": None, "stop_code": None, "process": None, "module": None,
+           "kernel": None, "computer": None, "trace": []}
+    panic = bug = None
+    in_trace = done_trace = False
+    for raw in text.splitlines():
+        header = HEADER.match(raw)
+        if header:
+            out["reason"] = out["reason"] or header.group(1)
+            continue
+        line = PREFIX.sub("", raw, count=1).rstrip()
+        if panic is None and (m := PANIC.match(line)):
+            panic = _clean(m.group(1))
+        elif bug is None and (m := BUG.match(line)):
+            bug = _clean(m.group(1) if not line.startswith("general") else line)
+        if out["process"] is None and (m := COMM.search(line)):
+            out["process"] = _clean(m.group(1))
+            release = RELEASE.search(line)
+            out["kernel"] = _clean(release.group(1)) if release else None
+        if out["computer"] is None and (m := HARDWARE.match(line)):
+            out["computer"] = _clean(m.group(1))
+        if out["module"] is None and (m := RIP_MODULE.match(line)):
+            out["module"] = m.group(1)
+        if line.strip() == "Call Trace:" and not done_trace:
+            in_trace = True
+            continue
+        if in_trace:
+            if line.strip() == "</TASK>" or line.startswith(("---[", "Modules linked in")):
+                in_trace, done_trace = False, True
+                continue
+            frame = FRAME.match(line)
+            # "? " frames are the unwinder's guesses
+            if frame and not frame.group(1) and len(out["trace"]) < MAX_TRACE:
+                out["trace"].append(frame.group(2)[:MAX_TEXT])
+    if panic and bug and panic in FATAL:
+        panic = None
+    out["stop_code"] = panic or bug
+    return out
+
+
+def is_problem(summary: dict) -> bool:
+    return summary.get("reason") not in CLEAN
+
+
+# ------------------------------------------------------------------ collect
+
+def summary_name(key: str) -> str:
+    return NAME_SAFE.sub("_", key.replace("/", "-")) + ".json"
+
+
+def _write_atomic(folder: pathlib.Path, name: str, data: str, mode: int) -> None:
+    fd, tmp = tempfile.mkstemp(dir=folder, prefix=".tmp-")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            os.fchmod(f.fileno(), mode)
+            f.write(data)
+        # rename replaces a link planted at NAME, never what it points to
+        os.replace(tmp, folder / name)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def collect(pstore=PSTORE, summaries=SUMMARIES, verbose=False) -> list:
+    """Write a summary for every record that has none; drop the others."""
+    pstore, summaries = pathlib.Path(pstore), pathlib.Path(summaries)
+    summaries.mkdir(mode=0o755, parents=True, exist_ok=True)
+    written, wanted = [], set()
+    for record in find_records(pstore):
+        name = summary_name(record.key)
+        wanted.add(name)
+        target = summaries / name
+        if target.is_file() and not target.is_symlink():
+            continue
+        text = record_text(record)
+        summary = parse_dmesg(text or "")
+        summary.update(record=record.key, crash_time=record.crash_time,
+                       archived=record.archived, readable=text is not None)
+        _write_atomic(summaries, name, json.dumps(summary, indent=1) + "\n", 0o644)
+        written.append(name)
+        if verbose:
+            print(f"raye-crash-notice: summary of {record.key} written", file=sys.stderr)
+    for old in summaries.glob("*.json"):
+        if old.name not in wanted:
+            old.unlink()
+    return written
+
+
+# ------------------------------------------------------------------ the notice
+
+def _locale_dir():
+    for folder in LOCALES:
+        if folder.is_dir():
+            return folder
+    return None
+
+
+def available() -> set:
+    folder = _locale_dir()
+    found = {"en"}
+    if folder:
+        found |= {p.stem for p in folder.glob("*.json")}
+    return found
+
+
+def language(env) -> str:
+    """The first language of the user's that Raye has words for."""
+    loc = env.get("LC_ALL") or env.get("LC_MESSAGES") or env.get("LANG") or ""
+    if loc.split(".")[0] in ("", "C", "POSIX"):
+        return "en"
+    have = available()
+    for item in [p for p in env.get("LANGUAGE", "").split(":") if p] + [loc]:
+        code = item.split(".")[0].split("@")[0].split("_")[0].lower()
+        if code in have:
+            return code
+    return "en"
+
+
+def strings(lang: str) -> dict:
+    words = dict(ENGLISH)
+    folder = _locale_dir()
+    if folder and lang != "en":
+        try:
+            words.update(json.loads((folder / f"{lang}.json").read_text(encoding="utf-8")))
+        except (OSError, ValueError):
+            pass
+    return words
+
+
+def format_time(stamp: int, words: dict) -> str:
+    t = time.localtime(stamp)
+    return words["date"].format(day=t.tm_mday, month=words["months"][t.tm_mon - 1],
+                                year=t.tm_year, time=f"{t.tm_hour:02d}:{t.tm_min:02d}")
+
+
+def boot_time() -> int:
+    try:
+        with open("/proc/stat", encoding="ascii") as f:
+            for line in f:
+                if line.startswith("btime "):
+                    return int(line.split()[1])
+    except (OSError, ValueError):
+        pass
+    return int(time.time() - time.monotonic())
+
+
+def load_summary(summaries: pathlib.Path, record: Record):
+    path = summaries / summary_name(record.key)
+    if path.is_file() and not path.is_symlink():
+        try:
+            summary = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(summary, dict) and summary.get("record") == record.key:
+                return summary if summary.get("readable", True) else None
+        except (OSError, ValueError):
+            pass
+    # the summary is missing (drop-in not there yet): readable only by root
+    whole = record.path / "dmesg.txt"
+    if os.access(whole, os.R_OK):
+        text = _read(whole)
+        if text is not None:
+            return parse_dmesg(text)
+    return None
+
+
+def _state_paths(env):
+    home = pathlib.Path(env.get("HOME") or os.path.expanduser("~"))
+    state = pathlib.Path(env.get("XDG_STATE_HOME") or home / ".local/state") / "raye"
+    data = pathlib.Path(env.get("XDG_DATA_HOME") or home / ".local/share") / "raye"
+    return state / "crash-notice.json", data / "crash-reports"
+
+
+def load_state(path: pathlib.Path):
+    try:
+        state = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(state, dict) and isinstance(state.get("seen"), list):
+            return state
+    except (OSError, ValueError):
+        pass
+    return None
+
+
+def save_state(path: pathlib.Path, seen) -> None:
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    data = json.dumps({"seen": sorted(seen), "last": int(time.time())}) + "\n"
+    _write_atomic(path.parent, path.name, data, 0o600)
+
+
+def _private_dir(folder: pathlib.Path) -> None:
+    folder.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if not folder.is_symlink():
+        folder.chmod(0o700)
+
+
+def report(problems, words: dict) -> str:
+    rows_keys = ("problem_at", "restarted_at", "stop_code", "kind", "process",
+                 "module", "kernel", "computer")
+    colon = words["colon"]
+    width = max(len(words[k] + colon) for k in rows_keys) + 1
+    out = [words["title"], "", words["report_intro"], "", words["help"], HANDBOOK]
+    for number, (record, summary) in enumerate(problems, 1):
+        out.append("")
+        if len(problems) > 1:
+            out += [words["problem"].format(number=number), ""]
+        rows = []
+        if record.crash_time:
+            rows.append(("problem_at", format_time(record.crash_time, words)))
+        rows.append(("restarted_at", format_time(record.archived, words)))
+        if summary is None:
+            out += [f"{words[k] + colon:<{width}}{v}" for k, v in rows]
+            out += ["", words["no_details"].format(path=record.path)]
+            continue
+        reason = summary.get("reason")
+        rows += [("stop_code", summary.get("stop_code")),
+                 ("kind", words.get(f"kind_{reason}", reason or words["kind_unknown"])),
+                 ("process", summary.get("process")),
+                 ("module", summary.get("module")),
+                 ("kernel", summary.get("kernel")),
+                 ("computer", summary.get("computer"))]
+        out += [f"{words[k] + colon:<{width}}{v}" for k, v in rows if v]
+        out += ["", words["technical"]]
+        if summary.get("trace"):
+            out.append(f"  {words['trace']}{colon}")
+            out += [f"    {name}" for name in summary["trace"]]
+        out.append(f"  {words['saved_in']}{colon} {record.path}")
+    return "\n".join(out) + "\n"
+
+
+def save_report(folder: pathlib.Path, text: str, stamp: int) -> pathlib.Path:
+    folder.parent.mkdir(parents=True, exist_ok=True)
+    _private_dir(folder)
+    base = time.strftime("%Y-%m-%d-%H%M%S", time.localtime(stamp))
+    for n in range(1, 100):
+        path = folder / (base + (f"-{n}" if n > 1 else "") + ".txt")
+        try:
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+                         | os.O_CLOEXEC, 0o600)
+        except FileExistsError:
+            continue
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+        return path
+    raise OSError("no free report name")
+
+
+def wait_for_notifications(seconds: int) -> bool:
+    """True once the desktop's notification server is up."""
+    cmd = ["busctl", "--user", "call", "org.freedesktop.DBus", "/org/freedesktop/DBus",
+           "org.freedesktop.DBus", "NameHasOwner", "s", "org.freedesktop.Notifications"]
+    deadline = time.monotonic() + seconds
+    while True:
+        try:
+            out = subprocess.run(cmd, capture_output=True, text=True, timeout=10).stdout
+        except FileNotFoundError:
+            return True         # cannot ask: try anyway
+        except subprocess.TimeoutExpired:
+            out = ""
+        if out.split() == ["b", "true"]:
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(1)
+
+
+def show(words: dict, report_path: pathlib.Path) -> None:
+    cmd = ["notify-send", "--app-name=Raye", "--icon=raye-eye", "--urgency=normal",
+           f"--action=details={words['details']}", "--wait", words["title"], words["body"]]
+    try:
+        answer = subprocess.run(cmd, capture_output=True, text=True).stdout.strip()
+    except OSError as error:
+        print(f"raye-crash-notice: cannot show the notice: {error}", file=sys.stderr)
+        return
+    if answer == "details":
+        try:
+            subprocess.run(["xdg-open", str(report_path)], timeout=120)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            print(f"raye-crash-notice: cannot open {report_path}: {error}", file=sys.stderr)
+
+
+def notice(pstore: pathlib.Path, summaries: pathlib.Path, booted: int,
+           wait_seconds: int, env) -> int:
+    records = list(find_records(pstore))
+    state_file, reports = _state_paths(env)
+    state = load_state(state_file)
+    if state is None:
+        new = [r for r in records if r.archived >= booted - BOOT_SLACK]
+    else:
+        seen = set(state["seen"])
+        new = [r for r in records if r.key not in seen]
+    problems = []
+    for record in new:
+        summary = load_summary(summaries, record)
+        if summary is None or is_problem(summary):
+            problems.append((record, summary))
+    # remembered before anything is shown: never twice, even if stopped here
+    save_state(state_file, {r.key for r in records})
+    if not problems:
+        return 0
+    problems.sort(key=lambda p: p[0].when, reverse=True)
+    words = strings(language(env))
+    path = save_report(reports, report(problems, words), problems[0][0].when)
+    print(f"raye-crash-notice: report saved in {path}", file=sys.stderr)
+    if wait_for_notifications(wait_seconds):
+        show(words, path)
+    else:
+        print("raye-crash-notice: no notification server, report only", file=sys.stderr)
+    return 0
+
+
+def main(argv=None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    mode = "notice"
+    if argv and argv[0] == "collect":
+        mode, argv = "collect", argv[1:]
+    parser = argparse.ArgumentParser(prog="raye-crash-notice")
+    parser.add_argument("--pstore", type=pathlib.Path, default=PSTORE)
+    parser.add_argument("--summaries", type=pathlib.Path, default=SUMMARIES)
+    parser.add_argument("--boot-time", type=int, default=None)
+    parser.add_argument("--wait-seconds", type=int, default=90)
+    args = parser.parse_args(argv)
+    if mode == "collect":
+        collect(args.pstore, args.summaries, verbose=True)
+        return 0
+    booted = args.boot_time if args.boot_time is not None else boot_time()
+    return notice(args.pstore, args.summaries, booted, args.wait_seconds, os.environ)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

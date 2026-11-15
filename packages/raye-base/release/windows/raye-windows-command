@@ -1,0 +1,206 @@
+#!/usr/bin/python3 -I
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""The Windows command names people type in a terminal (notepad, regedit,
+taskmgr, control...), opening the Raye app that does the job, like the
+Run box does. Installed once, reached through a link per name in
+/usr/lib/raye/windows/commands, which /etc/profile.d puts at the end of
+the PATH: a real program of the same name always comes first.
+
+    notepad [FILE...]       the text editor
+    control [APPLET]        Control Panel, or the Settings page of an applet
+    msiexec [/i] FILE.msi   installs it, like a double click
+    winver, *.cpl           the Settings page
+
+The tables are the Run box's (theme/shell/run/src/runparser.cpp);
+tests/test_command.py checks the two still agree.
+"""
+import os
+import shlex
+import subprocess
+import sys
+
+# name -> desktop ids, first installed wins
+APPS = {
+    "cmd": "org.raye.terminal org.kde.konsole",
+    "powershell": "org.raye.terminal org.kde.konsole",
+    "pwsh": "org.raye.terminal org.kde.konsole",
+    "wt": "org.raye.terminal org.kde.konsole",
+    "notepad": "org.raye.notepad org.kde.kwrite org.kde.kate",
+    "wordpad": "org.raye.notepad org.kde.kwrite org.kde.kate",
+    "calc": "org.raye.calculator org.kde.kcalc",
+    "control": "org.raye.controlpanel org.raye.settings",
+    "regedit": "org.raye.regedit",
+    "regedt32": "org.raye.regedit",
+    "explorer": "org.kde.dolphin",
+    "taskmgr": "org.raye.taskmanager org.kde.plasma-systemmonitor",
+    "resmon": "org.raye.taskmanager org.kde.plasma-systemmonitor",
+    "perfmon": "org.raye.taskmanager org.kde.plasma-systemmonitor",
+    "mspaint": "org.kde.kolourpaint",
+    "snippingtool": "org.raye.snip org.kde.spectacle",
+    "charmap": "org.kde.kcharselect",
+    "diskmgmt.msc": "org.kde.partitionmanager",
+    "eventvwr": "org.kde.ksystemlog",
+    "eventvwr.msc": "org.kde.ksystemlog",
+    "msinfo32": "org.kde.kinfocenter",
+    "devmgmt.msc": "org.kde.kinfocenter",
+    "msedge": "firefox org.kde.falkon",
+    "iexplore": "firefox org.kde.falkon",
+}
+
+# Control Panel applets and "control <word>", and their Settings page
+PAGES = {
+    "desk.cpl": "system/display",
+    "mmsys.cpl": "system/sound",
+    "powercfg.cpl": "system/power",
+    "sysdm.cpl": "system/about",
+    "winver": "system/about",
+    "bthprops.cpl": "devices/bluetooth",
+    "control:printers": "devices/printers",
+    "main.cpl": "devices/mouse",
+    "control:mouse": "devices/mouse",
+    "ncpa.cpl": "network",
+    "inetcpl.cpl": "network/proxy",
+    "control:desktop": "personalization/background",
+    "control:color": "personalization/colors",
+    "fonts": "personalization/fonts",
+    "appwiz.cpl": "apps/installed",
+    "netplwiz": "accounts/other-users",
+    "control:userpasswords": "accounts/other-users",
+    "control:userpasswords2": "accounts/other-users",
+    "timedate.cpl": "time/date-time",
+    "intl.cpl": "time/language",
+    "control:keyboard": "time/typing",
+    "joy.cpl": "gaming/controllers",
+}
+
+# names that are a terminal command in their own right; a link for them
+# would only be shadowed (fonts) or would confuse (write is a Unix tool)
+NO_LINK = {"fonts"}
+
+
+def fr():
+    return os.environ.get("LANG", "").startswith("fr")
+
+
+def say(en, fr_text):
+    print(fr_text if fr() else en, file=sys.stderr)
+
+
+def data_dirs():
+    home = os.environ.get("XDG_DATA_HOME") or os.path.join(os.path.expanduser("~"), ".local/share")
+    rest = os.environ.get("XDG_DATA_DIRS") or "/usr/local/share:/usr/share"
+    return [home] + [d for d in rest.split(":") if d]
+
+
+def desktop_file(app_id):
+    for d in data_dirs():
+        path = os.path.join(d, "applications", app_id + ".desktop")
+        if os.path.isfile(path):
+            return path
+    return None
+
+
+def first_installed(ids):
+    for app_id in ids.split():
+        path = desktop_file(app_id)
+        if path:
+            return path
+    return None
+
+
+def exec_line(path):
+    """The Exec= of [Desktop Entry], None when there is none."""
+    group = None
+    with open(path, encoding="utf-8", errors="replace") as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith("["):
+                group = line
+            elif group == "[Desktop Entry]" and line.startswith("Exec="):
+                return line[len("Exec="):]
+    return None
+
+
+def command(path, args):
+    """argv for a desktop entry with these files or links, as the
+    desktop entry spec expands %f %F %u %U; the other codes go."""
+    words = shlex.split(exec_line(path) or "")
+    out, used = [], False
+    for w in words:
+        if w in ("%f", "%u"):
+            out += args[:1]
+            used = True
+        elif w in ("%F", "%U"):
+            out += args
+            used = True
+        elif w in ("%i", "%c", "%k"):
+            continue
+        else:
+            out.append(w.replace("%%", "%"))
+    if args and not used:
+        out += args
+    return out
+
+
+def start(argv):
+    """Starts a window of its own, away from this terminal: nothing it
+    prints lands here."""
+    try:
+        subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, start_new_session=True, close_fds=True)
+    except OSError:
+        return 1
+    return 0
+
+
+def is_switch(arg):
+    return arg.startswith("-") or (arg.startswith("/") and 1 < len(arg) <= 3 and arg[1:].isalpha())
+
+
+def open_page(page):
+    path = desktop_file("org.raye.settings")
+    if not path:
+        return None
+    return start(command(path, ["settings:" + page]))
+
+
+def msiexec(name, args):
+    files = [a for a in args if not is_switch(a)]
+    if len(files) != 1 or not files[0].lower().endswith(".msi") or not os.path.isfile(files[0]):
+        say("usage: msiexec [/i] setup.msi", "utilisation : msiexec [/i] setup.msi")
+        return 2
+    runner = os.environ.get("RAYE_RUN_WINDOWS", "/usr/bin/raye-run-windows")
+    return start([runner, os.path.abspath(files[0])])
+
+
+def main(argv):
+    name = os.path.basename(argv[0]).lower()
+    args = argv[1:]
+    if name == "msiexec":
+        return msiexec(name, args)
+    if not args and name in PAGES:
+        if open_page(PAGES[name]) is not None:
+            return 0
+    if name == "control" and args:
+        page = PAGES.get("control:" + args[0].lower()) or PAGES.get(args[0].lower())
+        if len(args) == 1 and page and open_page(page) is not None:
+            return 0
+        args = []                       # an applet Raye has no page for: the panel
+    ids = APPS.get(name)
+    if not ids:
+        say("%s: not found" % name, "%s : introuvable" % name)
+        return 127
+    if any(is_switch(a) for a in args):
+        say("%s: Windows options don't work on Raye" % name,
+            "%s : les options de Windows ne marchent pas sur Raye" % name)
+        return 2
+    path = first_installed(ids)
+    if not path:
+        say("%s: the app for this isn't installed" % name,
+            "%s : l'application qui fait ça n'est pas installée" % name)
+        return 127
+    return start(command(path, [a if "://" in a else os.path.abspath(a) for a in args]))
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

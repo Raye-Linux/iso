@@ -1,0 +1,124 @@
+#!/bin/sh
+# Plain names in the boot menu.
+#
+# os-prober writes what it found together with the partition it found it
+# on -- "Windows Boot Manager (on /dev/nvme0n1p1)" -- and that is the
+# name a person reads when they start a machine that holds two or three
+# systems. This pass rewrites the titles of grub.cfg and nothing else:
+# the lines that boot, the entry ids (the saved default and the
+# recordfail state hang off them) and the classes (the icons of the boot
+# theme) come out byte for byte the same.
+#
+#   raye-grub-titles [/boot/grub/grub.cfg]
+#
+# Two systems of the same name keep their partition, or there would be no
+# way to tell them apart. Running it again over an already-plain menu
+# changes nothing, which matters: update-grub runs at every kernel
+# update.
+#
+# It never leaves a half-written menu. The new text is built beside the
+# old one, checked by grub-script-check when that exists, and only then
+# put in place with the same owner and mode. Anything wrong and the
+# original stays, with a word on standard error.
+set -eu
+
+cfg=${1:-/boot/grub/grub.cfg}
+
+if [ ! -f "$cfg" ]; then
+    echo "raye-grub-titles: $cfg: no such file" >&2
+    exit 1
+fi
+if [ ! -r "$cfg" ]; then
+    echo "raye-grub-titles: $cfg: cannot read it" >&2
+    exit 1
+fi
+
+tmp=$(mktemp "$cfg.raye.XXXXXX") || {
+    echo "raye-grub-titles: cannot write beside $cfg" >&2
+    exit 1
+}
+trap 'rm -f -- "$tmp"' EXIT INT TERM
+
+awk -f /dev/fd/3 "$cfg" "$cfg" > "$tmp" 3<<'AWKEOF'
+# Two passes over the same file: the first works out the new titles and
+# counts them, the second writes, so a name that would appear twice can
+# keep what tells it apart.
+
+function title_of(line,   p, q) {
+    p = index(line, "'")
+    if (p == 0) return ""
+    q = index(substr(line, p + 1), "'")
+    if (q == 0) return ""
+    return substr(line, p + 1, q - 1)
+}
+
+function device_of(t,   m) {
+    # the last " (on /dev/XXX)" of a title, as a bare name
+    if (match(t, / \(on \/dev\/[^)]+\)/) == 0) return ""
+    m = substr(t, RSTART, RLENGTH)
+    sub(/^ \(on \/dev\//, "", m)
+    sub(/\)$/, "", m)
+    return m
+}
+
+function plain(t,   out) {
+    out = t
+    # drop the partition os-prober appends. It is not always at the end:
+    # a kernel of a submenu reads "<system> (on /dev/sda5), with Linux ...".
+    gsub(/ \(on \/dev\/[^)]+\)/, "", out)
+    # "Windows Boot Manager" is the firmware's words, not a name
+    sub(/Windows Boot Manager/, "Windows", out)
+    return out
+}
+
+# a line that carries a title, and only such a line
+function is_entry(line) {
+    return line ~ /^[ \t]*(menuentry|submenu)[ \t]+'/
+}
+
+NR == FNR {
+    if (is_entry($0)) {
+        t = title_of($0)
+        if (t != "") seen[plain(t)]++
+    }
+    next
+}
+
+{
+    if (!is_entry($0)) { print; next }
+    t = title_of($0)
+    if (t == "") { print; next }
+    new = plain(t)
+    if (seen[new] > 1) {
+        d = device_of(t)
+        if (d != "") new = new " (" d ")"
+    }
+    if (new == t) { print; next }
+    # rebuild the line around the quoted title, leaving the rest alone
+    p = index($0, "'")
+    rest = substr($0, p + 1)
+    q = index(rest, "'")
+    printf "%s%s%s\n", substr($0, 1, p), new, substr(rest, q)
+}
+AWKEOF
+
+if [ ! -s "$tmp" ]; then
+    echo "raye-grub-titles: the new menu came out empty, keeping $cfg" >&2
+    exit 1
+fi
+if [ "$(wc -l < "$tmp")" != "$(wc -l < "$cfg")" ]; then
+    echo "raye-grub-titles: the new menu lost or gained lines, keeping $cfg" >&2
+    exit 1
+fi
+if command -v grub-script-check > /dev/null 2>&1; then
+    if ! grub-script-check "$tmp" 2>/dev/null; then
+        echo "raye-grub-titles: the new menu does not parse, keeping $cfg" >&2
+        exit 1
+    fi
+fi
+
+# same owner and mode as the menu we are replacing
+chmod --reference="$cfg" "$tmp" 2>/dev/null || chmod 444 "$tmp"
+chown --reference="$cfg" "$tmp" 2>/dev/null || true
+mv -f -- "$tmp" "$cfg"
+trap - EXIT INT TERM

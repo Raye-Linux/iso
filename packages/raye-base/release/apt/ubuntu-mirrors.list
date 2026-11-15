@@ -1,0 +1,6 @@
+# Where the Ubuntu packages come from, tried in this order. All three are
+# Canonical's own servers, at different addresses: when one stops
+# answering, apt moves on to the next instead of failing the update.
+http://archive.ubuntu.com/ubuntu/	priority:1
+http://ca.archive.ubuntu.com/ubuntu/	priority:2
+http://gb.archive.ubuntu.com/ubuntu/	priority:3

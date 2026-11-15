@@ -1,0 +1,4 @@
+# Spinning disks use bfq: the desktop and app starts stay responsive while
+# a big copy runs. SSDs and NVMe keep the kernel's choice (mq-deadline,
+# none). bfq is a module; writing its name loads it.
+ACTION=="add|change", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", KERNEL=="sd[a-z]*", ATTR{queue/rotational}=="1", ATTR{queue/scheduler}="bfq"

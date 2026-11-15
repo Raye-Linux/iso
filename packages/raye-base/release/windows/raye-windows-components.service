@@ -1,0 +1,14 @@
+[Unit]
+Description=Fetch the Windows runtimes and fonts programs expect
+Documentation=https://github.com/Raye-Linux/handbook
+After=network-online.target
+Wants=network-online.target
+# nothing to keep in a live session
+ConditionKernelCommandLine=!boot=casper
+
+[Service]
+Type=oneshot
+Nice=15
+IOSchedulingClass=idle
+ExecStart=/usr/libexec/raye-windows-components install --quiet
+TimeoutStartSec=30min

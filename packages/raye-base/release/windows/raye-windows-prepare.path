@@ -1,0 +1,10 @@
+[Unit]
+Description=Prepare the Windows space again when new runtimes arrive
+
+[Path]
+# raye-windows-components only rewrites this file when something changed
+PathChanged=/var/lib/raye/windows/redist/components.json
+Unit=raye-windows-prepare.service
+
+[Install]
+WantedBy=paths.target

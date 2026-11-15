@@ -1,0 +1,113 @@
+#!/usr/bin/python3 -I
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Writes the second part of unattended-upgrades' Package-Blacklist.
+
+Raye Update keeps for a restart every binary whose source matches
+OFFLINE_SOURCES (raye-update), on top of the names in OFFLINE_PACKAGES.
+unattended-upgrades only matches binary names, so this lists each binary
+of those sources that the name patterns miss, from the apt indexes.
+
+    unattended-held [--lists DIR] [--update RAYE_UPDATE_PY] [--check]
+
+Run it after raye-update changes OFFLINE_SOURCES, or when a new Ubuntu
+release adds binaries. --check only says whether the file is current.
+"""
+import argparse
+import ast
+import glob
+import os
+import re
+import subprocess
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+CONF = os.path.join(HERE, "..", "packages", "raye-base", "release", "updates",
+                    "52raye-unattended-upgrades")
+UPDATE = os.path.join(HERE, "..", "..", "update", "src", "raye_update.py")
+BEGIN = "    // binaries of OFFLINE_SOURCES the names above miss (tools/unattended-held)\n"
+END = "    // end of tools/unattended-held\n"
+
+
+def offline_sources(path):
+    for node in ast.parse(open(path).read()).body:
+        if (isinstance(node, ast.Assign) and len(node.targets) == 1
+                and getattr(node.targets[0], "id", "") == "OFFLINE_SOURCES"):
+            return re.compile(ast.literal_eval(node.value.args[0]))
+    raise SystemExit("no OFFLINE_SOURCES in " + path)
+
+
+def binaries(lists):
+    """binary name -> source name, from every resolute Packages index"""
+    found = {}
+    files = sorted(glob.glob(os.path.join(lists, "*_dists_resolute*_binary-*_Packages")))
+    for path in files:
+        name = source = None
+        with open(path, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                if line.startswith("Package: "):
+                    name = source = line[9:].strip()
+                elif line.startswith("Source: ") and name:
+                    source = line[8:].split()[0]
+                elif not line.strip() and name:
+                    found[name] = source
+                    name = None
+        if name:
+            found[name] = source
+    return found, files
+
+
+def name_patterns(conf_text):
+    """the hand-written patterns: everything before the generated part"""
+    head = conf_text.split(BEGIN)[0]
+    block = head.split("Unattended-Upgrade::Package-Blacklist {", 1)[1]
+    return re.findall(r'^\s*"([^"]*)";', block, re.M)
+
+
+def generated(conf_text, lists, update):
+    sources = offline_sources(update)
+    found, files = binaries(lists)
+    if not files:
+        raise SystemExit("no resolute Packages index in " + lists)
+    patterns = name_patterns(conf_text)
+    names = sorted(n for n, s in found.items()
+                   if sources.match(s) and not any(re.match(p, n) for p in patterns))
+    # package names only hold [a-z0-9+.-]; + and . mean something to re
+    return "".join('    "%s$";\n' % re.sub(r"([+.])", r"\\\1", n) for n in names)
+
+
+def rewrite(conf_text, part):
+    if BEGIN in conf_text:
+        before, rest = conf_text.split(BEGIN, 1)
+        after = rest.split(END, 1)[1]
+    else:
+        before, after = conf_text.split("};\nUnattended-Upgrade::Automatic-Reboot", 1)
+        after = "};\nUnattended-Upgrade::Automatic-Reboot" + after
+    return before + BEGIN + part + END + after
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--lists", default=os.environ.get("RAYE_APT_LISTS", "/var/lib/apt/lists"))
+    ap.add_argument("--update", default=UPDATE)
+    ap.add_argument("--conf", default=CONF)
+    ap.add_argument("--check", action="store_true")
+    args = ap.parse_args()
+    text = open(args.conf).read()
+    new = rewrite(text, generated(text, args.lists, args.update))
+    if args.check:
+        if new != text:
+            print("unattended-held: %s is out of date" % args.conf, file=sys.stderr)
+            return 1
+        return 0
+    if new != text:
+        with open(args.conf + ".new", "w") as f:
+            f.write(new)
+        os.replace(args.conf + ".new", args.conf)
+    # apt has to read it the way unattended-upgrades will
+    subprocess.run(["apt-config", "-c", args.conf, "dump"], check=True,
+                   stdout=subprocess.DEVNULL)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

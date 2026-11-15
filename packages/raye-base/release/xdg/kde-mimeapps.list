@@ -1,0 +1,12 @@
+# Raye's default apps, read before the desktop's own list
+# (/usr/share/applications/kde-mimeapps.list). A user's choice in
+# ~/.config/mimeapps.list still wins.
+
+[Default Applications]
+# Firefox is the browser
+x-scheme-handler/http=firefox.desktop
+x-scheme-handler/https=firefox.desktop
+text/html=firefox.desktop
+application/xhtml+xml=firefox.desktop
+# "Get" links in search results open the Raye Store
+x-scheme-handler/appstream=org.raye.store.desktop

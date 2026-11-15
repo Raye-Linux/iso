@@ -1,0 +1,48 @@
+#!/bin/sh
+# Set up snapper for the system on btrfs: apt and Raye Update take a
+# restore point before and after their changes, and a daily one is taken
+# when something changed. Runs at the first start, and again once when a
+# new version of these settings comes. Does nothing on other file
+# systems, nor in the live session.
+#
+# RAYE_SNAPSHOTS_ROOT stands for / in the tests.
+set -eu
+
+root=${RAYE_SNAPSHOTS_ROOT:-}
+stamp=$root/var/lib/raye/snapshots-v3
+
+[ -n "$root" ] || [ "$(findmnt -no FSTYPE /)" = btrfs ] || exit 0
+grep -qs 'boot=casper' "$root/proc/cmdline" && exit 0
+
+if [ ! -e "$root/etc/snapper/configs/root" ]; then
+    snapper --no-dbus -c root create-config /
+fi
+
+# Restore points are for the system: /home, logs and caches are other
+# subvolumes and never go back. No quota groups: they slow btrfs down for
+# little. Without them snapper skips SPACE_LIMIT, so only FREE_LIMIT
+# (keep a fifth of the disk free) caps the space points take.
+snapper --no-dbus -c root set-config \
+    NUMBER_CLEANUP=yes NUMBER_MIN_AGE=1800 \
+    NUMBER_LIMIT=2-6 NUMBER_LIMIT_IMPORTANT=2-4 \
+    TIMELINE_CREATE=no TIMELINE_CLEANUP=yes TIMELINE_MIN_AGE=1800 \
+    TIMELINE_LIMIT_HOURLY=0 TIMELINE_LIMIT_DAILY=2 TIMELINE_LIMIT_WEEKLY=0 \
+    TIMELINE_LIMIT_MONTHLY=0 TIMELINE_LIMIT_YEARLY=0 \
+    EMPTY_PRE_POST_CLEANUP=yes EMPTY_PRE_POST_MIN_AGE=1800 \
+    FREE_LIMIT=0.2
+
+# Raye Update makes one pair for a whole install: let it turn off the
+# pair apt would add for each run of dpkg.
+defaults=$root/etc/default/snapper
+if [ -e "$defaults" ]; then
+    sed -i 's/^DISABLE_APT_SNAPSHOT=.*/DISABLE_APT_SNAPSHOT="${DISABLE_APT_SNAPSHOT:-no}"/' "$defaults"
+fi
+
+# snapper's own hourly and per-start snapshots; ours is daily
+if [ -z "$root" ]; then
+    systemctl disable --now snapper-timeline.timer snapper-boot.timer 2>/dev/null || true
+    systemctl enable raye-snapshots-daily.timer snapper-cleanup.timer 2>/dev/null || true
+fi
+
+mkdir -p "$(dirname "$stamp")"
+: > "$stamp"

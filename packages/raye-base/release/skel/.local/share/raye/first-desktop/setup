@@ -1,0 +1,43 @@
+#!/bin/sh
+# First sign-in of a new account, run by raye-first-desktop.service (both
+# come from /etc/skel). Makes the user folders in the account's language,
+# puts the Recycle Bin on the desktop as Windows does, then removes the
+# unit and itself: it never runs twice.
+#
+# The link cannot wait in /etc/skel/Desktop: a Desktop folder already in
+# the home makes xdg-user-dirs keep that English name in every language.
+set -u
+: "${HOME:?}"
+
+here=$HOME/.local/share/raye/first-desktop
+units=$HOME/.config/systemd/user
+
+# Templates and Public point under ~/.local/share (user-dirs.dirs). They
+# have to exist first, or xdg-user-dirs-update points them at the home.
+mkdir -p "$HOME/.local/share/templates" "$HOME/.local/share/public"
+
+# Done here rather than left to xdg-user-dirs.service (which runs after
+# this one and then finds nothing to do), to know where the desktop is.
+if command -v xdg-user-dirs-update >/dev/null 2>&1; then
+    xdg-user-dirs-update || :
+fi
+desktop=
+if command -v xdg-user-dir >/dev/null 2>&1; then
+    desktop=$(xdg-user-dir DESKTOP 2>/dev/null) || desktop=
+fi
+[ -n "$desktop" ] || desktop=$HOME/Desktop
+
+# a desktop set to the home itself means "no desktop folder"
+if [ "${desktop%/}" != "${HOME%/}" ] && [ -f "$here/trash.desktop" ]; then
+    mkdir -p "$desktop"
+    if [ ! -e "$desktop/trash.desktop" ]; then
+        cp "$here/trash.desktop" "$desktop/trash.desktop"
+    fi
+fi
+
+rm -f "$units/graphical-session-pre.target.wants/raye-first-desktop.service" \
+      "$units/raye-first-desktop.service" \
+      "$here/trash.desktop" "$here/setup"
+rmdir "$units/graphical-session-pre.target.wants" "$units" "$HOME/.config/systemd" \
+      "$here" "$HOME/.local/share/raye" 2>/dev/null
+exit 0

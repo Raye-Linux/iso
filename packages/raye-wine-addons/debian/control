@@ -1,0 +1,25 @@
+Source: raye-wine-addons
+Section: otherosfs
+Priority: optional
+Maintainer: techoraye <190692880+techoraye@users.noreply.github.com>
+Build-Depends: debhelper-compat (= 13),
+               xz-utils,
+               zstd,
+               python3:any <!nocheck>,
+               python3-pytest <!nocheck>
+Standards-Version: 4.7.0
+Rules-Requires-Root: no
+Vcs-Git: https://github.com/Raye-Linux/iso.git
+
+Package: raye-wine-addons
+Architecture: all
+Multi-Arch: foreign
+Depends: ${misc:Depends}
+Description: runtime files Windows programs need, ready offline
+ The free runtime files many Windows programs and games expect, shipped
+ with the system so nothing is downloaded and no question is asked the
+ first time a program starts:
+  - Mono, for programs written for .NET;
+  - Gecko, for programs that show web pages inside their windows;
+  - DXVK, DirectX 8 to 11 on Vulkan;
+  - vkd3d-proton, DirectX 12 on Vulkan.

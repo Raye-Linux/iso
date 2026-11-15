@@ -1,0 +1,9 @@
+[Unit]
+Description=Daily system restore point
+ConditionPathExists=/etc/snapper/configs/root
+
+[Service]
+Type=oneshot
+Nice=19
+IOSchedulingClass=idle
+ExecStart=/usr/libexec/raye-snapshots-daily

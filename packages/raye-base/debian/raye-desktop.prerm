@@ -1,0 +1,16 @@
+#!/bin/sh
+set -e
+
+# The firewall rules name our profiles: drop them while the profiles are
+# still there to name.
+if [ "$1" = remove ] && command -v ufw >/dev/null 2>&1 &&
+        LC_ALL=C ufw status 2>/dev/null | grep -q '^Status: active'; then
+    for profile in raye-phone raye-network-discovery; do
+        [ -e "$DPKG_ROOT/etc/ufw/applications.d/$profile" ] || continue
+        ufw delete allow "$profile" >/dev/null 2>&1 || true
+    done
+fi
+
+#DEBHELPER#
+
+exit 0

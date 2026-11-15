@@ -1,0 +1,22 @@
+# Root certificates a Visual C++ runtime download must chain to, pinned by
+# the SHA-256 of the certificate (DER). raye-windows-components fetches
+# each one from the address next to it, keeps it only when its hash is
+# the one written here, and hands it to osslsigncode as the only trusted
+# root. Signing certificates below these roots change every year or so
+# and need no change here.
+#
+#   kind  sha256 of the certificate  where to fetch it
+#
+# code: the program's own signature
+# time: the time stamp on it (it keeps the signature good after the
+#       signing certificate expires)
+
+# Microsoft Root Certificate Authority 2011, until 2036-03-22
+# (signs Microsoft Code Signing PCA 2011 and PCA 2024)
+code 847df6a78497943f27fc72eb93f9a637320a02b561d0a91b09e87a7807ed7c61 https://www.microsoft.com/pki/certs/MicRooCerAut2011_2011_03_22.crt
+code 847df6a78497943f27fc72eb93f9a637320a02b561d0a91b09e87a7807ed7c61 http://www.microsoft.com/pki/certs/MicRooCerAut2011_2011_03_22.crt
+
+# Microsoft Root Certificate Authority 2010, until 2035-06-23
+# (signs Microsoft Time-Stamp PCA 2010)
+time df545bf919a2439c36983b54cdfc903dfa4f37d3996d8d84b4c31eec6f3c163e https://www.microsoft.com/pki/certs/MicRooCerAut_2010-06-23.crt
+time df545bf919a2439c36983b54cdfc903dfa4f37d3996d8d84b4c31eec6f3c163e http://www.microsoft.com/pki/certs/MicRooCerAut_2010-06-23.crt

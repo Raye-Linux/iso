@@ -1,0 +1,554 @@
+{
+ "format": 2,
+ "tool": "raye-bench",
+ "os": "raye",
+ "taken": "2026-10-31T23:25:21+00:00",
+ "runs": 5,
+ "fingerprint": {
+  "os": "Raye Linux 0.1",
+  "cpu": "AMD EPYC 7551P 32-Core Processor",
+  "threads": 4,
+  "ram_mib": 3903,
+  "disk": null,
+  "gpu": [
+   "Virtio 1.0 GPU (rev 01)"
+  ],
+  "kernel": "7.0.0-42-generic",
+  "kernel_build": "#42 SMP PREEMPT_DYNAMIC Thu Oct 15 08:06:44 UTC 2026",
+  "cmdline": "initrd=initrd BOOT_IMAGE=/@/boot/vmlinuz-7.0.0-42-generic root=UUID=04135a53-6e24-4ef8-9e95-6d9e930f30da ro rootflags=subvol=@ quiet splash panic=30",
+  "governor": null,
+  "epp": null,
+  "on_mains": null,
+  "virtual": "kvm",
+  "packages": {
+   "kwin-common": "4:6.6.6",
+   "kwin-wayland": "4:6.6.6",
+   "libgl1-mesa-dri": "26.0.8",
+   "mesa-vulkan-drivers": "26.0.8",
+   "plasma-workspace": "4:6.6.6",
+   "raye-desktop": "0.1~dev5",
+   "raye-system": "0.1~dev5",
+   "systemd": "259.9"
+  }
+ },
+ "results": {
+  "boot": {
+   "firmware_s": {
+    "median": null,
+    "min": null,
+    "max": null,
+    "values": [
+     null,
+     null,
+     null,
+     null,
+     null
+    ]
+   },
+   "loader_s": {
+    "median": null,
+    "min": null,
+    "max": null,
+    "values": [
+     null,
+     null,
+     null,
+     null,
+     null
+    ]
+   },
+   "kernel_s": {
+    "median": 6.498,
+    "min": 6.272,
+    "max": 7.374,
+    "values": [
+     7.374,
+     6.528,
+     6.272,
+     6.498,
+     6.305
+    ]
+   },
+   "initrd_s": {
+    "median": null,
+    "min": null,
+    "max": null,
+    "values": [
+     null,
+     null,
+     null,
+     null,
+     null
+    ]
+   },
+   "userspace_s": {
+    "median": 7.822,
+    "min": 7.215,
+    "max": 7.932,
+    "values": [
+     7.56,
+     7.823,
+     7.822,
+     7.215,
+     7.932
+    ]
+   },
+   "total_s": {
+    "median": 14.237,
+    "min": 13.713,
+    "max": 14.934,
+    "values": [
+     14.934,
+     14.351,
+     14.094,
+     13.713,
+     14.237
+    ]
+   },
+   "graphical_userspace_s": {
+    "median": 7.179,
+    "min": 6.94,
+    "max": 7.89,
+    "values": [
+     7.499,
+     7.179,
+     6.94,
+     7.151,
+     7.89
+    ]
+   },
+   "handover_to_login_s": {
+    "median": 13.707,
+    "min": 13.212,
+    "max": 14.873,
+    "values": [
+     14.873,
+     13.707,
+     13.212,
+     13.649,
+     14.195
+    ]
+   }
+  },
+  "memory": {
+   "used_mib": {
+    "median": 680,
+    "min": 662,
+    "max": 683,
+    "values": [
+     681,
+     680,
+     673,
+     683,
+     662
+    ]
+   },
+   "total_mib": {
+    "median": 3903,
+    "min": 3903,
+    "max": 3903,
+    "values": [
+     3903,
+     3903,
+     3903,
+     3903,
+     3903
+    ]
+   },
+   "swap_used_mib": {
+    "median": 0,
+    "min": 0,
+    "max": 0,
+    "values": [
+     0,
+     0,
+     0,
+     0,
+     0
+    ]
+   }
+  },
+  "disk": {
+   "used_gib": {
+    "median": 3.58,
+    "min": 3.58,
+    "max": 3.58,
+    "values": [
+     3.58,
+     3.58,
+     3.58,
+     3.58,
+     3.58
+    ]
+   },
+   "size_gib": {
+    "median": 38.0,
+    "min": 38.0,
+    "max": 38.0,
+    "values": [
+     38.0,
+     38.0,
+     38.0,
+     38.0,
+     38.0
+    ]
+   }
+  }
+ },
+ "details": {
+  "boot": [
+   {
+    "blame_top": [
+     [
+      1.72,
+      "NetworkManager.service"
+     ],
+     [
+      1.545,
+      "dev-vda2.device"
+     ],
+     [
+      1.362,
+      "accounts-daemon.service"
+     ],
+     [
+      1.232,
+      "udisks2.service"
+     ],
+     [
+      0.968,
+      "gpu-manager.service"
+     ],
+     [
+      0.869,
+      "snapper-boot.service"
+     ],
+     [
+      0.766,
+      "systemd-logind.service"
+     ],
+     [
+      0.622,
+      "systemd-udev-trigger.service"
+     ],
+     [
+      0.563,
+      "e2scrub_reap.service"
+     ],
+     [
+      0.541,
+      "snapperd.service"
+     ],
+     [
+      0.524,
+      "user@103.service"
+     ],
+     [
+      0.508,
+      "systemd-binfmt.service"
+     ],
+     [
+      0.465,
+      "systemd-hostnamed.service"
+     ],
+     [
+      0.447,
+      "NetworkManager-wait-online.service"
+     ],
+     [
+      0.443,
+      "polkit.service"
+     ]
+    ]
+   },
+   {
+    "blame_top": [
+     [
+      1.971,
+      "dev-vda2.device"
+     ],
+     [
+      1.186,
+      "accounts-daemon.service"
+     ],
+     [
+      1.082,
+      "udisks2.service"
+     ],
+     [
+      0.887,
+      "NetworkManager.service"
+     ],
+     [
+      0.831,
+      "gpu-manager.service"
+     ],
+     [
+      0.774,
+      "systemd-binfmt.service"
+     ],
+     [
+      0.743,
+      "snapper-boot.service"
+     ],
+     [
+      0.727,
+      "systemd-logind.service"
+     ],
+     [
+      0.716,
+      "proc-sys-fs-binfmt_misc.mount"
+     ],
+     [
+      0.709,
+      "systemd-udev-trigger.service"
+     ],
+     [
+      0.644,
+      "user@103.service"
+     ],
+     [
+      0.555,
+      "snapperd.service"
+     ],
+     [
+      0.546,
+      "e2scrub_reap.service"
+     ],
+     [
+      0.5,
+      "systemd-modules-load.service"
+     ],
+     [
+      0.465,
+      "NetworkManager-wait-online.service"
+     ]
+    ]
+   },
+   {
+    "blame_top": [
+     [
+      2.027,
+      "dev-vda2.device"
+     ],
+     [
+      1.257,
+      "accounts-daemon.service"
+     ],
+     [
+      1.225,
+      "udisks2.service"
+     ],
+     [
+      0.974,
+      "NetworkManager.service"
+     ],
+     [
+      0.799,
+      "user@103.service"
+     ],
+     [
+      0.688,
+      "systemd-logind.service"
+     ],
+     [
+      0.67,
+      "gpu-manager.service"
+     ],
+     [
+      0.61,
+      "snapper-boot.service"
+     ],
+     [
+      0.564,
+      "power-profiles-daemon.service"
+     ],
+     [
+      0.504,
+      "systemd-udev-trigger.service"
+     ],
+     [
+      0.463,
+      "systemd-hostnamed.service"
+     ],
+     [
+      0.46,
+      "NetworkManager-wait-online.service"
+     ],
+     [
+      0.436,
+      "polkit.service"
+     ],
+     [
+      0.372,
+      "snapperd.service"
+     ],
+     [
+      0.356,
+      "systemd-modules-load.service"
+     ]
+    ]
+   },
+   {
+    "blame_top": [
+     [
+      2.202,
+      "dev-vda2.device"
+     ],
+     [
+      0.963,
+      "accounts-daemon.service"
+     ],
+     [
+      0.958,
+      "udisks2.service"
+     ],
+     [
+      0.942,
+      "NetworkManager.service"
+     ],
+     [
+      0.757,
+      "systemd-logind.service"
+     ],
+     [
+      0.655,
+      "snapper-boot.service"
+     ],
+     [
+      0.649,
+      "systemd-binfmt.service"
+     ],
+     [
+      0.642,
+      "gpu-manager.service"
+     ],
+     [
+      0.537,
+      "proc-sys-fs-binfmt_misc.mount"
+     ],
+     [
+      0.514,
+      "snapperd.service"
+     ],
+     [
+      0.507,
+      "systemd-modules-load.service"
+     ],
+     [
+      0.503,
+      "systemd-udev-trigger.service"
+     ],
+     [
+      0.495,
+      "polkit.service"
+     ],
+     [
+      0.46,
+      "user@103.service"
+     ],
+     [
+      0.448,
+      "e2scrub_reap.service"
+     ]
+    ]
+   },
+   {
+    "blame_top": [
+     [
+      2.169,
+      "dev-vda2.device"
+     ],
+     [
+      1.973,
+      "accounts-daemon.service"
+     ],
+     [
+      1.826,
+      "udisks2.service"
+     ],
+     [
+      1.731,
+      "snapper-boot.service"
+     ],
+     [
+      1.045,
+      "NetworkManager.service"
+     ],
+     [
+      1.015,
+      "user@103.service"
+     ],
+     [
+      0.749,
+      "boot-efi.mount"
+     ],
+     [
+      0.668,
+      "NetworkManager-wait-online.service"
+     ],
+     [
+      0.664,
+      "snapperd.service"
+     ],
+     [
+      0.637,
+      "cups.service"
+     ],
+     [
+      0.63,
+      "gpu-manager.service"
+     ],
+     [
+      0.593,
+      "e2scrub_reap.service"
+     ],
+     [
+      0.545,
+      "polkit.service"
+     ],
+     [
+      0.443,
+      "systemd-udev-trigger.service"
+     ],
+     [
+      0.437,
+      "systemd-logind.service"
+     ]
+    ]
+   }
+  ],
+  "memory": [
+   {
+    "uptime_s": 41,
+    "note": "measured less than 5 minutes after boot"
+   },
+   {
+    "uptime_s": 40,
+    "note": "measured less than 5 minutes after boot"
+   },
+   {
+    "uptime_s": 39,
+    "note": "measured less than 5 minutes after boot"
+   },
+   {
+    "uptime_s": 39,
+    "note": "measured less than 5 minutes after boot"
+   },
+   {
+    "uptime_s": 40,
+    "note": "measured less than 5 minutes after boot"
+   }
+  ],
+  "disk": [
+   {},
+   {},
+   {},
+   {},
+   {}
+  ]
+ },
+ "errors": {},
+ "fingerprint_differs": [],
+ "note": "Virtual machine (QEMU/KVM, 4 vCPU, 4 GiB, virtio, cache=none), image 20261030, started by UEFI straight into the kernel. For comparing two images on the same VM only; never publish. See baseline.md."
+}

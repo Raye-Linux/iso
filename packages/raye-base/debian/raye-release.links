@@ -1,0 +1,5 @@
+usr/lib/raye/os-release usr/lib/os-release
+usr/lib/raye/lsb-release etc/lsb-release
+usr/lib/raye/issue etc/issue
+usr/lib/raye/issue.net etc/issue.net
+usr/lib/raye/motd/10-help-text etc/update-motd.d/10-help-text

@@ -1,0 +1,10 @@
+#!/bin/sh
+set -e
+# winetricks is only for raye-run-windows, which finds it in its own
+# folder: off the PATH, it is not a command people meet
+if [ "$1" = install ] || [ "$1" = upgrade ]; then
+    mkdir -p /usr/lib/raye/windows/bin
+    dpkg-divert --package raye-windows-apps --add --rename \
+        --divert /usr/lib/raye/windows/bin/winetricks /usr/bin/winetricks >/dev/null
+fi
+#DEBHELPER#

@@ -1,0 +1,1184 @@
+#!/usr/bin/python3
+"""Keeps the TPM opening the encrypted disk by itself across kernel
+switches and Secure Boot database updates.
+
+The TPM gives the disk key back only if PCR 7 holds the value it was
+bound to. PCR 7 records the Secure Boot variables (SecureBoot, PK, KEK,
+db, dbx) and the certificates that verified each boot binary, so
+booting the Raye kernel (verified with the Raye key from MokList) or
+writing a new dbx changes it. This tool reads the firmware event log,
+replays PCR 7, checks the replay equals the TPM, and predicts the value
+of the next boot. It then adds a clevis binding sealed to that value
+(pcr_digest), keyed by the passphrase of a binding that still opens
+the disk. The key only goes through pipes, never to disk.
+
+Before a change it cannot predict (a firmware update that has not
+written its variables yet, a new shim or GRUB), the TPM protection is
+suspended for one start: a binding with no PCR policy is added, and the
+first start after it seals the disk to the PCR 7 that start really
+measured, then removes that binding.
+
+    raye-tpm replay [--bank B]           event log -> PCR 7, compared with the TPM
+    raye-tpm predict --kernel K [--bank B]
+    raye-tpm bind-next --kernel K        bind every TPM disk for the next boot of K
+    raye-tpm prepare-firmware [--if-changed]
+                                         suspend for one start, and bind for every
+                                         kernel from the current Secure Boot variables;
+                                         --if-changed: only if they differ from what
+                                         this boot measured (raye-tpm-watch.service)
+    raye-tpm suspend                     open the disk without PCR 7 for one start
+    raye-tpm resume                      after that start: seal to PCR 7 again and
+                                         remove the suspension (raye-tpm-check.service)
+    raye-tpm record                      tag the bindings that open the disk now
+    raye-tpm status [--json]             per disk: which bindings open it now
+    raye-tpm prune                       remove bindings no kernel can use
+
+K is "raye" or "ubuntu", B is "sha256" or "sha1". On any doubt (the
+log does not replay to the TPM's value, an event it cannot recompute)
+nothing is changed and the disk asks its password once, as before.
+
+Exit codes: 0 done, 1 error, 2 prediction refused (nothing changed),
+3 nothing to do here (no TPM, no event log, no disk bound to the TPM,
+nothing suspended), 4 a disk could not be bound, suspended or pruned.
+"""
+
+import argparse
+import base64
+import fcntl
+import glob
+import hashlib
+import json
+import os
+import re
+import struct
+import subprocess
+import sys
+import tempfile
+import time
+import uuid
+
+EVENT_LOG = "/sys/kernel/security/tpm0/binary_bios_measurements"
+EFIVARS = "/sys/firmware/efi/efivars"
+SYSFS_PCR = "/sys/class/tpm/tpm0/pcr-{bank}/{index}"
+STATE_DIR = "/var/lib/raye-tpm"
+RAYE_CERT = "/usr/share/raye/kernel/raye-boot.der"
+CRYPTTAB = "/etc/crypttab"
+BOOT_ID = "/proc/sys/kernel/random/boot_id"
+
+PCR = 7
+# a binding that has not opened the disk for this many boots, and that
+# no installed kernel can open, is removed
+PRUNE_AFTER_BOOTS = 3
+# a suspension that could not be resumed is dropped after this many
+# starts anyway: the disk then asks its password, it is never left open
+SUSPEND_MAX_BOOTS = 2
+# present while a disk is suspended; raye-tpm-check.service only runs then
+SUSPENDED_FLAG = "suspended"
+# clevis' own reading of a binding, without the KDF check (its library
+# is bash); 1 when the TPM refuses, anything else: ask "clevis luks pass"
+UNSEAL_SLOT = ('command -v clevis-luks-common-functions >/dev/null || exit 127\n'
+               '. clevis-luks-common-functions\n'
+               'command -v clevis_luks_unlock_device_by_slot >/dev/null || exit 127\n'
+               'clevis_luks_unlock_device_by_slot "$1" "$2" YES\n')
+
+EXIT_OK, EXIT_ERROR, EXIT_REFUSED, EXIT_NOTHING, EXIT_FAILED = 0, 1, 2, 3, 4
+
+EV_NO_ACTION = 0x00000003
+EV_SEPARATOR = 0x00000004
+EV_EFI_VARIABLE_DRIVER_CONFIG = 0x80000001
+EV_EFI_VARIABLE_AUTHORITY = 0x800000E0
+
+# TPM algorithm id -> (name, digest size)
+ALGORITHMS = {
+    0x0004: ("sha1", 20),
+    0x000B: ("sha256", 32),
+    0x000C: ("sha384", 48),
+    0x000D: ("sha512", 64),
+    0x0012: ("sm3_256", 32),
+}
+BANKS = ("sha256", "sha1")
+
+EFI_GLOBAL_GUID = "8be4df61-93ca-11d2-aa0d-00e098032b8c"
+EFI_IMAGE_SECURITY_GUID = "d719b2cb-3d3a-4596-a3bc-dad00e67656f"
+SHIM_LOCK_GUID = "605dab50-e046-4300-abb6-3dd810dd8b23"
+EFI_CERT_X509_GUID = "a5c059a1-94e4-4aa7-87b5-ab155c2bf072"
+
+# the variables the firmware measures into PCR 7 at each boot, which an
+# update can rewrite before the next one
+SECURE_BOOT_VARIABLES = {
+    ("SecureBoot", EFI_GLOBAL_GUID),
+    ("PK", EFI_GLOBAL_GUID),
+    ("KEK", EFI_GLOBAL_GUID),
+    ("db", EFI_IMAGE_SECURITY_GUID),
+    ("dbx", EFI_IMAGE_SECURITY_GUID),
+    ("dbt", EFI_IMAGE_SECURITY_GUID),
+    ("dbr", EFI_IMAGE_SECURITY_GUID),
+}
+
+KERNELS = ("raye", "ubuntu")
+
+
+class LogError(Exception):
+    """The event log cannot be read or replayed."""
+
+
+class NoLog(LogError):
+    """This computer has no TPM event log."""
+
+
+class Refused(Exception):
+    """The prediction cannot be trusted: change nothing."""
+
+
+# ---------------------------------------------------------------- event log
+
+class Event:
+    __slots__ = ("pcr", "type", "digests", "data")
+
+    def __init__(self, pcr, etype, digests, data):
+        self.pcr = pcr
+        self.type = etype
+        self.digests = digests
+        self.data = data
+
+    def __repr__(self):
+        return "Event(pcr=%d, type=%#x, %d bytes)" % (self.pcr, self.type, len(self.data))
+
+
+def _take(raw, off, size):
+    if size < 0 or off + size > len(raw):
+        raise LogError("the event log is cut short at byte %d" % off)
+    return raw[off:off + size], off + size
+
+
+def _unpack(fmt, raw, off):
+    size = struct.calcsize(fmt)
+    chunk, off = _take(raw, off, size)
+    return struct.unpack(fmt, chunk), off
+
+
+def _spec_id_sizes(data):
+    """Digest sizes declared by a "Spec ID Event03" header."""
+    try:
+        (num,) = struct.unpack_from("<I", data, 24)
+        sizes = {}
+        off = 28
+        for _ in range(num):
+            alg, size = struct.unpack_from("<HH", data, off)
+            off += 4
+            sizes[alg] = size
+    except struct.error:
+        raise LogError("the event log header is damaged") from None
+    if not sizes:
+        raise LogError("the event log header names no hash algorithm")
+    return sizes
+
+
+def parse_event_log(raw):
+    """Events of a TCG event log, crypto-agile or SHA-1 only."""
+    (pcr, etype, digest, size), off = _unpack("<II20sI", raw, 0)
+    data, off = _take(raw, off, size)
+    events = []
+    sizes = None
+    if etype == EV_NO_ACTION and data.startswith(b"Spec ID Event03\0"):
+        sizes = _spec_id_sizes(data)
+    else:
+        events.append(Event(pcr, etype, {"sha1": digest}, data))
+
+    while off < len(raw):
+        if not any(raw[off:]):
+            break  # zero padding after the last event
+        if sizes is None:
+            (pcr, etype, digest, size), off = _unpack("<II20sI", raw, off)
+            data, off = _take(raw, off, size)
+            events.append(Event(pcr, etype, {"sha1": digest}, data))
+            continue
+        (pcr, etype, count), off = _unpack("<III", raw, off)
+        if count > len(sizes):
+            raise LogError("an event lists more digests than the log declares")
+        digests = {}
+        for _ in range(count):
+            (alg,), off = _unpack("<H", raw, off)
+            if alg not in sizes:
+                raise LogError("an event uses an undeclared algorithm %#x" % alg)
+            value, off = _take(raw, off, sizes[alg])
+            name = ALGORITHMS.get(alg, ("alg-%#x" % alg, 0))[0]
+            digests[name] = value
+        (size,), off = _unpack("<I", raw, off)
+        data, off = _take(raw, off, size)
+        events.append(Event(pcr, etype, digests, data))
+    return events
+
+
+def pcr_events(events, index=PCR):
+    return [e for e in events if e.pcr == index and e.type != EV_NO_ACTION]
+
+
+def extend(bank, digests):
+    """PCR value after extending a zeroed PCR with each digest in turn."""
+    value = bytes(hashlib.new(bank).digest_size)
+    for d in digests:
+        value = hashlib.new(bank, value + d).digest()
+    return value
+
+
+def replay(events, bank, index=PCR):
+    digests = []
+    for e in pcr_events(events, index):
+        if bank not in e.digests:
+            raise LogError("the event log has no %s digest for an event of PCR %d" % (bank, index))
+        digests.append(e.digests[bank])
+    return extend(bank, digests)
+
+
+def log_banks(events):
+    """Banks every PCR 7 event of the log carries a digest for."""
+    found = None
+    for e in pcr_events(events):
+        found = set(e.digests) if found is None else found & set(e.digests)
+    return found or set()
+
+
+# ---------------------------------------------------------------- UEFI variables
+
+def parse_variable_data(data):
+    """(name, guid, value) of a UEFI_VARIABLE_DATA, or None."""
+    if len(data) < 32:
+        return None
+    guid = str(uuid.UUID(bytes_le=data[:16]))
+    name_len, value_len = struct.unpack_from("<QQ", data, 16)
+    end = 32 + name_len * 2 + value_len
+    if end != len(data):
+        return None
+    try:
+        name = data[32:32 + name_len * 2].decode("utf-16-le")
+    except UnicodeDecodeError:
+        return None
+    return name, guid, data[32 + name_len * 2:]
+
+
+def variable_data(name, guid, value):
+    """The UEFI_VARIABLE_DATA the firmware and shim hash into PCR 7."""
+    encoded = name.encode("utf-16-le")
+    return (uuid.UUID(guid).bytes_le
+            + struct.pack("<QQ", len(name), len(value))
+            + encoded + value)
+
+
+def read_efivar(efivars, name, guid):
+    """Value of a UEFI variable (attributes dropped), b"" if it is unset."""
+    path = os.path.join(efivars, "%s-%s" % (name, guid))
+    try:
+        with open(path, "rb") as f:
+            raw = f.read()
+    except FileNotFoundError:
+        return b""
+    except OSError as e:
+        raise Refused("cannot read the UEFI variable %s: %s" % (name, e.strerror)) from None
+    return raw[4:]
+
+
+def secure_boot_on(efivars):
+    """True if shim will check the kernel's signature on the next boot."""
+    if read_efivar(efivars, "SecureBoot", EFI_GLOBAL_GUID)[:1] != b"\x01":
+        return False
+    # MokSBState set means shim's own checks are turned off
+    return not any(read_efivar(efivars, "MokSBStateRT", SHIM_LOCK_GUID))
+
+
+# ---------------------------------------------------------------- prediction
+
+def is_raye_authority(event, cert):
+    if event.type != EV_EFI_VARIABLE_AUTHORITY or not cert:
+        return False
+    parsed = parse_variable_data(event.data)
+    if parsed is None:
+        return False
+    value = parsed[2]
+    # shim logs the certificate alone; firmware logs it with its owner GUID
+    return value == cert or (len(value) == len(cert) + 16 and value[16:] == cert)
+
+
+def _digests_for(data, banks):
+    return {b: hashlib.new(b, data).digest() for b in banks}
+
+
+def mok_owner(efivars, cert):
+    """Owner GUID of the certificate's entry in MokList (as raw bytes).
+
+    shim publishes MokList as the runtime variable MokListRT: a list of
+    EFI_SIGNATURE_LISTs. mokutil enrolls keys under shim's own GUID, the
+    default when the entry cannot be read."""
+    raw = read_efivar(efivars, "MokListRT", SHIM_LOCK_GUID)
+    off = 0
+    while off + 28 <= len(raw):
+        sig_type = str(uuid.UUID(bytes_le=raw[off:off + 16]))
+        list_size, header_size, sig_size = struct.unpack_from("<III", raw, off + 16)
+        if list_size < 28 or off + list_size > len(raw) or sig_size <= 16:
+            break
+        if sig_type == EFI_CERT_X509_GUID:
+            entry = off + 28 + header_size
+            while entry + sig_size <= off + list_size:
+                if raw[entry + 16:entry + sig_size] == cert:
+                    return raw[entry:entry + 16]
+                entry += sig_size
+        off += list_size
+    return uuid.UUID(SHIM_LOCK_GUID).bytes_le
+
+
+def raye_authority_event(cert, banks, efivars, learned=None):
+    """The event shim logs when it verifies the Raye kernel: the
+    certificate's MokList entry (owner GUID and certificate), under the
+    name MokListRT, as shim 15.8 writes it. Bytes seen in a real boot of
+    the Raye kernel win over this."""
+    data = learned or variable_data("MokListRT", SHIM_LOCK_GUID, mok_owner(efivars, cert) + cert)
+    return Event(PCR, EV_EFI_VARIABLE_AUTHORITY, _digests_for(data, banks), data)
+
+
+def _recompute_variable(event, efivars, banks):
+    parsed = parse_variable_data(event.data)
+    if parsed is None:
+        raise Refused("a Secure Boot variable event of the log cannot be read")
+    name, guid, value = parsed
+    if (name, guid) not in SECURE_BOOT_VARIABLES:
+        return event
+    # firmware hashes either the whole structure or the value alone:
+    # find out which one from the event itself before redoing it
+    style = None
+    for candidate, payload in (("whole", event.data), ("value", value)):
+        if all(hashlib.new(b, payload).digest() == event.digests[b] for b in banks):
+            style = candidate
+            break
+    if style is None:
+        raise Refused("the firmware measured %s in a way Raye does not know" % name)
+    new_value = read_efivar(efivars, name, guid)
+    data = variable_data(name, guid, new_value)
+    payload = data if style == "whole" else new_value
+    return Event(event.pcr, event.type, _digests_for(payload, banks), data)
+
+
+def firmware_unchanged(events, efivars):
+    """True if the Secure Boot variables hold what this boot measured.
+
+    Writing dbx through efivarfs fires the watch even when the firmware
+    turns the update down (sbkeysync tries again at every start on some
+    machines); then the next start measures the same values."""
+    banks = log_banks(events)
+    if not banks:
+        raise Refused("the event log has no PCR 7 event")
+    seen = set()
+    for e in pcr_events(events):
+        if e.type != EV_EFI_VARIABLE_DRIVER_CONFIG:
+            continue
+        parsed = parse_variable_data(e.data)
+        if parsed is None or (parsed[0], parsed[1]) not in SECURE_BOOT_VARIABLES:
+            continue
+        seen.add((parsed[0], parsed[1]))
+        now = _recompute_variable(e, efivars, banks).digests
+        if any(now[b] != e.digests[b] for b in banks):
+            return False
+    # a variable the firmware did not measure at boot, and that is set now
+    return not any(read_efivar(efivars, name, guid)
+                   for name, guid in SECURE_BOOT_VARIABLES - seen)
+
+
+def predicted_events(events, kernel, efivars, cert, learned=None):
+    """PCR 7 events of the next boot of the given kernel."""
+    if kernel not in KERNELS:
+        raise ValueError("unknown kernel %r" % kernel)
+    banks = log_banks(events)
+    if not banks:
+        raise Refused("the event log has no PCR 7 event")
+    out = []
+    for e in pcr_events(events):
+        if e.type == EV_EFI_VARIABLE_DRIVER_CONFIG:
+            out.append(_recompute_variable(e, efivars, banks))
+        elif is_raye_authority(e, cert):
+            continue  # put back below, only for the Raye kernel
+        else:
+            out.append(e)
+    if kernel == "raye":
+        if not cert:
+            raise Refused("the Raye boot certificate is missing")
+        if secure_boot_on(efivars):
+            out.append(raye_authority_event(cert, banks, efivars, learned))
+    return out
+
+
+def predict(events, kernel, bank, efivars, cert, learned=None):
+    if bank not in log_banks(events):
+        raise Refused("the event log has no %s digests" % bank)
+    return extend(bank, [e.digests[bank] for e in predicted_events(events, kernel, efivars, cert, learned)])
+
+
+def learn_raye_authority(events, cert):
+    """Exact bytes of the Raye kernel's authority event, if this boot has it."""
+    for e in pcr_events(events):
+        if is_raye_authority(e, cert):
+            return e.data
+    return None
+
+
+# ---------------------------------------------------------------- system
+
+class System:
+    """Everything that touches the machine; the tests replace it."""
+
+    def __init__(self, event_log=EVENT_LOG, efivars=EFIVARS, state_dir=STATE_DIR,
+                 cert=RAYE_CERT, crypttab=CRYPTTAB, boot_glob="/boot/vmlinuz-*-raye",
+                 sysfs_pcr=SYSFS_PCR, boot_id=BOOT_ID):
+        self.event_log = event_log
+        self.efivars = efivars
+        self.state_dir = state_dir
+        self.cert_path = cert
+        self.crypttab = crypttab
+        self.boot_glob = boot_glob
+        self.sysfs_pcr = sysfs_pcr
+        self.boot_id_path = boot_id
+
+    # -- commands
+    def run(self, argv, data=None):
+        """(exit code, stdout bytes). Never goes through a shell."""
+        # pkexec and systemd give a short PATH: cryptsetup lives in sbin
+        env = dict(os.environ, LC_ALL="C", PATH="/usr/sbin:/usr/bin:/sbin:/bin")
+        try:
+            p = subprocess.run(argv, input=data, stdout=subprocess.PIPE,
+                               stderr=subprocess.DEVNULL, env=env, timeout=120)
+        except FileNotFoundError:
+            return 127, b""
+        except subprocess.TimeoutExpired:
+            return 124, b""
+        return p.returncode, p.stdout
+
+    # -- facts
+    def read_log(self):
+        try:
+            with open(self.event_log, "rb") as f:
+                return f.read()
+        except FileNotFoundError:
+            return None
+        except PermissionError:
+            raise LogError("cannot read the event log (run as root)") from None
+
+    def cert(self):
+        try:
+            with open(self.cert_path, "rb") as f:
+                return f.read()
+        except OSError:
+            return None
+
+    def running_kernel(self):
+        return "raye" if os.uname().release.endswith("-raye") else "ubuntu"
+
+    def installed_kernels(self):
+        kernels = ["ubuntu"]
+        if glob.glob(self.boot_glob):
+            kernels.insert(0, "raye")
+        return kernels
+
+    def boot_id(self):
+        try:
+            with open(self.boot_id_path) as f:
+                return f.read().strip()
+        except OSError:
+            return ""
+
+    def live_pcr(self, bank, index=PCR):
+        try:
+            with open(self.sysfs_pcr.format(bank=bank, index=index)) as f:
+                text = f.read().strip()
+            if re.fullmatch(r"[0-9A-Fa-f]+", text):
+                return bytes.fromhex(text)
+        except (OSError, ValueError):
+            pass
+        rc, out = self.run(["tpm2_pcrread", "%s:%d" % (bank, index)])
+        if rc != 0:
+            return None
+        m = re.search(r"^\s*%d\s*:\s*0x([0-9A-Fa-f]+)\s*$" % index,
+                      out.decode("ascii", "replace"), re.M)
+        return bytes.fromhex(m.group(1)) if m else None
+
+    def luks_devices(self):
+        """(device, LUKS UUID) of each line of /etc/crypttab that exists."""
+        devices = []
+        try:
+            with open(self.crypttab) as f:
+                lines = f.read().splitlines()
+        except OSError:
+            return devices
+        for line in lines:
+            fields = line.split()
+            if len(fields) < 2 or fields[0].startswith("#"):
+                continue
+            spec = fields[1]
+            for prefix, folder in (("UUID=", "by-uuid"), ("PARTUUID=", "by-partuuid"),
+                                   ("LABEL=", "by-label")):
+                if spec.startswith(prefix):
+                    spec = os.path.join("/dev/disk", folder, spec[len(prefix):])
+                    break
+            if not spec.startswith("/dev/") or not os.path.exists(spec):
+                continue
+            dev = os.path.realpath(spec)
+            if dev in [d for d, _ in devices]:
+                continue
+            rc, out = self.run(["cryptsetup", "luksUUID", dev])
+            key = out.decode("ascii", "replace").strip() if rc == 0 else ""
+            devices.append((dev, key or dev))
+        return devices
+
+    # -- clevis
+    def tpm_slots(self, dev):
+        """{slot: tpm2 config} of the clevis bindings of a disk."""
+        rc, out = self.run(["clevis", "luks", "list", "-d", dev])
+        if rc != 0:
+            return None
+        slots = {}
+        for line in out.decode("utf-8", "replace").splitlines():
+            m = re.match(r"^\s*(\d+):\s+tpm2\s+'(.*)'\s*$", line)
+            if not m:
+                continue
+            try:
+                cfg = json.loads(m.group(2))
+            except ValueError:
+                cfg = {}
+            slots[int(m.group(1))] = cfg if isinstance(cfg, dict) else {}
+        return slots
+
+    def slot_key(self, dev, slot):
+        """The passphrase the TPM unseals for a binding, None if it does not.
+        "clevis luks pass" would also check it with the disk's KDF (about
+        a gigabyte and seconds of CPU each time); "clevis luks bind"
+        checks it anyway before it uses it."""
+        rc, out = self.run(["bash", "-c", UNSEAL_SLOT, "bash", dev, str(slot)])
+        if rc not in (0, 1):
+            rc, out = self.run(["clevis", "luks", "pass", "-d", dev, "-s", str(slot)])
+        return out if rc == 0 and out else None
+
+    def bind(self, dev, key, cfg):
+        rc, _ = self.run(["clevis", "luks", "bind", "-y", "-k", "-", "-d", dev,
+                          "tpm2", json.dumps(cfg, separators=(",", ":"))],
+                         data=key + b"\n")
+        return rc == 0
+
+    def unbind(self, dev, slot):
+        rc, _ = self.run(["clevis", "luks", "unbind", "-f", "-d", dev, "-s", str(slot)])
+        return rc == 0
+
+
+# ---------------------------------------------------------------- state
+
+def load_state(state_dir):
+    path = os.path.join(state_dir, "bindings.json")
+    try:
+        with open(path) as f:
+            state = json.load(f)
+    except (OSError, ValueError):
+        state = {}
+    if not isinstance(state, dict) or not isinstance(state.get("disks"), dict):
+        state = {"version": 1, "disks": {}}
+    state.setdefault("version", 1)
+    return state
+
+
+def save_state(state_dir, state):
+    os.makedirs(state_dir, mode=0o700, exist_ok=True)
+    os.chmod(state_dir, 0o700)
+    fd, tmp = tempfile.mkstemp(prefix=".bindings.", dir=state_dir)
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(state, f, indent=2, sort_keys=True)
+            f.write("\n")
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, os.path.join(state_dir, "bindings.json"))
+    except BaseException:
+        os.unlink(tmp)
+        raise
+
+
+def load_learned(state_dir):
+    try:
+        with open(os.path.join(state_dir, "raye-authority.bin"), "rb") as f:
+            data = f.read()
+    except OSError:
+        return None
+    return data if parse_variable_data(data) else None
+
+
+def save_learned(state_dir, data):
+    os.makedirs(state_dir, mode=0o700, exist_ok=True)
+    path = os.path.join(state_dir, "raye-authority.bin")
+    try:
+        with open(path, "rb") as f:
+            if f.read() == data:
+                return
+    except OSError:
+        pass
+    tmp = path + ".new"
+    with open(tmp, "wb") as f:
+        f.write(data)
+    os.replace(tmp, path)
+
+
+class Lock:
+    def __init__(self, state_dir):
+        self.state_dir = state_dir
+        self.f = None
+
+    def __enter__(self):
+        os.makedirs(self.state_dir, mode=0o700, exist_ok=True)
+        self.f = open(os.path.join(self.state_dir, "lock"), "w")
+        fcntl.flock(self.f, fcntl.LOCK_EX)
+        return self
+
+    def __exit__(self, *exc):
+        self.f.close()
+
+
+# ---------------------------------------------------------------- the work
+
+class Tool:
+    def __init__(self, system, out=None, err=None):
+        self.sys = system
+        self.out = out or sys.stdout
+        self.err = err or sys.stderr
+        self._events = None
+        self._keys = {}
+
+    def say(self, msg):
+        print(msg, file=self.out)
+
+    def warn(self, msg):
+        print(msg, file=self.err)
+
+    # -- log and prediction
+    def events(self):
+        if self._events is None:
+            raw = self.sys.read_log()
+            if raw is None:
+                raise NoLog("no TPM event log on this computer")
+            self._events = parse_event_log(raw)
+        return self._events
+
+    def pick_bank(self, wanted=None):
+        """The first bank the log replays to the TPM's value."""
+        events = self.events()
+        banks = [wanted] if wanted else list(BANKS)
+        available = log_banks(events)
+        for bank in banks:
+            if bank not in available:
+                continue
+            live = self.sys.live_pcr(bank)
+            if live is None:
+                continue
+            if replay(events, bank) != live:
+                raise Refused("the event log does not replay to the TPM's PCR 7 (%s)" % bank)
+            return bank
+        raise Refused("no PCR bank that both the event log and the TPM have")
+
+    def learned(self):
+        """Bytes of the Raye kernel's authority event seen in a real boot."""
+        cert = self.sys.cert()
+        data = learn_raye_authority(self.events(), cert)
+        if data is not None:
+            save_learned(self.sys.state_dir, data)
+            return data
+        data = load_learned(self.sys.state_dir)
+        # a certificate replaced since then makes the old bytes useless
+        probe = Event(PCR, EV_EFI_VARIABLE_AUTHORITY, {}, data or b"")
+        return data if data and is_raye_authority(probe, cert) else None
+
+    def prediction(self, kernel, bank):
+        return predict(self.events(), kernel, bank, self.sys.efivars,
+                       self.sys.cert(), self.learned())
+
+    # -- disks
+    def disks(self):
+        """[(device, key, {slot: cfg})] of the disks bound to the TPM."""
+        found = []
+        for dev, key in self.sys.luks_devices():
+            slots = self.sys.tpm_slots(dev)
+            if slots:
+                found.append((dev, key, slots))
+        return found
+
+    @staticmethod
+    def slot_bank(cfg):
+        """Bank of a binding sealed to PCR 7 only, else None."""
+        ids = cfg.get("pcr_ids")
+        if isinstance(ids, list):
+            ids = ",".join(str(i) for i in ids)
+        if str(ids).replace(" ", "") != "7":
+            return None
+        bank = cfg.get("pcr_bank", "sha1")
+        return bank if bank in BANKS else None
+
+    @staticmethod
+    def is_suspension(cfg):
+        """A binding with no PCR policy: the TPM opens the disk on any start."""
+        return not str(cfg.get("pcr_ids", "")).strip(" []")
+
+    def opens_now(self, dev, slots):
+        """{slot: key or None}: the bindings the TPM opens on this boot.
+        Asked once per slot and run: clevis checks each key with the
+        disk's KDF, a second or more of CPU and a lot of memory."""
+        for s in slots:
+            if (dev, s) not in self._keys:
+                self._keys[dev, s] = self.sys.slot_key(dev, s)
+        return {s: self._keys[dev, s] for s in sorted(slots)}
+
+    def bind_disk(self, state, dev, key, slots, kernel, bank, value):
+        disk = state["disks"].setdefault(key, {"device": dev, "slots": {}})
+        disk["device"] = dev
+        records = disk.setdefault("slots", {})
+        hexval = value.hex()
+        for s in slots:
+            rec = records.get(str(s))
+            if rec and rec.get("pcr7") == hexval and rec.get("pcr_bank") == bank:
+                self.say("%s: already bound for the next start of the %s kernel" % (dev, kernel))
+                return True
+
+        keys = self.opens_now(dev, slots)
+        live = self.sys.live_pcr(bank)
+        for s, k in keys.items():
+            if k and value == live and self.slot_bank(slots[s]) == bank:
+                records[str(s)] = self.record(kernel + "-kernel", kernel, bank, hexval)
+                self.say("%s: the current binding already opens it for the %s kernel" % (dev, kernel))
+                return True
+        secret = next((k for k in keys.values() if k), None)
+        if secret is None:
+            self.warn("%s: no TPM binding opens it now, the password stays needed" % dev)
+            return False
+        cfg = {"pcr_bank": bank, "pcr_ids": "7",
+               "pcr_digest": base64.urlsafe_b64encode(value).decode("ascii").rstrip("=")}
+        ok = self.sys.bind(dev, secret, cfg)
+        del secret, keys
+        after = self.sys.tpm_slots(dev) or {}
+        new = sorted(set(after) - set(slots))
+        if not ok or len(new) != 1:
+            self.warn("%s: could not bind the TPM for the next start" % dev)
+            return False
+        records[str(new[0])] = self.record("predicted", kernel, bank, hexval)
+        self.say("%s: bound for the next start of the %s kernel (slot %d)" % (dev, kernel, new[0]))
+        return True
+
+    def record(self, role, kernel, bank, hexval):
+        return {"role": role, "kernel": kernel, "pcr_bank": bank, "pcr7": hexval,
+                "created": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "missed_boots": 0,
+                "last_opened": None}
+
+    def refresh(self, state):
+        """Tag the bindings that open the disk on this boot and count the
+        boots the others missed. Returns {key: (dev, slots, opens)}."""
+        kernel = self.sys.running_kernel()
+        try:
+            self.learned()  # keep the Raye kernel's real event, if this boot has it
+        except (LogError, Refused, OSError):
+            pass
+        boot = self.sys.boot_id()
+        new_boot = boot != state.get("boot_id")
+        state["boot_id"] = boot
+        seen = {}
+        for dev, key, slots in self.disks():
+            disk = state["disks"].setdefault(key, {"device": dev, "slots": {}})
+            disk["device"] = dev
+            records = disk.setdefault("slots", {})
+            for s in list(records):
+                if not s.isdigit() or int(s) not in slots:
+                    del records[s]  # removed by hand or by another tool
+            opens = {s: k is not None for s, k in self.opens_now(dev, slots).items()}
+            for s, ok in opens.items():
+                rec = records.get(str(s))
+                bank = self.slot_bank(slots[s])
+                if ok:
+                    if rec is None and self.is_suspension(slots[s]):
+                        rec = records[str(s)] = self.record("suspended", None, None, None)
+                    elif rec is None:
+                        live = self.sys.live_pcr(bank) if bank else None
+                        rec = self.record(kernel + "-kernel", kernel, bank,
+                                          live.hex() if live else None)
+                        records[str(s)] = rec
+                    elif rec.get("role") == "predicted" and rec.get("kernel") == kernel:
+                        rec["role"] = kernel + "-kernel"
+                    rec["missed_boots"] = 0
+                    rec["last_opened"] = boot
+                elif rec is not None and new_boot:
+                    rec["missed_boots"] = rec.get("missed_boots", 0) + 1
+            seen[key] = (dev, slots, opens)
+        for key in list(state["disks"]):
+            if key not in seen and not os.path.exists(state["disks"][key].get("device", "")):
+                del state["disks"][key]
+        return seen
+
+    # -- commands
+    def cmd_replay(self, args):
+        events = self.events()
+        usable = [b for b in ([args.bank] if args.bank else BANKS) if b in log_banks(events)]
+        if not usable:
+            raise Refused("the event log has no usable PCR 7 digests")
+        bank = usable[0]
+        value = replay(events, bank)
+        live = self.sys.live_pcr(bank)
+        if live is None:
+            self.say("PCR 7 (%s) from the event log: %s (the TPM cannot be read)" % (bank, value.hex()))
+            return EXIT_NOTHING
+        if live != value:
+            self.warn("PCR 7 (%s) from the event log %s differs from the TPM %s" % (bank, value.hex(), live.hex()))
+            return EXIT_REFUSED
+        self.say("PCR 7 (%s) %s matches the TPM" % (bank, value.hex()))
+        return EXIT_OK
+
+    def cmd_predict(self, args):
+        bank = self.pick_bank(args.bank)
+        self.say("%s %s" % (bank, self.prediction(args.kernel, bank).hex()))
+        return EXIT_OK
+
+    def bind_for(self, kernels):
+        if not self.disks():
+            self.say("no disk is opened by the TPM: nothing to do")
+            return EXIT_NOTHING
+        with Lock(self.sys.state_dir):
+            state = load_state(self.sys.state_dir)
+            rc = EXIT_OK
+            try:
+                # the binding that opens the disk now belongs to this kernel;
+                # the slots are read again under the lock, resume may have
+                # removed one meanwhile
+                seen = self.refresh(state)
+                for kernel in kernels:
+                    for key, (dev, slots, _) in seen.items():
+                        bank = self.disk_bank(slots)
+                        value = self.prediction(kernel, bank)
+                        if not self.bind_disk(state, dev, key, slots, kernel, bank, value):
+                            rc = EXIT_FAILED
+                        slots.update(self.sys.tpm_slots(dev) or {})
+            finally:
+                # keep the roles of the bindings already made
+                save_state(self.sys.state_dir, state)
+        return rc
+
+    def disk_bank(self, slots):
+        """Bank to seal a new binding to: the one the disk already uses."""
+        for cfg in slots.values():
+            bank = self.slot_bank(cfg)
+            if bank:
+                try:
+                    return self.pick_bank(bank)
+                except Refused:
+                    continue
+        return self.pick_bank()
+
+    def cmd_bind_next(self, args):
+        return self.bind_for([args.kernel])
+
+    def cmd_prepare_firmware(self, args):
+        if args.if_changed:
+            try:
+                unchanged = firmware_unchanged(self.events(), self.sys.efivars)
+            except (LogError, Refused) as e:
+                self.warn("cannot tell what was written (%s); suspending to be safe" % e)
+                unchanged = False
+            if unchanged:
+                self.say("nothing was written to the Secure Boot databases: nothing to do")
+                return EXIT_NOTHING
+        # the variables may not be written yet (fwupd writes them when it
+        # installs): the suspension is what keeps the next start open
+        rc = self.cmd_suspend(args)
+        if rc != EXIT_OK:
+            return rc
+        try:
+            if self.bind_for(self.sys.installed_kernels()) != EXIT_OK:
+                self.warn("the next start opens the disk through the suspension")
+        except (Refused, LogError) as e:
+            self.warn("cannot predict PCR 7 (%s); the next start opens the disk "
+                      "through the suspension" % e)
+        return EXIT_OK
+
+    # -- suspension
+    def suspended_slots(self, slots, records):
+        """Slots of a suspension: no PCR policy, and made by raye-tpm (or
+        not known at all, when the state was lost)."""
+        return sorted(s for s, cfg in slots.items() if self.is_suspension(cfg)
+                      and records.get(str(s), {}).get("role", "suspended") == "suspended")
+
+    def set_flag(self, state):
+        path = os.path.join(self.sys.state_dir, SUSPENDED_FLAG)
+        if any(r.get("role") == "suspended" for d in state["disks"].values()
+               for r in d.get("slots", {}).values()):
+            with open(path, "w"):
+                pass
+        elif os.path.exists(path):
+            os.unlink(path)
+
+    def suspend_disk(self, state, dev, key, slots, boot):
+        disk = state["disks"].setdefault(key, {"device": dev, "slots": {}})
+        records = disk.setdefault("slots", {})
+        current = self.suspended_slots(slots, records)
+        if current:
+            for s in current:
+                records[str(s)] = dict(records.get(str(s)) or self.record("suspended", None, None, None),
+                                       suspended_boot=boot, boots=0)
+            self.say("%s: already suspended until the next start" % dev)
+            return True
+        keys = self.opens_now(dev, slots)
+        secret = next((k for k in keys.values() if k), None)
+        if secret is None:
+            self.warn("%s: no TPM binding opens it now, the password stays needed" % dev)
+            return False
+        ok = self.sys.bind(dev, secret, {})
+        del secret, keys
+        after = self.sys.tpm_slots(dev) or {}
+        new = sorted(set(after) - set(slots))
+        if not ok or len(new) != 1 or not self.is_suspension(after[new[0]]):
+            self.warn("%s: could not suspend the TPM protection" % dev)
+            return False
+        slots.update(after)
+        rec = self.record("suspended", None, None, None)
+        rec.update(suspended_boot=boot, boots=0)
+        records[str(new[0])] = rec
+        self.say("%s: TPM protection suspended for the next start (slot %d)" % (dev, new[0]))
+        return True
+
+    def cmd_suspend(self, args):
+        if not self.disks():
+            self.say("no disk is opened by the TPM: nothing to do")
+            return EXIT_NOTHING
+        with Lock(self.sys.state_dir):
+            state = load_state(self.sys.state_dir)
+            rc = EXIT_OK
+            try:
+                # slots read before the lock can name a suspension resume
+                # has just removed: "already suspended" would then leave none
+                seen = self.refresh(state)
+                boot = self.sys.boot_id()
+                for key, (dev, slots, _) in seen.items():
+                    if not self.suspend_disk(state, dev, key, slots, boot):
+                        rc = EXIT_FAILED
+            finally:
+                save_state(self.sys.state_dir, state)
+                self.set_flag(state)
+        return rc
+
+    def live_bank(self, slots):
+        """Bank to seal to the PCR 7 of this start, without the event log."""
+        banks = [b for b in (self.slot_bank(c) for c in slots.values()) if b] + list(BANKS)
+        return next((b for b in banks if self.sys.live_pcr(b) is not None), None)
+
+    def seal_to_now(self, records, dev, slots):
+        """Bind the disk to the PCR 7 the TPM shows now. True if it opens."""
+        bank = self.live_bank(slots)
+        if bank is None:
+            self.warn("%s: cannot read PCR 7" % dev)
+            return False
+        live = self.sys.live_pcr(bank)
+        keys = self.opens_now(dev, slots)
+        secret = next((k for k in keys.values() if k), None)
+        if secret is None:
+            return False
+        cfg = {"pcr_bank": bank, "pcr_ids": "7",
+               "pcr_digest": base64.urlsafe_b64encode(live).decode("ascii").rstrip("=")}
+        ok = self.sys.bind(dev, secret, cfg)
+        del secret, keys
+        after = self.sys.tpm_slots(dev) or {}
+        new = sorted(set(after) - set(slots))
+        if not ok or len(new) != 1 or self.opens_now(dev, {new[0]: None})[new[0]] is None:
+            self.warn("%s: could not seal the disk to this start's PCR 7" % dev)
+            return False
+        slots.update(after)
+        kernel = self.sys.running_kernel()
+        rec = self.record(kernel + "-kernel", kernel, bank, live.hex())
+        rec["last_opened"] = self.sys.boot_id()
+        records[str(new[0])] = rec
+        self.say("%s: sealed to the PCR 7 of this start (slot %d)" % (dev, new[0]))
+        return True
+
+    def cmd_resume(self, args):
+        rc = EXIT_NOTHING
+        with Lock(self.sys.state_dir):
+            state = load_state(self.sys.state_dir)
+            try:
+                seen = self.refresh(state)
+                boot = state.get("boot_id")
+                for key, (dev, slots, opens) in seen.items():
+                    records = state["disks"][key]["slots"]
+                    suspended = self.suspended_slots(slots, records)
+                    if not suspended:
+                        continue
+                    if all(records[str(s)].get("suspended_boot") == boot for s in suspended):
+                        self.say("%s: suspended until the next start" % dev)
+                        continue
+                    if rc == EXIT_NOTHING:
+                        rc = EXIT_OK
+                    sealed = any(ok and self.slot_bank(slots[s]) for s, ok in opens.items())
+                    if not sealed:
+                        sealed = self.seal_to_now(records, dev, slots)
+                    for s in suspended:
+                        rec = records[str(s)]
+                        if rec.get("counted_boot") != boot:
+                            rec["counted_boot"] = boot
+                            rec["boots"] = rec.get("boots", 0) + 1
+                    if not sealed and max(records[str(s)]["boots"] for s in suspended) < SUSPEND_MAX_BOOTS:
+                        self.warn("%s: still suspended, trying again at the next start" % dev)
+                        rc = EXIT_FAILED
+                        continue
+                    if not sealed:
+                        self.warn("%s: the TPM no longer opens it, the password is needed" % dev)
+                        rc = EXIT_FAILED
+                    for s in suspended:
+                        if self.sys.unbind(dev, s):
+                            del records[str(s)]
+                            del slots[s]
+                            self._keys.pop((dev, s), None)
+                            self.say("%s: suspension removed (slot %d)" % (dev, s))
+                        else:
+                            self.warn("%s: could not remove the suspension (slot %d)" % (dev, s))
+                            rc = EXIT_FAILED
+            finally:
+                save_state(self.sys.state_dir, state)
+                self.set_flag(state)
+        if rc == EXIT_OK:
+            # the other installed kernels get their binding for the new values
+            try:
+                self.bind_for(self.sys.installed_kernels())
+            except (Refused, LogError) as e:
+                self.warn("cannot predict PCR 7 for the other kernels: %s" % e)
+        return rc
+
+    def cmd_record(self, args):
+        with Lock(self.sys.state_dir):
+            state = load_state(self.sys.state_dir)
+            seen = self.refresh(state)
+            save_state(self.sys.state_dir, state)
+        if not seen:
+            self.say("no disk is opened by the TPM: nothing to do")
+            return EXIT_NOTHING
+        for dev, _, opens in seen.values():
+            n = sum(opens.values())
+            self.say("%s: %d of %d TPM bindings open it now" % (dev, n, len(opens)))
+        return EXIT_OK
+
+    def cmd_status(self, args):
+        state = load_state(self.sys.state_dir)
+        report = {"kernel": self.sys.running_kernel(), "disks": []}
+        for dev, key, slots in self.disks():
+            records = state["disks"].get(key, {}).get("slots", {})
+            entries = []
+            for s, k in self.opens_now(dev, slots).items():
+                rec = records.get(str(s), {})
+                unknown = "suspended" if self.is_suspension(slots[s]) else "unknown"
+                entries.append({"slot": s, "opens": k is not None,
+                                "role": rec.get("role", unknown),
+                                "kernel": rec.get("kernel"),
+                                "pcr_bank": slots[s].get("pcr_bank", "sha1")})
+            report["disks"].append({"device": dev, "uuid": key,
+                                    "opens": any(e["opens"] for e in entries),
+                                    "slots": entries})
+        if args.json:
+            self.say(json.dumps(report, indent=2))
+        elif not report["disks"]:
+            self.say("no disk is opened by the TPM")
+        for disk in [] if args.json else report["disks"]:
+            parts = ["slot %d %s (%s)" % (e["slot"], "opens it now" if e["opens"] else "does not open it now",
+                                          e["role"]) for e in disk["slots"]]
+            self.say("%s: %s" % (disk["device"], "; ".join(parts)))
+        return EXIT_OK if report["disks"] else EXIT_NOTHING
+
+    def cmd_prune(self, args):
+        with Lock(self.sys.state_dir):
+            state = load_state(self.sys.state_dir)
+            seen = self.refresh(state)
+            if not seen:
+                save_state(self.sys.state_dir, state)
+                self.say("no disk is opened by the TPM: nothing to do")
+                return EXIT_NOTHING
+            rc = EXIT_OK
+            # values every installed kernel will give, in each bank the log
+            # replays to the TPM; without one, nothing can be called unused
+            expected = {}
+            try:
+                for bank in BANKS:
+                    try:
+                        self.pick_bank(bank)
+                    except Refused:
+                        continue
+                    expected[bank] = {self.prediction(k, bank).hex()
+                                      for k in self.sys.installed_kernels()}
+                if not expected:
+                    raise Refused("PCR 7 cannot be predicted on this computer")
+            except (Refused, LogError):
+                save_state(self.sys.state_dir, state)
+                raise
+            for key, (dev, slots, opens) in seen.items():
+                records = state["disks"][key]["slots"]
+                for s in sorted(slots):
+                    rec = records.get(str(s))
+                    if rec is None or opens.get(s) or not rec.get("pcr7"):
+                        continue
+                    if rec.get("missed_boots", 0) < PRUNE_AFTER_BOOTS:
+                        continue
+                    if rec.get("pcr_bank") not in expected or rec["pcr7"] in expected[rec["pcr_bank"]]:
+                        continue
+                    if len(slots) <= 1 or not any(opens.values()):
+                        continue  # never leave a disk without a binding that works
+                    if self.sys.unbind(dev, s):
+                        del records[str(s)]
+                        del slots[s]
+                        opens.pop(s, None)
+                        self._keys.pop((dev, s), None)
+                        self.say("%s: removed binding %d, no kernel uses it any more" % (dev, s))
+                    else:
+                        self.warn("%s: could not remove binding %d" % (dev, s))
+                        rc = EXIT_FAILED
+            save_state(self.sys.state_dir, state)
+        return rc
+
+
+class Parser(argparse.ArgumentParser):
+    def error(self, message):
+        # exit code 2 means "refused" here
+        self.print_usage(sys.stderr)
+        self.exit(EXIT_ERROR, "%s: error: %s\n" % (self.prog, message))
+
+
+def build_parser():
+    p = Parser(prog="raye-tpm", description="Keep the TPM opening the disk.")
+    sub = p.add_subparsers(dest="command", required=True, parser_class=Parser)
+    r = sub.add_parser("replay")
+    r.add_argument("--bank", choices=BANKS)
+    r = sub.add_parser("predict")
+    r.add_argument("--kernel", choices=KERNELS, required=True)
+    r.add_argument("--bank", choices=BANKS)
+    r = sub.add_parser("bind-next")
+    r.add_argument("--kernel", choices=KERNELS, required=True)
+    r = sub.add_parser("prepare-firmware")
+    r.add_argument("--if-changed", action="store_true")
+    sub.add_parser("suspend")
+    sub.add_parser("resume")
+    sub.add_parser("record")
+    r = sub.add_parser("status")
+    r.add_argument("--json", action="store_true")
+    sub.add_parser("prune")
+    return p
+
+
+def main(argv=None, system=None, out=None, err=None):
+    args = build_parser().parse_args(argv)
+    tool = Tool(system or System(), out, err)
+    handler = getattr(tool, "cmd_" + args.command.replace("-", "_"))
+    try:
+        return handler(args)
+    except Refused as e:
+        tool.warn("refused: %s; nothing was changed" % e)
+        return EXIT_REFUSED
+    except NoLog as e:
+        tool.warn(str(e))
+        return EXIT_NOTHING
+    except LogError as e:
+        tool.warn("refused: %s; nothing was changed" % e)
+        return EXIT_REFUSED
+    except OSError as e:
+        tool.warn("error: %s" % e)
+        return EXIT_ERROR
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,39 @@
+#!/usr/bin/make -f
+#
+# The archives are not kept in git: fetch-addons.sh puts them in
+# upstream/, and the orig tarball carries them. The build never
+# downloads anything; it checks every archive against addons.sha256
+# again before unpacking it into the package.
+#
+# msstyles/ (the Raye theme for Windows programs) builds only once it
+# has a Makefile; its install target gets DESTDIR.
+
+export PYTHONDONTWRITEBYTECODE = 1
+
+PKGDIR = debian/raye-wine-addons
+
+%:
+	dh $@
+
+override_dh_auto_configure:
+	sh fetch-addons.sh --check
+
+override_dh_auto_build:
+	if [ -f msstyles/Makefile ]; then $(MAKE) -C msstyles; fi
+
+override_dh_auto_test:
+ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
+	python3 -m pytest -q -p no:cacheprovider tests
+endif
+
+override_dh_auto_install:
+	sh fetch-addons.sh --unpack $(PKGDIR)
+	if [ -f msstyles/Makefile ]; then \
+		$(MAKE) -C msstyles install DESTDIR=$(CURDIR)/$(PKGDIR); \
+	fi
+
+override_dh_auto_clean:
+	if [ -f msstyles/Makefile ]; then $(MAKE) -C msstyles clean; fi
+
+# the archives are shipped as their makers built them, byte for byte
+override_dh_strip_nondeterminism:

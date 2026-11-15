@@ -1,0 +1,32 @@
+#!/bin/sh
+# Starts a background helper of the desktop at sign-in only when this
+# account gives it something to do. Each of them also starts by itself
+# (D-Bus) the moment its app or its Settings page is opened, so nothing
+# is lost; it just does not sit in memory for nobody.
+#
+#   raye-start-if-needed kdeconnect   phone service, once a phone is paired
+#   raye-start-if-needed kclockd      alarms of Clock, once one is set
+#
+# Called by the sign-in entries in /etc/xdg/autostart. Exit 0 either way:
+# not starting is not a failure.
+set -u
+cfg=${XDG_CONFIG_HOME:-$HOME/.config}
+bin=${RAYE_START_BIN:-/usr/bin}
+
+case ${1:-} in
+kdeconnect)
+    [ -e "$cfg/kdeconnect/trusted_devices" ] || exit 0
+    exec "$bin/kdeconnectd"
+    ;;
+kclockd)
+    # an entry under [Alarms]; timers are never running at sign-in
+    awk '/^\[/ { inside = ($0 == "[Alarms]"); next }
+         inside && /=/ { found = 1 }
+         END { exit !found }' "$cfg/kclockdrc" 2>/dev/null || exit 0
+    exec "$bin/kclockd"
+    ;;
+*)
+    echo "raye-start-if-needed: unknown helper '${1:-}'" >&2
+    exit 2
+    ;;
+esac

@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Sends the local apt tree (/srv/publish/apt, the host's SSD) to R2
+# and to GitHub Pages. Started by raye-publish-mirrors.path when the tree
+# changes, and by raye-publish-mirrors.timer to catch up after a failure
+# or a change this VM did not see (virtiofs does not tell it about writes
+# made on the host). The apt tree only: the ISO stays private.
+[Unit]
+Description=Raye: sync the apt tree to R2 and GitHub Pages
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+Environment=HOME=/root
+# a new tree is renamed into place: let the writer finish first
+ExecStartPre=/bin/sleep 10
+ExecStart=/srv/raye/iso/tools/publish-mirrors --if-changed
+TimeoutStartSec=45min
+Nice=10

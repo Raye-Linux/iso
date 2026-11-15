@@ -1,0 +1,5 @@
+### BEGIN /etc/grub.d/10_linux ###
+menuentry 'Raye Linux' --class raye --class gnu-linux --class gnu --class os $menuentry_id_option 'gnulinux-simple-deadbeef' {
+	linux	/@/boot/vmlinuz-7.0.0-9-generic root=UUID=deadbeef ro quiet splash
+}
+### END /etc/grub.d/10_linux ###

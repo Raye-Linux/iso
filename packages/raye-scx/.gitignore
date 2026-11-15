@@ -1,0 +1,10 @@
+# the release and the crates: fetched by fetch-scx.sh, never committed
+upstream/
+build/
+debian/raye-scx/
+debian/cargo-home/
+debian/.debhelper/
+debian/debhelper-build-stamp
+debian/files
+debian/*.substvars
+__pycache__/

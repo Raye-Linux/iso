@@ -1,0 +1,28 @@
+Oops#1 Part1
+<1>[ 7731.004512] BUG: kernel NULL pointer dereference, address: 0000000000000008
+<1>[ 7731.004530] #PF: supervisor write access in kernel mode
+<1>[ 7731.004537] #PF: error_code(0x0002) - not-present page
+<4>[ 7731.004561] Oops: Oops: 0002 [#1] SMP NOPTI
+<4>[ 7731.004570] CPU: 5 UID: 1000 PID: 1940 Comm: kwin_wayland Tainted: G           OE      7.0.0-42-generic #42-Raye PREEMPT(voluntary)
+<4>[ 7731.004583] Hardware name: Micro-Star International Co., Ltd. MS-7C56/B550-A PRO (MS-7C56), BIOS A.H0 03/14/2025
+<4>[ 7731.004590] RIP: 0010:dm_update_crtc_state+0x1c5/0x3f0 [amdgpu]
+<4>[ 7731.004602] Code: 48 8b 43 08 48 89 df e8 5d 2c ff ff 85 c0 0f 85 9e 00 00 00
+<4>[ 7731.004611] RSP: 0018:ffffb3a1c3b7f9d8 EFLAGS: 00010246
+<4>[ 7731.004650] Call Trace:
+<4>[ 7731.004655]  <TASK>
+<4>[ 7731.004660]  ? __die_body+0x1a/0x60
+<4>[ 7731.004667]  ? page_fault_oops+0x151/0x530
+<4>[ 7731.004674]  dm_update_crtc_state+0x1c5/0x3f0 [amdgpu]
+<4>[ 7731.004690]  amdgpu_dm_atomic_check+0x5f2/0x1450 [amdgpu]
+<4>[ 7731.004702]  drm_atomic_check_only+0x5d1/0xa20
+<4>[ 7731.004710]  drm_atomic_commit+0x55/0xd0
+<4>[ 7731.004717]  drm_mode_atomic_ioctl+0x9f0/0xc60
+<4>[ 7731.004725]  drm_ioctl_kernel+0xb2/0x110
+<4>[ 7731.004732]  drm_ioctl+0x2f3/0x5a0
+<4>[ 7731.004740]  amdgpu_drm_ioctl+0x4e/0x90 [amdgpu]
+<4>[ 7731.004751]  __x64_sys_ioctl+0x97/0xd0
+<4>[ 7731.004758]  do_syscall_64+0x82/0x2b0
+<4>[ 7731.004765]  entry_SYSCALL_64_after_hwframe+0x76/0x7e
+<4>[ 7731.004771]  </TASK>
+<4>[ 7731.004776] Modules linked in: snd_seq_dummy snd_hrtimer amdgpu(OE) nvme
+<4>[ 7731.004810] ---[ end trace 0000000000000000 ]---

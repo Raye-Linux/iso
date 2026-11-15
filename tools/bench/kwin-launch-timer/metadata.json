@@ -1,0 +1,16 @@
+{
+    "KPackageStructure": "KWin/Script",
+    "KPlugin": {
+        "Authors": [
+            {
+                "Name": "Raye Linux"
+            }
+        ],
+        "Description": "Logs when each new window appears, for raye-bench launch times.",
+        "Id": "raye-launch-timer",
+        "License": "GPL-3.0-or-later",
+        "Name": "Raye launch timer",
+        "Version": "2"
+    },
+    "X-Plasma-API": "javascript"
+}

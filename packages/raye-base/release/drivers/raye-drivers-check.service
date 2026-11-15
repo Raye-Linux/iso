@@ -1,0 +1,9 @@
+[Unit]
+Description=Look again for the graphics driver this computer needs
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/raye-drivers --again
+TimeoutStartSec=20min

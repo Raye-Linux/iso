@@ -1,0 +1,782 @@
+#!/usr/bin/python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""raye-tests -- the one launcher for every automated test suite of /srv/raye.
+
+Until now nothing ran them. Each repository documents how its tests are
+started (its README, its ctest wiring, the docstring of the file itself),
+and that knowledge lived only there: a suite could rot for weeks without
+anyone noticing, and two of them never ran in the mode that actually
+proves something. This script holds that knowledge in one place, in
+raye_tests_suites.py next to it, where every entry says where its own
+command comes from.
+
+    tools/raye-tests                     run everything runnable (default)
+    tools/raye-tests list                what exists, how it runs, what it needs
+    tools/raye-tests --repo iso          one repository
+    tools/raye-tests --suite iso/purge   one suite (repeatable, glob allowed)
+    tools/raye-tests --iso FILE          question that image (default: the newest)
+    tools/raye-tests --no-iso            repository-only verdicts, no image
+    tools/raye-tests --release           also the suites gated on RAYE_RELEASE
+    tools/raye-tests --strict            a skip, or a cache left behind,
+                                         fails the run too
+    tools/raye-tests --json FILE         the same report, machine readable
+
+Exit 0 when every suite that ran passed, 1 when one failed, 2 on a usage
+error.
+
+THE RULE THIS SCRIPT EXISTS FOR. A suite that cannot run is named, with
+the reason, and never counted as a pass. A test skipped in silence is
+worse than a test that does not exist, because the silence is read as
+cover. Three concrete silences this launcher refuses:
+
+  - "Ran 0 tests ... NO TESTS RAN" exits 0. Measured 2026-11-06 with
+    python3 -m unittest discover on an empty folder. So a suite whose
+    output can be counted must count at least one test, or it fails.
+  - a test whose tool is missing can exit 0 after printing "skipped"
+    (files/tests/raye/test_desktop_file.sh without desktop-file-validate),
+    or exit 1 for want of a font (theme/tests/test_fonts.sh). Both look
+    like a verdict and are not one. Their needs are declared here, so a
+    missing tool makes a named skip, never a green and never a false red.
+  - 77 is ctest's skip code and four tests of this tree already use it.
+    It is honoured as a skip, with the test's own last line as the reason.
+
+THIS SCRIPT WRITES NOTHING INTO THE REPOSITORIES. Every suite runs with
+PYTHONDONTWRITEBYTECODE=1, pytest without its cache, and work folders
+under a temporary directory removed at the end. It does not build and it
+does not package: a suite that needs a compiled tree is a named skip, so
+the launcher can never take the machine away from an image build.
+And it proves it rather than claiming it -- `git status --porcelain` of
+every repository is fingerprinted before and after, and a change is
+reported.
+
+WHY IT LIVES IN THE iso REPOSITORY. /srv/raye is not itself a git
+repository, so the launcher has to live inside one of the fourteen. iso
+is the one that assembles the distribution and already carries tooling
+that reaches across the others (tools/tests/test_publish_repo.py reads
+../update/src). An umbrella repository would be a better home the day
+one exists.
+"""
+import argparse
+import fnmatch
+import glob
+import hashlib
+import importlib.util
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+from concurrent.futures import ThreadPoolExecutor
+
+# No __pycache__ next to this script either: importing the table below
+# used to leave iso/tools/__pycache__ behind, which is the very thing
+# this launcher promises not to do. Measured 2026-11-06.
+sys.dont_write_bytecode = True
+
+# RAYE_TESTS_TREE lets the script be tried from outside the checkout; the
+# normal path is <tree>/iso/tools/raye-tests, so three levels up is the tree.
+RAYE = os.environ.get("RAYE_TESTS_TREE") or os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+ISO_DIR = "/var/tmp/raye/isos"
+DEFAULT_ISO = os.path.join(ISO_DIR, "latest.iso")
+SKIP_CODE = 77                      # ctest's, and four tests of this tree use it
+
+PASS, FAIL, SKIP = "pass", "fail", "skip"
+
+
+def load_suites():
+    """The table, from raye_tests_suites.py next to this script."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(here, "raye_tests_suites.py")
+    if not os.path.exists(path):
+        raise SystemExit("raye-tests: %s is missing" % path)
+    spec = importlib.util.spec_from_file_location("raye_tests_suites", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.MANIFEST
+
+
+# ======================================================================
+# requirements
+
+_FONTS = None
+
+
+def have_font(family):
+    global _FONTS
+    if _FONTS is None:
+        if not shutil.which("fc-list"):
+            _FONTS = set()
+        else:
+            out = subprocess.run(["fc-list", ":", "family"], capture_output=True,
+                                 text=True).stdout
+            _FONTS = {f.strip() for line in out.splitlines() for f in line.split(",")}
+    return family in _FONTS
+
+
+def missing(req, ctx):
+    """The reason this requirement is not met, or None when it is."""
+    kind, _, what = req.partition(":")
+    if kind == "cmd":
+        return None if shutil.which(what) else "%s is not installed" % what
+    if kind == "font":
+        return None if have_font(what) else "the font %s is not installed" % what
+    if kind == "env":
+        return None if os.environ.get(what) else "%s is not set" % what
+    if kind == "py":
+        try:
+            __import__(what)
+            return None
+        except Exception:
+            return "the Python module %s is missing" % what
+    if kind == "dir":
+        p = what if os.path.isabs(what) else os.path.join(ctx["repo"], what)
+        return None if os.path.isdir(p) else "%s does not exist" % what
+    if kind == "file":
+        p = what if os.path.isabs(what) else os.path.join(ctx["repo"], what)
+        return None if os.path.exists(p) else "%s does not exist" % what
+    if kind == "ok":
+        # The repository answers for itself. A requirement written in this
+        # table is a fact typed in once, and it goes stale without a word
+        # the day the repository moves it; a command re-asks every run, and
+        # its own last line is the reason, so the remedy is named by the
+        # side that knows it.
+        try:
+            p = subprocess.run(["sh", "-c", what], cwd=ctx["repo"], text=True,
+                               capture_output=True, timeout=60,
+                               stdin=subprocess.DEVNULL)
+        except (OSError, subprocess.TimeoutExpired) as e:
+            return "%s did not answer (%s)" % (what, e.__class__.__name__)
+        if p.returncode == 0:
+            return None
+        said = [l for l in (p.stdout + p.stderr).splitlines() if l.strip()]
+        return said[-1].strip() if said else "%s exited %d" % (what, p.returncode)
+    if kind == "iso":
+        return None if ctx.get("iso") else ctx.get("no_iso_why", "no ISO was given")
+    if kind == "image":
+        return None if ctx.get("image") else ctx.get("no_image_why", "no image tree")
+    raise SystemExit("raye-tests: unknown requirement %r" % req)
+
+
+# ======================================================================
+# counting what ran
+
+RE_PYTEST = re.compile(r"(?:^|\s)(\d+) (passed|failed|error|errors|skipped|xfailed|"
+                       r"xpassed|deselected)\b")
+RE_UNITTEST = re.compile(r"^Ran (\d+) tests?\b", re.M)
+RE_OK = re.compile(r"^\s*ok\b", re.M)
+RE_BAD = re.compile(r"^\s*(FAIL|fail|failed)\b", re.M)
+# the three shapes the shell tests of this tree end with, measured 2026-11-06
+RE_SUM = re.compile(r"(\d+)\s+(?:passed|checks?)\s*,\s*(\d+)\s+failed", re.I)
+RE_ALLOK = re.compile(r"all checks passed", re.I)
+# qmltestrunner ends with its own tally. It is read rather than folded
+# into "shell" because that one has no place for "skipped", and a QML
+# test that skips itself is exactly what the report exists to show.
+RE_QMLTEST = re.compile(r"^Totals: (\d+) passed, (\d+) failed, (\d+) skipped",
+                        re.M)
+# ctest's own last lines. Both are read, and the SKIPPED one only when
+# it is there: ctest prints it only if something skipped, and taking its
+# absence for zero would be right by accident -- while reading only the
+# percentage line would count a skipped test as a pass.
+RE_CTEST = re.compile(r"^(\d+)% tests passed, (\d+) tests? failed out of (\d+)",
+                      re.M)
+RE_CTEST_SKIP = re.compile(r"^\s*Tests Skipped:\s*(\d+)", re.M)
+
+
+def counts(how, out):
+    """(ran, passed, failed, skipped) or None when nothing could be counted."""
+    if how == "pytest":
+        found = RE_PYTEST.findall(out)
+        if not found:
+            return None
+        n = {k: 0 for k in ("passed", "failed", "error", "errors", "skipped",
+                            "xfailed", "xpassed", "deselected")}
+        for num, kind in found:
+            n[kind] += int(num)
+        bad = n["failed"] + n["error"] + n["errors"]
+        good = n["passed"] + n["xpassed"] + n["xfailed"]
+        return good + bad + n["skipped"], good, bad, n["skipped"]
+    if how == "unittest":
+        m = RE_UNITTEST.search(out)
+        if not m:
+            return None
+        ran = int(m.group(1))
+        fail = sum(int(x) for x in re.findall(r"(?:failures|errors)=(\d+)", out))
+        skip = sum(int(x) for x in re.findall(r"skipped=(\d+)", out))
+        return ran, ran - fail - skip, fail, skip
+    if how == "qmltest":
+        found = RE_QMLTEST.findall(out)
+        if not found:
+            return None
+        # One tally per qmltestrunner process; a suite may run several.
+        good = sum(int(g) for g, _, _ in found)
+        bad = sum(int(f) for _, f, _ in found)
+        skip = sum(int(k) for _, _, k in found)
+        return good + bad + skip, good, bad, skip
+    if how == "ctest":
+        m = RE_CTEST.search(out)
+        if not m:
+            return None
+        bad, total = int(m.group(2)), int(m.group(3))
+        skipped = RE_CTEST_SKIP.search(out)
+        skip = int(skipped.group(1)) if skipped else 0
+        # "out of N" is what ctest SELECTED, so N already includes the
+        # skipped ones; passed is what is left.
+        return total, total - bad - skip, bad, skip
+    if how == "shell":
+        # "48 passed, 0 failed" / "65 checks, 0 failed" come first: they are
+        # the script's own count, and it only prints them once it is done.
+        m = RE_SUM.search(out)
+        if m:
+            good, bad = int(m.group(1)), int(m.group(2))
+            return good + bad, good, bad, 0
+        good, bad = len(RE_OK.findall(out)), len(RE_BAD.findall(out))
+        if good + bad:
+            return good + bad, good, bad, 0
+        # a script that prints only its verdict still proves it got there
+        if RE_ALLOK.search(out):
+            return 1, 1, 0, 0
+        return None
+    return None
+
+
+# ======================================================================
+# the image
+
+class Image:
+    """The ISO opened read-only, with a writable overlay on top.
+
+    The overlay is not a nicety. Measured 2026-11-06: against the bare
+    read-only squashfs, tests/test_apt_sources.sh --root reports two
+    FAILs because it cannot mktemp inside the tree -- a false red on a
+    repository that is right. With the overlay the same run is green and
+    fetches 16 source indexes, which is the verdict that was wanted.
+    Nothing of it reaches the ISO: upperdir is thrown away.
+    """
+
+    def __init__(self, iso, work):
+        self.iso, self.work, self.mounts, self.tree, self.why = iso, work, [], None, None
+
+    def _mount(self, args, at):
+        os.makedirs(at, exist_ok=True)
+        r = subprocess.run(["mount"] + args + [at], capture_output=True, text=True)
+        if r.returncode != 0:
+            self.why = (r.stderr.strip() or "mount failed").splitlines()[-1]
+            return False
+        self.mounts.append(at)
+        return True
+
+    def open(self):
+        if os.geteuid() != 0:
+            self.why = "an ISO can only be opened as root"
+            return False
+        if not os.path.isfile(self.iso):
+            self.why = "no such ISO: %s" % self.iso
+            return False
+        m1 = os.path.join(self.work, "iso")
+        if not self._mount(["-o", "loop,ro", self.iso], m1):
+            return False
+        squash = None
+        for root, _dirs, names in os.walk(m1):
+            if "filesystem.squashfs" in names:
+                squash = os.path.join(root, "filesystem.squashfs")
+                break
+        if not squash:
+            self.why = "%s carries no filesystem.squashfs" % self.iso
+            return False
+        low = os.path.join(self.work, "squash")
+        if not self._mount(["-t", "squashfs", "-o", "loop,ro", squash], low):
+            return False
+        up, wd = os.path.join(self.work, "up"), os.path.join(self.work, "ovlwork")
+        os.makedirs(up, exist_ok=True)
+        os.makedirs(wd, exist_ok=True)
+        tree = os.path.join(self.work, "image")
+        if not self._mount(["-t", "overlay", "overlay", "-o",
+                            "lowerdir=%s,upperdir=%s,workdir=%s" % (low, up, wd)], tree):
+            return False
+        self.tree = tree
+        return True
+
+    @staticmethod
+    def holders(at):
+        """Which processes keep `at` busy, read from /proc rather than guessed.
+
+        🚨 The old code printed "WARNING: ... is still mounted" and named
+        nothing. Measured 2026-11-06: by the time anyone looked, NOTHING
+        held it -- a subprocess had simply not finished dying when close()
+        ran, and `umount` by hand worked at the first try. A warning that
+        cannot say who is holding the mount sends the reader looking for a
+        bug that is already gone.
+        """
+        found = []
+        for d in glob.glob("/proc/[0-9]*"):
+            pid = os.path.basename(d)
+            where = []
+            for what in ("root", "cwd"):
+                try:
+                    link = os.readlink(os.path.join(d, what))
+                except OSError:
+                    continue
+                if link.startswith(at):
+                    where.append(what)
+            if not where:
+                try:
+                    for fd in os.listdir(os.path.join(d, "fd")):
+                        try:
+                            link = os.readlink(os.path.join(d, "fd", fd))
+                        except OSError:
+                            continue
+                        if link.startswith(at):
+                            where.append("fd " + fd)
+                            break
+                except OSError:
+                    pass
+            if where:
+                try:
+                    with open(os.path.join(d, "cmdline"), "rb") as fh:
+                        cmd = fh.read().replace(b"\0", b" ").decode(
+                            "utf-8", "replace").strip()
+                except OSError:
+                    cmd = "?"
+                found.append("pid %s (%s) %s" % (pid, ", ".join(where), cmd[:60]))
+        return found
+
+    def close(self, tries=8):
+        """Release the mounts, outermost first. Returns the ones left over.
+
+        ⚠️ It STOPS at the first mount it cannot release, and that is the
+        correction that matters. The old loop carried on down the stack:
+        with the overlay still live it went and unmounted the squashfs
+        underneath it -- the overlay's own lowerdir -- which leaves a tree
+        whose floor has been taken away and a loop device nothing can free,
+        because the squashfs file it holds open lives on the ISO mount that
+        is now pinned too. One busy mount became three.
+        """
+        left = []
+        for at in reversed(self.mounts):
+            if left:
+                # Everything below a mount we could not release stays: see
+                # the docstring. Naming it is the point; silence is not.
+                left.append(at)
+                continue
+            for attempt in range(tries):
+                if subprocess.run(["umount", at], capture_output=True).returncode == 0:
+                    break
+                time.sleep(0.5 * (attempt + 1))   # 18 s over 8 tries, not 6
+            else:
+                who = self.holders(at)
+                print("raye-tests: WARNING: %s is still mounted" % at,
+                      file=sys.stderr)
+                for line in who or ["nothing holds it any more: a subprocess "
+                                    "was still exiting when the run ended"]:
+                    print("raye-tests:          %s" % line, file=sys.stderr)
+                left.append(at)
+        self.mounts = [at for at in self.mounts if at in left]
+        return left
+
+
+# ======================================================================
+# running
+
+def run_one(s, ctx):
+    repo = os.path.join(RAYE, s["cwd"])
+    sub = dict(ctx)
+    sub["repo"] = os.path.join(RAYE, s["repo"])
+    res = dict(name=s["name"], repo=s["repo"], doc=s["doc"], seconds=0.0,
+               ran=None, passed=None, failed=None, inner_skipped=None,
+               notes=[], output="", code=None)
+
+    if "never" in s:
+        res.update(state=SKIP, reason=s["never"])
+        return res
+    if s["gate"] == "release" and not ctx["release"]:
+        res.update(state=SKIP,
+                   reason="release gate only (RAYE_RELEASE); run with --release")
+        return res
+    if not os.path.isdir(repo):
+        res.update(state=SKIP, reason="%s is not checked out" % s["cwd"])
+        return res
+    for req in s["needs"]:
+        why = missing(req, sub)
+        if why:
+            res.update(state=SKIP, reason=why)
+            return res
+    for req in s["fuller"]:
+        why = missing(req, sub)
+        if why:
+            res["notes"].append("partial verdict: " + why)
+
+    work = tempfile.mkdtemp(prefix="raye-tests.", dir=ctx["work"])
+    sub["work"] = work
+    env = dict(os.environ)
+    env.update(PYTHONDONTWRITEBYTECODE="1", LC_ALL="C.UTF-8", LANGUAGE="en",
+               QT_QPA_PLATFORM="offscreen", PYTHONPYCACHEPREFIX=work)
+    for k, v in s["env"].items():
+        env[k] = v.format(**sub)
+    if ctx.get("image"):
+        env["RAYE_ROOT"] = ctx["image"]
+
+    argv = list(s["argv"])
+    for req, present, absent in s["plus"]:
+        argv += present if missing(req, sub) is None else absent
+    argv = [a.format(**sub) for a in argv]
+    start = time.monotonic()
+    try:
+        p = subprocess.run(argv, cwd=repo, env=env, capture_output=True, text=True,
+                           timeout=s["timeout"], stdin=subprocess.DEVNULL)
+        out, code = p.stdout + p.stderr, p.returncode
+    except subprocess.TimeoutExpired as e:
+        out = (e.stdout or "") + (e.stderr or "") if isinstance(e.stdout, str) else ""
+        code = None
+    except OSError as e:
+        out, code = str(e), -1
+    res["seconds"] = round(time.monotonic() - start, 1)
+    res["output"], res["code"] = out, code
+    shutil.rmtree(work, ignore_errors=True)
+
+    if code is None:
+        res.update(state=FAIL, reason="timed out after %ds" % s["timeout"])
+        return res
+    if code == SKIP_CODE:
+        last = [l for l in out.splitlines() if l.strip()]
+        res.update(state=SKIP,
+                   reason="the test skipped itself (77): " + (last[-1] if last else "?"))
+        return res
+
+    for pat, note in s["notes_on"]:
+        if pat in out:
+            res["notes"].append(note)
+    c = counts(s["count"], out) if s["count"] else None
+    if c:
+        res.update(ran=c[0], passed=c[1], failed=c[2], inner_skipped=c[3])
+
+    if code != 0:
+        res.update(state=FAIL, reason="exit %d" % code)
+        return res
+    # pytest exits 5 on "no tests collected"; unittest exits 0 on "Ran 0 tests".
+    # Both are a green that proves nothing, so neither is allowed to pass.
+    if s["count"]:
+        if c is None:
+            res.update(state=FAIL,
+                       reason="nothing could be counted in the output: the suite "
+                              "may not have run at all")
+            return res
+        if c[0] == 0:
+            res.update(state=FAIL, reason="no test ran")
+            return res
+    res.update(state=PASS, reason="")
+    return res
+
+
+SKIP_DIRS = {".git"}
+
+
+def left_behind(repos, since):
+    """Files under the repositories that appeared or changed during a run.
+
+    `git status` is not enough on its own: __pycache__ is in theme's
+    .gitignore (line 11), so bytecode dropped there is invisible to it.
+    A guard that cannot see the one thing that goes wrong is not a guard.
+
+    No attempt is made to say WHO wrote each file. On this machine both
+    the launcher and the person working run as root, so ownership proves
+    nothing; claiming it would be a guess dressed as a measurement. What
+    the report does instead is separate the two kinds: bytecode and test
+    caches, which a test run can drop, from everything else, which a
+    test run never writes.
+    """
+    found = []
+    for r in sorted(repos):
+        top = os.path.join(RAYE, r)
+        for root, dirs, names in os.walk(top):
+            dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
+            for n in names:
+                f = os.path.join(root, n)
+                try:
+                    st = os.lstat(f)
+                except OSError:
+                    continue
+                if st.st_mtime >= since:
+                    found.append((r, os.path.relpath(f, top)))
+    return found
+
+
+def git_fingerprint(repos):
+    """What `git status --porcelain` says in each repo, hashed."""
+    out = {}
+    env = dict(os.environ, HOME="/root")
+    for r in sorted(repos):
+        p = os.path.join(RAYE, r)
+        if not os.path.isdir(os.path.join(p, ".git")):
+            out[r] = "no .git"
+            continue
+        subprocess.run(["git", "config", "--global", "--add", "safe.directory", p],
+                       env=env, capture_output=True)
+        st = subprocess.run(["git", "status", "--porcelain"], cwd=p, env=env,
+                            capture_output=True, text=True)
+        out[r] = hashlib.md5(st.stdout.encode()).hexdigest()
+    return out
+
+
+# ======================================================================
+# report
+
+def tail(text, n=25):
+    lines = [l for l in text.splitlines() if l.strip()]
+    return "\n".join("      | " + l for l in lines[-n:]) or "      | (no output)"
+
+
+def excerpt(text):
+    """What failed, then the end of the run.
+
+    The failing lines are not always at the end -- a shell test writes
+    them to stderr while its ok lines go to stdout -- so printing the
+    tail alone can hide the one line that says what is wrong.
+    """
+    lines = [l for l in text.splitlines() if l.strip()]
+    bad = [l for l in lines if re.match(r"\s*(FAIL|fail|failed|ERROR|E\s|not ok)\b", l)
+           or "Traceback" in l or re.match(r"\s*assert", l)]
+    out = ["      | " + l for l in bad[:12]]
+    if out:
+        out.append("      | ...")
+    out += ["      | " + l for l in lines[-12:]]
+    return "\n".join(out) or "      | (no output)"
+
+
+def do_list(chosen):
+    for s in chosen:
+        extra = " ".join(x for _r, p, _a in s["plus"] for x in p)
+        how = "(not run)" if "never" in s else " ".join(s["argv"]) + (
+            " [" + extra + " when there is one]" if extra else "")
+        print("%-32s %s" % (s["name"], s["cwd"]))
+        print("    how    %s" % how)
+        print("    from   %s" % s["doc"])
+        if s["needs"]:
+            print("    needs  %s" % ", ".join(s["needs"]))
+        if s["fuller"]:
+            print("    fuller %s" % ", ".join(s["fuller"]))
+        if "never" in s:
+            print("    skip   %s" % s["never"])
+        print()
+    print("%d suite(s)" % len(chosen))
+
+
+def report(results, before, after, dropped, jobs, image, iso, seconds):
+    by_repo = {}
+    for r in results:
+        by_repo.setdefault(r["repo"], []).append(r)
+
+    print("\n" + "=" * 72)
+    print("raye-tests: %d suite(s) in %d repositories, %d at a time, %.0fs"
+          % (len(results), len(by_repo), jobs, seconds))
+    if iso:
+        print("image      %s%s" % (iso, "" if image else "  (NOT opened)"))
+    print("=" * 72)
+    print("%-14s %6s %6s %6s %6s   %s" % ("repo", "suites", "pass", "FAIL", "skip",
+                                          "tests (pass/fail/skip)"))
+    tot = [0, 0, 0, 0, 0, 0]
+    for repo in sorted(by_repo):
+        rs = by_repo[repo]
+        p = sum(1 for r in rs if r["state"] == PASS)
+        f = sum(1 for r in rs if r["state"] == FAIL)
+        k = sum(1 for r in rs if r["state"] == SKIP)
+        tp = sum(r["passed"] or 0 for r in rs)
+        tf = sum(r["failed"] or 0 for r in rs)
+        tk = sum(r["inner_skipped"] or 0 for r in rs)
+        print("%-14s %6d %6d %6s %6d   %d/%d/%d"
+              % (repo, len(rs), p, f or "-", k, tp, tf, tk))
+        for i, v in enumerate((len(rs), p, f, k, tp, tf)):
+            tot[i] += v
+    print("-" * 72)
+    print("%-14s %6d %6d %6s %6d" % ("TOTAL", tot[0], tot[1], tot[2] or "-", tot[3]))
+
+    fails = [r for r in results if r["state"] == FAIL]
+    if fails:
+        print("\nFAILED (%d) -- each one, with the end of its output:" % len(fails))
+        for r in fails:
+            print("\n  %s  (%s, %ss)" % (r["name"], r["reason"], r["seconds"]))
+            print("      from %s" % r["doc"])
+            print(excerpt(r["output"]))
+
+    skips = [r for r in results if r["state"] == SKIP]
+    if skips:
+        print("\nSKIPPED (%d) -- named, never counted as a pass:" % len(skips))
+        for r in sorted(skips, key=lambda r: r["name"]):
+            print("  %-32s %s" % (r["name"], r["reason"]))
+
+    partial = [r for r in results if r["notes"]]
+    if partial:
+        print("\nRAN, BUT NOT AGAINST EVERYTHING IT IS ABOUT (%d):" % len(partial))
+        for r in sorted(partial, key=lambda r: r["name"]):
+            for n in r["notes"]:
+                print("  %-32s %s" % (r["name"], n))
+
+    inner = [r for r in results
+             if r["state"] == PASS and (r["inner_skipped"] or 0) > 0]
+    if inner:
+        print("\nTESTS SKIPPED INSIDE A GREEN SUITE (%d) -- a green that covers less"
+              "\nthan it looks like it does:" % len(inner))
+        for r in sorted(inner, key=lambda r: -(r["inner_skipped"] or 0)):
+            print("  %-32s %d of %d" % (r["name"], r["inner_skipped"], r["ran"]))
+
+    def is_cache(rel):
+        return "__pycache__" in rel or ".pytest_cache" in rel or rel.endswith(".pyc")
+
+    caches = [d for d in dropped if is_cache(d[1])]
+    other = [d for d in dropped if not is_cache(d[1])]
+    print()
+    if caches:
+        print("bytecode or test caches left under the repositories (%d):" % len(caches))
+        for repo, rel in caches[:10]:
+            print("  %s/%s" % (repo, rel))
+        if len(caches) > 10:
+            print("  ... and %d more" % (len(caches) - 10))
+        print("  Every suite runs with PYTHONDONTWRITEBYTECODE=1, which these escape:")
+        print("  a test that re-execs python3 with -I is in ISOLATED mode, and -I")
+        print("  ignores every PYTHON* variable, so the child writes bytecode")
+        print("  whatever the launcher sets -- under ctest too. The fix is -I -B")
+        print("  on that call. --strict fails the run on this.")
+    else:
+        print("bytecode or test caches left under the repositories: none")
+    if other:
+        print("other files changed while the run was going on (%d) -- a run writes"
+              " no\nsource file, so on a shared machine this is somebody working:"
+              % len(other))
+        for repo, rel in other[:10]:
+            print("  %s/%s" % (repo, rel))
+        if len(other) > 10:
+            print("  ... and %d more" % (len(other) - 10))
+    else:
+        print("other files changed while the run was going on: none")
+    changed = [r for r in sorted(before) if before[r] != after.get(r)]
+    print("git status changed during the run in: %s"
+          % (", ".join(changed) if changed else "no repository"))
+    return fails, skips, caches
+
+
+def main():
+    ap = argparse.ArgumentParser(
+        prog="raye-tests", add_help=True,
+        description="Run every automated test suite of /srv/raye. "
+                    "Reads nothing it does not say, writes nothing in the repos.")
+    ap.add_argument("command", nargs="?", default="check", choices=["check", "list"])
+    ap.add_argument("--repo", action="append", default=[], metavar="NAME")
+    ap.add_argument("--suite", action="append", default=[], metavar="GLOB")
+    ap.add_argument("--iso", metavar="FILE", help="the image to question")
+    ap.add_argument("--no-iso", action="store_true", help="repository-only verdicts")
+    ap.add_argument("--release", action="store_true",
+                    help="also the suites the image build alone turns on")
+    ap.add_argument("--strict", action="store_true",
+                    help="a skip, or bytecode left under a repository,"
+                         " fails the run too")
+    ap.add_argument("--jobs", type=int, default=4, metavar="N")
+    ap.add_argument("--json", metavar="FILE", help="write the report there too")
+    ap.add_argument("-v", "--verbose", action="store_true",
+                    help="print the whole output of every suite")
+    a = ap.parse_args()
+
+    manifest = load_suites()
+    chosen = manifest
+    if a.repo:
+        chosen = [s for s in chosen if s["repo"] in a.repo]
+    if a.suite:
+        chosen = [s for s in chosen
+                  if any(fnmatch.fnmatch(s["name"], g) or s["name"] == g
+                         for g in a.suite)]
+    if not chosen:
+        print("raye-tests: nothing selected. `raye-tests list` shows the names.",
+              file=sys.stderr)
+        return 2
+    if a.command == "list":
+        do_list(chosen)
+        return 0
+
+    work = tempfile.mkdtemp(prefix="raye-tests-work.")
+    left_mounted = []
+    iso = None if a.no_iso else (a.iso or (DEFAULT_ISO if os.path.exists(DEFAULT_ISO)
+                                           else None))
+    ctx = dict(work=work, iso=iso, image=None, release=a.release,
+               no_iso_why="no ISO given and %s does not exist" % DEFAULT_ISO
+               if not a.no_iso else "--no-iso was asked for")
+    ctx["no_image_why"] = ctx["no_iso_why"]
+    image = None
+    wanted = any("image" in s["fuller"] or "image" in s["needs"] for s in chosen)
+    started = time.monotonic()
+    try:
+        if iso and wanted:
+            image = Image(iso, work)
+            if image.open():
+                ctx["image"] = image.tree
+            else:
+                ctx["no_image_why"] = "the ISO could not be opened: %s" % image.why
+                print("raye-tests: %s" % ctx["no_image_why"], file=sys.stderr)
+        repos = {s["repo"] for s in chosen}
+        before = git_fingerprint(repos)
+        since = time.time()
+        results = []
+        with ThreadPoolExecutor(max_workers=max(1, a.jobs)) as pool:
+            for r in pool.map(lambda s: run_one(s, ctx), chosen):
+                mark = {PASS: "ok  ", FAIL: "FAIL", SKIP: "skip"}[r["state"]]
+                extra = ""
+                if r["ran"]:
+                    extra = "  %d test(s)" % r["ran"]
+                if r["state"] != PASS:
+                    extra += "  -- " + r["reason"]
+                print("[%s] %-32s %5ss%s" % (mark, r["name"], r["seconds"], extra),
+                      flush=True)
+                if a.verbose and r["output"]:
+                    print(tail(r["output"], 10000))
+                results.append(r)
+        after = git_fingerprint(repos)
+        dropped = left_behind(repos, since)
+    finally:
+        if image:
+            left_mounted = image.close()
+        # Only when nothing is left mounted. The old line ran rmtree
+        # unconditionally, so it walked INTO the live overlay and deleted
+        # through it -- every write landing in upperdir as a whiteout over
+        # the image. Nothing of the ISO can be lost that way, and that is
+        # luck, not design: the same call against a read-write mount of
+        # something real would have emptied it.
+        if left_mounted:
+            print("raye-tests: %s is kept: %d mount(s) still there."
+                  % (work, len(left_mounted)), file=sys.stderr)
+            for at in reversed(left_mounted):
+                print("raye-tests:   umount %s" % at, file=sys.stderr)
+            print("raye-tests:   rm -rf %s" % work, file=sys.stderr)
+        else:
+            shutil.rmtree(work, ignore_errors=True)
+
+    results.sort(key=lambda r: r["name"])
+    fails, skips, caches = report(results, before, after, dropped, a.jobs, ctx["image"],
+                          iso, time.monotonic() - started)
+    if a.json:
+        with open(a.json, "w") as fh:
+            json.dump([{k: v for k, v in r.items() if k != "output"}
+                       for r in results], fh, indent=1)
+    if fails:
+        return 1
+    if a.strict and skips:
+        print("\n--strict: %d skipped suite(s), so this run does not pass."
+              % len(skips))
+        return 1
+    # A cache dropped under a repository is attributable: the run computes it
+    # by comparing the tree before and after, so it was a suite that wrote it.
+    # Reporting it and passing anyway is how it survived -- the report named
+    # the file for weeks while every run went green.
+    if a.strict and caches:
+        print("\n--strict: %d bytecode/cache file(s) left under the"
+              " repositories, so this run does not pass." % len(caches))
+        return 1
+    if a.strict and left_mounted:
+        print("\n--strict: %d mount(s) left behind, so this run does not pass."
+              % len(left_mounted))
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,68 @@
+#!/usr/bin/make -f
+#
+# Every file of release/ goes to its binary package through
+# debian/raye-release-paths (see debian/raye_release.py). The maintainer
+# scripts get, at build time, the list of what the build really shipped:
+# the files they move aside, and whether the Windows boot entry is there.
+
+# the tests import debian/raye_release.py: write no bytecode into the tree
+export PYTHONDONTWRITEBYTECODE = 1
+
+RELEASE = python3 debian/raye_release.py
+
+%:
+	dh $@
+
+override_dh_auto_test:
+ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
+	python3 -m pytest -q -p no:cacheprovider debian/test_raye_release.py debian/test_root_terms.py release/apt/tests release/grub/tests release/boot/tests release/updates/tests release/recovery/tests release/skel/tests release/kconf_update/tests
+	sh tests/test_tuning.sh
+	sh release/tuning/tests/test-laptop-wake.sh
+	sh release/tuning/tests/test-raye-vm-cursor.sh
+	sh release/grub/tests/test-raye-update-grub.sh
+	sh release/tuning/tests/test-raye-start-if-needed.sh
+	sh release/fsck/tests/test-raye-fsck-message.sh
+	sh release/kernel/tests/test-raye-kernel-setup.sh
+	python3 -B -m unittest discover -s release/tpm/tests
+	python3 -B -m unittest discover -s release/encryption/tests
+	python3 -B -m unittest discover -s release/firefox/tests
+	python3 -B -m unittest discover -s release/identity/tests
+	python3 -B -m unittest discover -s release/notices/tests
+	python3 -B -m unittest discover -s release/snapshots/tests
+	python3 -B -m unittest discover -s release/crash/tests
+	python3 -B -m unittest discover -s release/windows/tests
+endif
+
+override_dh_install:
+	dh_install
+	$(RELEASE) install
+
+# System units of the list marked no-start are enabled, never started or
+# restarted by the package; the others keep debhelper's defaults. Each
+# call names its units: a call without names would take them all again.
+override_dh_installsystemd:
+	set -e; for p in $$(dh_listpackages); do \
+		units=$$($(RELEASE) no-start $$p); \
+		if [ -n "$$units" ]; then \
+			dh_installsystemd -p$$p --no-start $$units; \
+		fi; \
+		units=$$($(RELEASE) units $$p); \
+		if [ -n "$$units" ]; then \
+			dh_installsystemd -p$$p $$units; \
+		fi; \
+	done
+
+override_dh_installdeb:
+	set -e; for p in raye-release raye-system raye-desktop; do \
+		windows=; \
+		if [ $$p = raye-system ] && \
+		   $(RELEASE) ships raye-system etc/grub.d/30_raye_windows; then \
+			windows=yes; \
+		fi; \
+		dh_installdeb -p$$p -DRAYE_DIVERT="$$($(RELEASE) divert $$p)" \
+			-DRAYE_WINDOWS_ENTRY="$$windows"; \
+	done
+	dh_installdeb -Nraye-release -Nraye-system -Nraye-desktop
+	# a placeholder left in a script would run as a path
+	! grep -rl '#RAYE_' debian/*/DEBIAN/
+	$(RELEASE) triggers

@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[Unit]
+Description=Raye: sync the mirrors when the local apt tree is published again
+
+[Path]
+PathChanged=/srv/publish
+Unit=raye-publish-mirrors.service
+
+[Install]
+WantedBy=paths.target

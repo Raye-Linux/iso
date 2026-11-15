@@ -1,0 +1,4 @@
+# Let NetworkManager handle every network device, wired ones included.
+network:
+  version: 2
+  renderer: NetworkManager

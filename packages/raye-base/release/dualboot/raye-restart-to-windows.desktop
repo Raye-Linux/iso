@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Restart to Windows
+Name[fr]=Redémarrer sur Windows
+Comment=Restart the computer straight into Windows
+Comment[fr]=Redémarrer l'ordinateur directement sur Windows
+Exec=raye-restart-to-windows
+Icon=system-reboot
+Categories=System;
+Keywords=windows;restart;reboot;dual;boot;redémarrer;

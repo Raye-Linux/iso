@@ -1,0 +1,80 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: scx
+Upstream-Contact: https://github.com/sched-ext/scx/issues
+Source: https://github.com/sched-ext/scx/tree/v1.1.4
+Comment: The release tarball and the vendored crates are listed with
+ their SHA-256 in scx.sha256. Only scx_lavd and scx_bpfland are built;
+ the crates they link are listed below by licence. The crates are the
+ ones in the release's Cargo.lock, unchanged.
+
+Files: *
+Copyright: 2026 techoraye
+License: GPL-2
+
+Files: upstream/scx-*.tar.gz
+Copyright: 2022-2026 Meta Platforms, Inc. and affiliates
+           2023-2026 Valve Corporation
+           2024-2026 Andrea Righi
+           2026 NVIDIA CORPORATION & AFFILIATES
+           2022-2026 Tejun Heo, David Vernet, Emil Tsalapatis and the
+           sched_ext contributors
+License: GPL-2
+Comment: The schedulers, their BPF programs and the scx_utils, scx_stats,
+ scx_arena and scx_cargo libraries are GPL-2.0-only. The BPF headers
+ from the kernel (scheds/include) are GPL-2.0-only WITH
+ Linux-syscall-note or LGPL-2.1 OR BSD-2-Clause, as each file says.
+
+Files: upstream/scx-vendor-*.tar.xz
+Copyright: the authors of each crate, as listed in its Cargo.toml
+License: Expat or Apache-2.0
+Comment: Most crates are "MIT OR Apache-2.0" or MIT. The others:
+  libbpf-sys (the libbpf 1.7.0 linked in statically)  BSD-2-Clause, its
+    libbpf source LGPL-2.1 OR BSD-2-Clause
+  libbpf-rs, libbpf-cargo, libarena-rs  LGPL-2.1-only OR BSD-2-Clause
+  bindgen  BSD-3-Clause
+  clang-sys  Apache-2.0
+  libloading  ISC
+  colored  MPL-2.0
+  clap_main  GPL-3.0-only; a procedural macro run by the compiler, it
+    writes the few lines that parse scx_lavd's arguments
+  memchr, aho-corasick and a few others  Unlicense OR MIT
+  unicode-ident  (MIT OR Apache-2.0) AND Unicode-3.0
+ The full text of each licence is in the crate's folder in the crates
+ tarball.
+
+License: GPL-2
+ This program is free software; you can redistribute it and/or modify
+ it under the terms of the GNU General Public License version 2 as
+ published by the Free Software Foundation.
+ .
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+ .
+ On Debian systems, the complete text of the GNU General Public
+ License version 2 can be found in "/usr/share/common-licenses/GPL-2".
+
+License: Expat
+ Permission is hereby granted, free of charge, to any person obtaining a
+ copy of this software and associated documentation files (the
+ "Software"), to deal in the Software without restriction, including
+ without limitation the rights to use, copy, modify, merge, publish,
+ distribute, sublicense, and/or sell copies of the Software, and to
+ permit persons to whom the Software is furnished to do so, subject to
+ the following conditions:
+ .
+ The above copyright notice and this permission notice shall be included
+ in all copies or substantial portions of the Software.
+ .
+ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+ OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+ IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+ CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+ TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+License: Apache-2.0
+ On Debian systems, the complete text of the Apache License 2.0 can be
+ found in "/usr/share/common-licenses/Apache-2.0".

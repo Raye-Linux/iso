@@ -1,0 +1,13 @@
+[Unit]
+Description=Go back to the earlier state chosen in the boot menu
+ConditionKernelCommandLine=raye.go-back
+After=local-fs.target plymouth-start.service
+Before=display-manager.service systemd-user-sessions.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/raye-go-back-at-boot
+StandardOutput=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,15 @@
+[Unit]
+Description=Encrypt or decrypt the system disk in the background
+ConditionPathExists=/var/lib/raye-encryption/active
+After=local-fs.target
+
+[Service]
+Type=simple
+ExecStart=/usr/libexec/raye-encryption run
+# cryptsetup stops cleanly on SIGINT and goes on at the next start
+KillSignal=SIGINT
+TimeoutStopSec=60
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

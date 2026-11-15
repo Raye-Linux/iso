@@ -1,0 +1,8 @@
+[Unit]
+Description=Sort restore points and list them in the boot menu
+ConditionPathExists=/etc/snapper/configs/root
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/raye-snapshots-sort
+ExecStart=-/usr/libexec/raye-earlier-states

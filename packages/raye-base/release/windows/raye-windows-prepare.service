@@ -1,0 +1,13 @@
+[Unit]
+Description=Prepare the Windows space programs start from
+Documentation=https://github.com/Raye-Linux/handbook
+
+[Service]
+Type=oneshot
+Nice=15
+IOSchedulingClass=idle
+# once per account: Wine's own menu entries and file types go away
+ExecStartPre=-/usr/libexec/raye-windows-cleanup
+ExecStart=/usr/libexec/raye-windows-prepare
+# a first build with the Visual C++ runtime takes a few minutes
+TimeoutStartSec=45min

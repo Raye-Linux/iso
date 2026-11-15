@@ -1,0 +1,58 @@
+# Packages the Raye image never ships. build.sh purges the ones that got
+# installed and checks that none is left; tests/test_purge.sh checks that
+# nothing Raye installs needs them, so purging never takes anything else
+# with it.
+#
+# One package per line: <package> <id> <reason>. The id names the
+# decision: a work package, or "base" for what the first image already
+# kept out (release/apt/raye-pins.pref). Blank lines and comments are
+# ignored.
+#
+# "#staged <package> <id> <reason>" waits for the Raye package that
+# replaces it. When that package is in raye-desktop and the old one has
+# left raye-desktop's Depends, delete "#staged " to make the line count.
+
+# Kept out since the first image
+snapd                           base   Raye does not use snaps
+apport                          base   crash reporter that sends reports out
+apport-kde                      base   its crash windows
+whoopsie                        base   error reports sent out
+kde-config-whoopsie             base   settings page for those error reports
+popularity-contest              base   usage reports
+ubuntu-report                   base   usage reports
+ubuntu-insights                 base   usage reports
+ubuntu-pro-client               base   subscription client and its messages
+ubuntu-advantage-tools          base   old name of the subscription client
+plasma-discover                 base   the Raye Store replaces Discover
+plasma-discover-common          base   data of Discover
+plasma-discover-backend-flatpak base   Discover's Flatpak support
+plasma-discover-backend-fwupd   base   Discover's firmware support
+plasma-discover-backend-snap    base   Discover's snap support
+
+# Windows that open on their own
+plasma-discover-notifier        GP-44  "Updates available" pop-ups of Discover; Raye Update tells instead
+plasma-welcome                  GP-44  "Welcome to Plasma" window at first sign-in and after each Plasma update
+khelpcenter                     GP-44  KDE help center; help goes to the Raye handbook
+kubuntu-notification-helper     GP-44  notices about crash reports and restarts, in another system's words
+plymouth-theme-ubuntu-text      GP-44  text boot screen with another system's name; the Raye boot screen covers it
+
+# App crashes get Raye's own "closed unexpectedly" toast
+drkonqi                         GP-29  crash dialog that sends reports to the KDE bug tracker
+
+# Updates and release upgrades go through Raye Update only
+ubuntu-release-upgrader-core    GP-35  release upgrade tool that would also undo Raye's apt pins
+ubuntu-release-upgrader-qt      GP-35  its upgrade window
+ubuntu-release-upgrader-gtk     GP-35  its upgrade window
+update-notifier                 GP-35  update and restart notices with another system's wording
+update-notifier-common          GP-35  the hooks behind those notices
+
+# Waiting for their Raye replacement
+#staged kde-spectacle           AP-12  raye-snip replaces Spectacle
+#staged kcalc                   AP-19  raye-calculator replaces KCalc
+
+# Checked and kept:
+# - kwalletmanager: still in raye-desktop's Depends and hidden from Start
+#   (AP-25); the wallet must not start it by itself (GP-7's kwalletrc).
+# - sddm-theme-breeze, polkit-kde-agent-1: LK-0 replaces them and keeps the
+#   agent installed as a fallback, so they never go on this list.
+plasma-browser-integration     GP-46  offers a browser add-on named after another desktop

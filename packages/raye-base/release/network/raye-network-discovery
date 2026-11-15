@@ -1,0 +1,4 @@
+[raye-network-discovery]
+title=Network discovery
+description=Answers from computers and shared folders on the local network (WS-Discovery and mDNS)
+ports=3702/udp|5353/udp

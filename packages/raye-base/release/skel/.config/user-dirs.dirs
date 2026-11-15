@@ -1,0 +1,4 @@
+# Templates and Public of this account, out of sight. The other folders
+# are written here on the first sign-in, in the account's language.
+XDG_TEMPLATES_DIR="$HOME/.local/share/templates"
+XDG_PUBLICSHARE_DIR="$HOME/.local/share/public"

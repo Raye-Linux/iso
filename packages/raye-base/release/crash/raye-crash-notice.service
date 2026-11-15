@@ -1,0 +1,17 @@
+[Unit]
+Description=Say when Raye restarted after a problem
+Documentation=https://github.com/Raye-Linux/handbook
+# empty unless the kernel left a crash record
+ConditionDirectoryNotEmpty=/var/lib/systemd/pstore
+PartOf=graphical-session.target
+After=graphical-session.target plasma-plasmashell.service
+
+[Service]
+Type=exec
+# the report opened from Details may run in this unit: let it live
+ExitType=cgroup
+ExecStart=/usr/libexec/raye-crash-notice
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=graphical-session.target

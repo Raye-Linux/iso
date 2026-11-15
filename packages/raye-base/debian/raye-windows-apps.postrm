@@ -1,0 +1,15 @@
+#!/bin/sh
+set -e
+undivert() {
+    dpkg-divert --package raye-windows-apps --remove --rename \
+        --divert /usr/lib/raye/windows/bin/winetricks /usr/bin/winetricks >/dev/null
+}
+case "$1" in
+    remove|abort-install|disappear)
+        undivert
+        rmdir /usr/lib/raye/windows/bin /usr/lib/raye/windows 2>/dev/null || true ;;
+    abort-upgrade)
+        # the version going back had winetricks on the PATH
+        if dpkg --compare-versions "${2:-}" lt 0.3.1~beta1; then undivert; fi ;;
+esac
+#DEBHELPER#

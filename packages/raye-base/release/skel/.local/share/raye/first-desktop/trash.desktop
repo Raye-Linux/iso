@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Link
+Name=Recycle Bin
+Name[fr]=Corbeille
+Comment=Deleted files, until you empty it
+Comment[fr]=Fichiers supprimés, jusqu'à ce que vous la vidiez
+Icon=user-trash-full
+EmptyIcon=user-trash
+URL=trash:/

@@ -1,0 +1,30 @@
+#!/bin/sh
+# Raye's update-grub: the real one, then plain names in the menu.
+#
+# This takes the place of the base system's update-grub, which is kept
+# as update-grub.ubuntu. Every kernel update calls it, so two things
+# matter more than the names: the real one runs first and with the same
+# arguments, and a failure of the title pass never fails the update. A
+# menu with the plumbing in its names still starts the computer; no menu
+# at all does not.
+set -eu
+
+real=/usr/sbin/update-grub.ubuntu
+titles=/usr/libexec/raye-grub-titles
+
+if [ ! -x "$real" ]; then
+    echo "raye-update-grub: $real is missing, falling back to grub-mkconfig" >&2
+    grub-mkconfig -o /boot/grub/grub.cfg
+else
+    "$real" "$@"
+fi
+
+if [ ! -x "$titles" ]; then
+    echo "raye-update-grub: $titles is missing, the menu keeps the names grub wrote" >&2
+    exit 0
+fi
+
+if ! "$titles"; then
+    echo "raye-update-grub: the menu keeps the names grub wrote" >&2
+fi
+exit 0

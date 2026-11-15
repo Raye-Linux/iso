@@ -1,0 +1,36 @@
+# Raye does not use snaps. Nothing can pull snapd back in.
+Package: snapd
+Pin: release a=*
+Pin-Priority: -10
+
+# Firefox comes from Mozilla, not from the snap wrapper of the archive.
+Package: firefox*
+Pin: origin packages.mozilla.org
+Pin-Priority: 1000
+
+Package: firefox*
+Pin: release o=Ubuntu
+Pin-Priority: -10
+
+# Crash reporters, usage reports and the subscription client stay out.
+Package: apport* whoopsie popularity-contest ubuntu-report ubuntu-pro-client* ubuntu-advantage-tools ubuntu-insights*
+Pin: release a=*
+Pin-Priority: -10
+
+# The Raye Store replaces Discover.
+Package: plasma-discover*
+Pin: release a=*
+Pin-Priority: -10
+
+# Windows programs run on raye-wine, in /opt/raye-wine. The archive's
+# Wine stays out so a second one never lands on the PATH.
+Package: wine wine64 wine32 libwine wine-common wine64-preloader wine64-tools
+Pin: release o=Ubuntu
+Pin-Priority: -10
+
+# Raye's own builds of Plasma carry its patches (Start menu, taskbar,
+# notification area). An Ubuntu update of the same packages, even a newer
+# one, would drop them and hold back plasma-desktop: Raye's build wins.
+Package: plasma-workspace plasma-workspace-data plasma-workspace-dev plasma-session-wayland plasma-session-x11 libbatterycontrol6 libkfontinst6 libkfontinstui6 libklipper6 libklookandfeel6 libkmpris6 libkworkspace6-6 libnotificationmanager1 libtaskmanager6 plasma-desktop plasma-desktop-data plasma-desktop-dev sddm-theme-breeze raye-wine
+Pin: release o=Raye
+Pin-Priority: 1001

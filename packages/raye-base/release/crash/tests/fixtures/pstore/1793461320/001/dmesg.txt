@@ -1,0 +1,29 @@
+Panic#1 Part2
+<6>[  398.402117] wlp3s0: associated
+<6>[  398.511930] IPv6: ADDRCONF(NETDEV_CHANGE): wlp3s0: link becomes ready
+<6>[  405.880215] usb 3-2: new full-speed USB device number 4 using xhci_hcd
+<6>[  406.034771] input: USB Optical Mouse as /devices/pci0000:00/0000:00:14.0/usb3/3-2/3-2:1.0/0003:046D:C077.0002/input/input21
+<6>[  412.118204] sysrq: Trigger a crash
+Panic#1 Part1
+<0>[  412.118317] Kernel panic - not syncing: sysrq triggered crash
+<4>[  412.118389] CPU: 2 UID: 0 PID: 2817 Comm: bash Not tainted 7.0.0-42-generic #42-Raye PREEMPT(voluntary)
+<4>[  412.118401] Hardware name: QEMU Standard PC (Q35 + ICH9, 2009), BIOS 0.0.0 02/06/2015
+<4>[  412.118405] Call Trace:
+<4>[  412.118410]  <TASK>
+<4>[  412.118415]  dump_stack_lvl+0x5d/0x80
+<4>[  412.118431]  panic+0x342/0x3a0
+<4>[  412.118440]  ? __pfx_sysrq_handle_crash+0x10/0x10
+<4>[  412.118446]  sysrq_handle_crash+0x1a/0x20
+<4>[  412.118452]  __handle_sysrq+0xa6/0x1f0
+<4>[  412.118459]  write_sysrq_trigger+0x6a/0x80
+<4>[  412.118466]  proc_reg_write+0x5c/0xa0
+<4>[  412.118473]  vfs_write+0xf5/0x420
+<4>[  412.118480]  ksys_write+0x73/0xf0
+<4>[  412.118487]  do_syscall_64+0x82/0x2b0
+<4>[  412.118494]  entry_SYSCALL_64_after_hwframe+0x76/0x7e
+<4>[  412.118500] RIP: 0033:0x7f2a9c51ba84
+<4>[  412.118506] RSP: 002b:00007ffd3c6e1b08 EFLAGS: 00000202 ORIG_RAX: 0000000000000001
+<4>[  412.118514] RAX: ffffffffffffffda RBX: 0000000000000002 RCX: 00007f2a9c51ba84
+<4>[  412.118560]  </TASK>
+<0>[  412.118702] Kernel Offset: 0x2c000000 from 0xffffffff81000000 (relocation range: 0xffffffff80000000-0xffffffffbfffffff)
+<0>[  412.131877] ---[ end Kernel panic - not syncing: sysrq triggered crash ]---

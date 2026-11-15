@@ -1,0 +1,40 @@
+#!/usr/bin/python3 -I
+# Restore points made by hand leave snapper's number cleanup, where every
+# update pair would push them out after two or three runs. The newest
+# KEEP of them stay; older ones go, oldest first.
+#
+# RAYE_SNAPSHOTS_SNAPPER stands for snapper in the tests.
+import json
+import os
+import subprocess
+import sys
+
+KEEP = 3
+
+
+def snapper(*args):
+    cmd = [os.environ.get("RAYE_SNAPSHOTS_SNAPPER", "snapper"), "--no-dbus", "-c", "root", *args]
+    return subprocess.run(cmd, capture_output=True, text=True)
+
+
+def main():
+    r = snapper("--jsonout", "list", "--disable-used-space")
+    if r.returncode != 0:
+        return 0
+    try:
+        snaps = json.loads(r.stdout).get("root", [])
+    except ValueError:
+        return 0
+    manual = [s for s in snaps
+              if s.get("number", 0) > 0 and (s.get("userdata") or {}).get("raye") == "manual"]
+    manual.sort(key=lambda s: s["number"])
+    for s in manual:
+        if s.get("cleanup"):
+            snapper("modify", "-c", "", str(s["number"]))
+    for s in manual[:-KEEP]:
+        snapper("delete", str(s["number"]))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,14 @@
+#!/bin/sh
+# Exit 0 when a binary format other than Python's rule for running .pyc
+# files is set up, 1 when not (systemd-binfmt is then skipped).
+root=${RAYE_BINFMT_ROOT:-}
+for dir in /etc/binfmt.d /run/binfmt.d /usr/local/lib/binfmt.d /usr/lib/binfmt.d /lib/binfmt.d; do
+    for f in "$root$dir"/*.conf; do
+        [ -e "$f" ] || continue
+        case ${f##*/} in
+        python3.conf | python3.[0-9]*.conf) ;;
+        *) exit 0 ;;
+        esac
+    done
+done
+exit 1

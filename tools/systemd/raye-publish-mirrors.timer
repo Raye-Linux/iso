@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[Unit]
+Description=Raye: catch up the mirror sync
+
+[Timer]
+OnBootSec=5min
+OnUnitInactiveSec=30min
+Persistent=false
+
+[Install]
+WantedBy=timers.target

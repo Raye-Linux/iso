@@ -1,0 +1,7 @@
+raye-scx (1.1.4-1) resolute; urgency=medium
+
+  * First release: scx_lavd and scx_bpfland from sched-ext/scx 1.1.4,
+    built offline from vendored crates. They run while a game runs
+    (Game mode); the desktop keeps the kernel's own scheduler.
+
+ -- techoraye <190692880+techoraye@users.noreply.github.com>  Sat, 31 Oct 2026 19:20:00 -0400

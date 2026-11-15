@@ -1,0 +1,62 @@
+#!/usr/bin/make -f
+#
+# The release and the crates are not kept in git: fetch-scx.sh puts
+# them in upstream/, and the orig tarball carries them. The build never
+# reaches the network: fetch-scx.sh checks both archives against
+# scx.sha256 again, unpacks them into build/src with patches/ applied,
+# and cargo only sees the vendored crates (--frozen).
+#
+# Only scx_lavd and scx_bpfland are built and installed; there is no
+# loader daemon. Game mode (raye-gaming) starts and stops them.
+
+export PYTHONDONTWRITEBYTECODE = 1
+export CARGO_HOME = $(CURDIR)/debian/cargo-home
+export CARGO_TARGET_DIR = $(CURDIR)/build/target
+# the BPF programs are compiled with this clang
+export BPF_CLANG = clang
+
+SRC = build/src
+PKGDIR = debian/raye-scx
+SCHEDS = scx_lavd scx_bpfland
+JOBS = $(patsubst parallel=%,%,$(filter parallel=%,$(DEB_BUILD_OPTIONS)))
+CARGO_JOBS = $(if $(JOBS),-j$(JOBS))
+
+%:
+	dh $@
+
+override_dh_auto_configure:
+	rm -rf $(SRC)
+	sh fetch-scx.sh --unpack $(SRC)
+	mkdir -p $(CARGO_HOME)
+	printf '%s\n' \
+		'[source.crates-io]' \
+		'replace-with = "vendored-sources"' \
+		'[source.vendored-sources]' \
+		'directory = "$(CURDIR)/$(SRC)/vendor"' \
+		'[net]' \
+		'offline = true' >$(CARGO_HOME)/config.toml
+
+override_dh_auto_build:
+	cd $(SRC) && cargo build --release --frozen $(CARGO_JOBS) \
+		$(addprefix -p ,$(SCHEDS))
+
+override_dh_auto_test:
+ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
+	python3 -m pytest -q -p no:cacheprovider tests
+	# --help exits 255 and prints on stderr (clap_main): check the text
+	set -e; for s in $(SCHEDS); do \
+		$(CARGO_TARGET_DIR)/release/$$s --help 2>&1 | grep -q '^Usage: '; \
+		$(CARGO_TARGET_DIR)/release/$$s --version; \
+	done
+endif
+
+override_dh_auto_install:
+	for s in $(SCHEDS); do \
+		install -D -m755 $(CARGO_TARGET_DIR)/release/$$s $(PKGDIR)/usr/bin/$$s; \
+	done
+
+override_dh_auto_clean:
+	rm -rf build debian/cargo-home
+
+# rust binaries carry no DWARF dwz can shrink usefully
+override_dh_dwz:

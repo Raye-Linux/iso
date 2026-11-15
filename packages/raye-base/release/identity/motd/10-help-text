@@ -1,0 +1,3 @@
+#!/bin/sh
+# One line at a terminal sign-in, in place of the base system's help links.
+printf '\n * Help / Aide : https://github.com/Raye-Linux/handbook\n'

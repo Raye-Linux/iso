@@ -1,0 +1,57 @@
+#!/bin/sh
+set -e
+
+# filled in at build time, see raye-desktop.preinst
+DIVERT="#RAYE_DIVERT#"
+
+# Firewall profiles opened when the firewall is on: phone pairing, and the
+# replies of PCs and NAS found on the network.
+PROFILES="raye-phone raye-network-discovery"
+# set once printing has been made to start on demand
+CUPS_ON_DEMAND=/var/lib/raye-desktop/cups-on-demand
+
+if [ "$1" = configure ]; then
+    # A file this version no longer replaces gets its stock one back.
+    # --list does not filter by package: keep the lines that end in ours
+    dpkg-divert --list | while read -r kind _ file _ to _ owner; do
+        [ "$kind" = diversion ] && [ "$owner" = raye-desktop ] || continue
+        case " $DIVERT " in
+            *" $file "*) continue ;;
+        esac
+        dpkg-divert --package raye-desktop --remove --rename --divert "$to" "$file"
+    done
+
+    # Electron apps from the Store draw sharp at any scale instead of
+    # going through the X11 layer.
+    if command -v flatpak >/dev/null 2>&1; then
+        flatpak override --system --env=ELECTRON_OZONE_PLATFORM_HINT=auto || true
+    fi
+
+    # Pairing with a phone and finding shared folders need their ports
+    # when the firewall is on. Left alone when the firewall is off:
+    # turning it on later is the firewall page's business.
+    if command -v ufw >/dev/null 2>&1 &&
+            LC_ALL=C ufw status 2>/dev/null | grep -q '^Status: active'; then
+        for profile in $PROFILES; do
+            [ -e "$DPKG_ROOT/etc/ufw/applications.d/$profile" ] || continue
+            ufw app update "$profile" >/dev/null 2>&1 || true
+            ufw allow "$profile" >/dev/null 2>&1 || true
+        done
+    fi
+
+    # No print server at boot: cups.socket starts it when a program
+    # prints, cups.path when a queue exists, and it quits once idle.
+    # Done once, so someone who turns cups.service back on keeps it.
+    # Disabling the service follows its Also= and takes the socket and
+    # the path unit along, hence the enable after it.
+    if [ ! -e "$DPKG_ROOT$CUPS_ON_DEMAND" ] && command -v deb-systemd-helper >/dev/null 2>&1; then
+        deb-systemd-helper disable cups.service >/dev/null || true
+        deb-systemd-helper enable cups.socket cups.path >/dev/null || true
+        mkdir -p "$DPKG_ROOT${CUPS_ON_DEMAND%/*}"
+        : > "$DPKG_ROOT$CUPS_ON_DEMAND"
+    fi
+fi
+
+#DEBHELPER#
+
+exit 0

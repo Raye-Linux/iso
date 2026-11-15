@@ -1,0 +1,684 @@
+#!/usr/bin/python3 -I
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Microsoft's fonts and Visual C++ runtimes, which many Windows programs
+expect, fetched in the background after boot so that programs simply
+find them. Raye does not ship either: both come from Microsoft.
+
+    raye-windows-components status                    JSON, any user
+    raye-windows-components install [--quiet] [NAME...]   root
+    raye-windows-components remove [--quiet] NAME...      root
+
+NAME is "fonts" or "vcredist"; install with no name adds both. The
+timer runs it as root; Settings can run it through pkexec. install exits 0 when everything is in place; when something
+could not be added (no network, a file that failed its check) it exits
+1, or 0 with --quiet, which also prints nothing on stdout. status says
+what is still missing, so it can be offered again later.
+
+fonts:    Microsoft's core fonts (Arial, Times New Roman, Verdana...),
+          the same eleven files the corefonts project has kept since
+          Microsoft gave them away, each pinned by its SHA-256 and so is
+          every font inside, put in /usr/local/share/fonts for every
+          account. Programs see the system's fonts, so every Windows
+          space gets them at once. (The archive's installer package
+          cannot be used: it depends on the release upgrader and the
+          subscription client, which Raye keeps out.)
+vcredist: vc_redist.x64.exe and vc_redist.x86.exe from Microsoft's
+          permanent links, kept in /var/lib/raye/windows/redist/ for
+          raye-windows-prepare to install into each space. A file is
+          kept only when its Authenticode signature checks out with
+          osslsigncode against Microsoft's root certificates, which are
+          pinned by their SHA-256 in redist-signers.txt; Microsoft
+          republishing the file or changing its signing certificate
+          does not break this, a file signed by anyone else is refused.
+          With them, the 2005 to 2013 runtimes, which Microsoft no
+          longer changes: those are kept only as the exact files pinned
+          in OLDER below.
+
+raye-windows-components.timer runs "install --quiet" in the background a
+little after boot, so programs find all of this without being asked.
+"""
+import base64
+import fcntl
+import hashlib
+import json
+import os
+import re
+import shutil
+import stat
+import struct
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.error
+import urllib.request
+
+STATE_DIR = "/var/lib/raye/windows/redist"
+SIGNERS = "/usr/share/raye/windows/redist-signers.txt"
+SYSTEM_PATH = "/usr/sbin:/usr/bin:/sbin:/bin"
+FONT_DIR = "/usr/local/share/fonts/truetype/msttcorefonts"
+FONT_URLS = ("https://downloads.sourceforge.net/corefonts/%s",
+             "http://downloads.sourceforge.net/corefonts/%s")
+# cabinet, sha256
+FONT_CABS = (
+    ("andale32.exe", "0524fe42951adc3a7eb870e32f0920313c71f170c859b5f770d82b4ee111e970"),
+    ("arial32.exe", "85297a4d146e9c87ac6f74822734bdee5f4b2a722d7eaa584b7f2cbf76f478f6"),
+    ("arialb32.exe", "a425f0ffb6a1a5ede5b979ed6177f4f4f4fdef6ae7c302a7b7720ef332fec0a8"),
+    ("comic32.exe", "9c6df3feefde26d4e41d4a4fe5db2a89f9123a772594d7f59afd062625cd204e"),
+    ("courie32.exe", "bb511d861655dde879ae552eb86b134d6fae67cb58502e6ff73ec5d9151f3384"),
+    ("georgi32.exe", "2c2c7dcda6606ea5cf08918fb7cd3f3359e9e84338dc690013f20cd42e930301"),
+    ("impact32.exe", "6061ef3b7401d9642f5dfdb5f2b376aa14663f6275e60a51207ad4facf2fccfb"),
+    ("times32.exe", "db56595ec6ef5d3de5c24994f001f03b2a13e37cee27bc25c58f6f43e8f807ab"),
+    ("trebuc32.exe", "5a690d9bb8510be1b8b4fe49f1f2319651fe51bbe54775ddddd8ef0bd07fdac9"),
+    ("verdan32.exe", "c1cb61255e363166794e47664e2f21af8e3a26cb6346eb8d2ae2fa85dd5aad96"),
+    ("webdin32.exe", "64595b5abc1080fba8610c5c34fab5863408e806aafe84653ca8575bed17d75a"),
+)
+# installed name, cabinet, name in the cabinet, sha256
+FONTS = (
+    ("Andale_Mono.ttf", "andale32.exe", "andalemo.ttf", "48d9bc613917709d3b0e0f4a6d4fe33a5c544c5035dffe9e90bc11e50e822071"),
+    ("Arial_Black.ttf", "arialb32.exe", "ariblk.ttf", "dad7c04acb26e23dfe4780e79375ca193ddaf68409317e81577a30674668830e"),
+    ("Arial.ttf", "arial32.exe", "arial.ttf", "35c0f3559d8db569e36c31095b8a60d441643d95f59139de40e23fada819b833"),
+    ("Arial_Bold.ttf", "arial32.exe", "arialbd.ttf", "4044aa6b5bebbc36980206b45b0aaaaa5681552a48bcadb41746d5d1d71fd7b4"),
+    ("Arial_Bold_Italic.ttf", "arial32.exe", "arialbi.ttf", "2f371cd9d96b3ac544519d85c16dc43ceacdfcea35090ee8ddf3ec5857c50328"),
+    ("Arial_Italic.ttf", "arial32.exe", "ariali.ttf", "70ade233175a6a6675e4501461af9326e6f78b1ffdf787ca0da5ab0fc8c9cfd6"),
+    ("Comic_Sans_MS.ttf", "comic32.exe", "comic.ttf", "b82c53776058f291382ff7e008d4675839d2dc21eb295c66391f6fb0655d8fc0"),
+    ("Comic_Sans_MS_Bold.ttf", "comic32.exe", "comicbd.ttf", "873361465d994994762d0b9845c99fc7baa2a600442ea8db713a7dd19f8b0172"),
+    ("Courier_New.ttf", "courie32.exe", "cour.ttf", "6715838c52f813f3821549d3f645db9a768bd6f3a43d8f85a89cb6875a546c61"),
+    ("Courier_New_Bold.ttf", "courie32.exe", "courbd.ttf", "edf8a7c5bfcac2e1fe507faab417137cbddc9071637ef4648238d0768c921e02"),
+    ("Courier_New_Italic.ttf", "courie32.exe", "couri.ttf", "f3f6b09855b6700977e214aab5eb9e5be6813976a24f894bd7766e92c732fbe1"),
+    ("Courier_New_Bold_Italic.ttf", "courie32.exe", "courbi.ttf", "66dbfa20b534fba0e203da140fec7276a45a1069e424b1b9c35547538128bbe8"),
+    ("Georgia.ttf", "georgi32.exe", "georgia.ttf", "7d0bb20c632bb59e81a0885f573bd2173f71f73204de9058feb68ce032227072"),
+    ("Georgia_Bold.ttf", "georgi32.exe", "georgiab.ttf", "82d2fbadb88a8632d7f2e8ad50420c9fd2e7d3cbc0e90b04890213a711b34b93"),
+    ("Georgia_Italic.ttf", "georgi32.exe", "georgiai.ttf", "1523f19bda6acca42c47c50da719a12dd34f85cc2606e6a5af15a7728b377b60"),
+    ("Georgia_Bold_Italic.ttf", "georgi32.exe", "georgiaz.ttf", "c983e037d8e4e694dd0fb0ba2e625bca317d67a41da2dc81e46a374e53d0ec8a"),
+    ("Impact.ttf", "impact32.exe", "impact.ttf", "00f1fc230ac99f9b97ba1a7c214eb5b909a78660cb3826fca7d64c3af5a14848"),
+    ("Times_New_Roman.ttf", "times32.exe", "times.ttf", "4e98adeff8ccc8ef4e3ece8d4547e288ff85fdc9c7ca711a4599c234874bbe86"),
+    ("Times_New_Roman_Bold.ttf", "times32.exe", "timesbd.ttf", "4357b63cef20c01661a53c5dae70ffd20cb4765503aaed6d38b17a57c5a90bff"),
+    ("Times_New_Roman_Bold_Italic.ttf", "times32.exe", "timesbi.ttf", "192e1b0d18e90334e999a99f8c32808d6a2e74b3698b8cd90c943c2249a46549"),
+    ("Times_New_Roman_Italic.ttf", "times32.exe", "timesi.ttf", "c25ae529b4cecdbca148b6ccb862ee0abad770af8b1fd29c8dba619d1b8da78a"),
+    ("Trebuchet_MS.ttf", "trebuc32.exe", "trebuc.ttf", "ec3ffb302488251e1b67fb09dd578b364c5339e27c1cfb26eb627666236453d0"),
+    ("Trebuchet_MS_Bold.ttf", "trebuc32.exe", "trebucbd.ttf", "f65941f9487c0a0a3b7445996ecbbd24466d7ae76ea2a597ced55f438fa63838"),
+    ("Trebuchet_MS_Italic.ttf", "trebuc32.exe", "trebucit.ttf", "db56fdac7d3ba20b7aededcb6ee86c46687489d17b759e1708ea4e2d21e38410"),
+    ("Trebuchet_MS_Bold_Italic.ttf", "trebuc32.exe", "trebucbi.ttf", "c0a6bdf31f9f2953b2f08a0c1734c892bc825f0fb17c604d420f7acf203a213b"),
+    ("Verdana.ttf", "verdan32.exe", "verdana.ttf", "96ed14949ca4b7392cff235b9c41d55c125382abbe0c0d3c2b9dd66897cae0cb"),
+    ("Verdana_Bold.ttf", "verdan32.exe", "verdanab.ttf", "c8f5065ba91680f596af3b0378e2c3e713b95a523be3d56ae185ca2b8f5f0b23"),
+    ("Verdana_Italic.ttf", "verdan32.exe", "verdanai.ttf", "91b59186656f52972531a11433c866fd56e62ec4e61e2621a2dba70c8f19a828"),
+    ("Verdana_Bold_Italic.ttf", "verdan32.exe", "verdanaz.ttf", "698e220f48f4a40e77af7eb34958c8fd02f1e18c3ba3f365d93bfa2ed4474c80"),
+    ("Webdings.ttf", "webdin32.exe", "webdings.ttf", "10d099c88521b1b9e380b7690cbe47b54bb19396ca515358cfdc15ac249e2f5d"),
+)
+# the first link is the current runtime, the second the one before it
+REDIST = {
+    "x64": ("https://aka.ms/vc14/vc_redist.x64.exe",
+            "https://aka.ms/vs/17/release/vc_redist.x64.exe"),
+    "x86": ("https://aka.ms/vc14/vc_redist.x86.exe",
+            "https://aka.ms/vs/17/release/vc_redist.x86.exe"),
+}
+# The runtimes before 2015, as Microsoft serves them since it signed them
+# all again in May 2021: key, link, SHA-256. A file that differs is
+# refused, so a new republish leaves that year out until its pin moves.
+OLDER = (
+    ("2005-x86", "https://download.microsoft.com/download/8/B/4/8B42259F-5D70-43F4-AC2E-4B208FD8D66A/vcredist_x86.EXE",
+     "8648c5fc29c44b9112fe52f9a33f80e7fc42d10f3b5b42b2121542a13e44adfd"),
+    ("2005-x64", "https://download.microsoft.com/download/8/B/4/8B42259F-5D70-43F4-AC2E-4B208FD8D66A/vcredist_x64.EXE",
+     "4487570bd86e2e1aac29db2a1d0a91eb63361fcaac570808eb327cd4e0e2240d"),
+    ("2008-x86", "https://download.microsoft.com/download/5/D/8/5D8C65CB-C849-4025-8E95-C3966CAFD8AE/vcredist_x86.exe",
+     "8742bcbf24ef328a72d2a27b693cc7071e38d3bb4b9b44dec42aa3d2c8d61d92"),
+    ("2008-x64", "https://download.microsoft.com/download/5/D/8/5D8C65CB-C849-4025-8E95-C3966CAFD8AE/vcredist_x64.exe",
+     "c5e273a4a16ab4d5471e91c7477719a2f45ddadb76c7f98a38fa5074a6838654"),
+    ("2010-x86", "https://download.microsoft.com/download/1/6/5/165255E7-1014-4D0A-B094-B6A430A6BFFC/vcredist_x86.exe",
+     "99dce3c841cc6028560830f7866c9ce2928c98cf3256892ef8e6cf755147b0d8"),
+    ("2010-x64", "https://download.microsoft.com/download/1/6/5/165255E7-1014-4D0A-B094-B6A430A6BFFC/vcredist_x64.exe",
+     "f3b7a76d84d23f91957aa18456a14b4e90609e4ce8194c5653384ed38dada6f3"),
+    ("2012-x86", "https://download.microsoft.com/download/1/6/B/16B06F60-3B20-4FF2-B699-5E9B7962F9AE/VSU_4/vcredist_x86.exe",
+     "b924ad8062eaf4e70437c8be50fa612162795ff0839479546ce907ffa8d6e386"),
+    ("2012-x64", "https://download.microsoft.com/download/1/6/B/16B06F60-3B20-4FF2-B699-5E9B7962F9AE/VSU_4/vcredist_x64.exe",
+     "681be3e5ba9fd3da02c09d7e565adfa078640ed66a0d58583efad2c1e3cc4064"),
+    ("2013-x86", "https://aka.ms/highdpimfc2013x86enu",
+     "53b605d1100ab0a88b867447bbf9274b5938125024ba01f5105a9e178a3dcdbd"),
+    ("2013-x64", "https://aka.ms/highdpimfc2013x64enu",
+     "a4bba7701e355ae29c403431f871a537897c363e215cafe706615e270984f17c"),
+)
+MAX_DOWNLOAD = 150 << 20
+MAX_CERT = 64 << 10
+TIMEOUT = 30
+NAMES = ("fonts", "vcredist")
+
+
+def is_root():
+    return os.geteuid() == 0
+
+
+def say(text, quiet):
+    if not quiet:
+        print(text, file=sys.stderr, flush=True)
+
+
+def child_env():
+    return {"PATH": SYSTEM_PATH, "LC_ALL": "C.UTF-8"}
+
+
+def run(argv):
+    """Runs a system command with a clean environment. Returns
+    (exit code, output); a missing command is exit code 127."""
+    exe = shutil.which(argv[0], path=SYSTEM_PATH)
+    if exe is None:
+        return 127, "%s: not found\n" % argv[0]
+    p = subprocess.run([exe] + argv[1:], stdin=subprocess.DEVNULL, env=child_env(),
+                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                       text=True, errors="replace")
+    return p.returncode, p.stdout
+
+
+# ---------------------------------------------------------------- PE files
+
+def pe_version(path):
+    """The product version in a program's version resource ("14.51.36247.0"),
+    or None when the file is not a Windows program or has none."""
+    try:
+        with open(path, "rb") as f:
+            data = f.read(MAX_DOWNLOAD)
+        return _pe_version(data)
+    except (OSError, struct.error, IndexError, ValueError):
+        return None
+
+
+def _pe_version(data):
+    if data[:2] != b"MZ":
+        return None
+    pe = struct.unpack_from("<I", data, 0x3C)[0]
+    if data[pe:pe + 4] != b"PE\0\0":
+        return None
+    sections, = struct.unpack_from("<H", data, pe + 6)
+    opt_size, = struct.unpack_from("<H", data, pe + 20)
+    opt = pe + 24
+    magic, = struct.unpack_from("<H", data, opt)
+    if magic not in (0x10B, 0x20B):
+        return None
+    dirs = opt + (96 if magic == 0x10B else 112)
+    rsrc_rva, _ = struct.unpack_from("<II", data, dirs + 2 * 8)
+    if not rsrc_rva:
+        return None
+    table = opt + opt_size
+
+    def offset(rva):
+        for i in range(min(sections, 96)):
+            s = table + 40 * i
+            vsize, vaddr, rsize, raddr = struct.unpack_from("<IIII", data, s + 8)
+            if vaddr <= rva < vaddr + max(vsize, rsize):
+                return raddr + rva - vaddr
+        raise ValueError("address outside the file")
+
+    base = offset(rsrc_rva)
+
+    def entries(at):
+        named, ids = struct.unpack_from("<HH", data, base + at + 12)
+        return [struct.unpack_from("<II", data, base + at + 16 + 8 * i)
+                for i in range(min(named + ids, 256))]
+
+    # type -> name -> language: three directory levels, then the data
+    level = [target for key, target in entries(0) if key == 16]   # RT_VERSION
+    for _ in range(2):
+        if not level or not level[0] & 0x80000000:
+            return None
+        level = [target for _, target in entries(level[0] & 0x7FFFFFFF)]
+    if not level or level[0] & 0x80000000:
+        return None
+    rva, size = struct.unpack_from("<II", data, base + level[0])
+    start = offset(rva)
+    blob = data[start:start + size]
+    i = blob.find(b"\xbd\x04\xef\xfe")      # VS_FIXEDFILEINFO
+    if i < 0:
+        return None
+    ms, ls = struct.unpack_from("<II", blob, i + 16)
+    return "%d.%d.%d.%d" % (ms >> 16, ms & 0xFFFF, ls >> 16, ls & 0xFFFF)
+
+
+# ---------------------------------------------------------------- state
+
+def sha256_file(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def read_saved():
+    try:
+        with open(os.path.join(STATE_DIR, "components.json")) as f:
+            saved = json.load(f)
+        return saved if isinstance(saved, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def good_redist(saved):
+    """The runtime files that are there and still the ones that passed
+    the check: {arch: {name, sha256, version}}."""
+    files = saved.get("files")
+    good = {}
+    if not isinstance(files, dict):
+        return good
+    for arch in REDIST:
+        info = files.get(arch)
+        if not isinstance(info, dict) or info.get("name") != redist_name(arch):
+            continue
+        try:
+            if sha256_file(os.path.join(STATE_DIR, info["name"])) == info.get("sha256"):
+                good[arch] = info
+        except OSError:
+            pass
+    return good
+
+
+def redist_name(arch):
+    return "vc_redist.%s.exe" % arch
+
+
+def older_name(key):
+    return "vcredist-%s.exe" % key
+
+
+def good_older(saved):
+    """The older runtimes that are there and still their pinned file:
+    {key: {name, sha256}}."""
+    files = saved.get("older")
+    good = {}
+    if not isinstance(files, dict):
+        return good
+    for key, _, pin in OLDER:
+        info = files.get(key)
+        if not isinstance(info, dict) or info.get("name") != older_name(key) or info.get("sha256") != pin:
+            continue
+        try:
+            if sha256_file(os.path.join(STATE_DIR, info["name"])) == pin:
+                good[key] = info
+        except OSError:
+            pass
+    return good
+
+
+def fonts_present():
+    for name, _, _, _ in FONTS:
+        try:
+            if not stat.S_ISREG(os.lstat(os.path.join(FONT_DIR, name)).st_mode):
+                return False
+        except OSError:
+            return False
+    return True
+
+
+def current():
+    saved = read_saved()
+    good = good_redist(saved)
+    older = good_older(saved)
+    vcredist = good["x64"]["version"] if len(good) == len(REDIST) and len(older) == len(OLDER) else None
+    state = {"fonts": fonts_present(), "vcredist": vcredist, "older": sorted(older)}
+    state["missing"] = [n for n in NAMES if not state[n]]
+    return state
+
+
+def save(fonts, files, older=None):
+    """components.json, written whole or not at all."""
+    if older is None:
+        older = good_older(read_saved())
+    vcredist = files["x64"]["version"] if len(files) == len(REDIST) and len(older) == len(OLDER) else None
+    state = {"fonts": fonts, "vcredist": vcredist, "files": files, "older": older}
+    # a run that changed nothing leaves the file alone: each user's
+    # raye-windows-prepare.path rebuilds the ready space when it moves
+    saved = read_saved()
+    saved.pop("updated", None)
+    if saved == json.loads(json.dumps(state)):
+        return
+    state["updated"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    text = json.dumps(state, indent=2, sort_keys=True) + "\n"
+    fd, tmp = tempfile.mkstemp(dir=STATE_DIR, prefix=".components.")
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(text)
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, os.path.join(STATE_DIR, "components.json"))
+    except BaseException:
+        os.unlink(tmp)
+        raise
+
+
+def open_state_dir():
+    """Makes the folder (root's, 0755, never a link) and takes its lock.
+    Returns the lock's file descriptor."""
+    parent = os.path.dirname(STATE_DIR)
+    os.makedirs(parent, 0o755, exist_ok=True)
+    try:
+        os.mkdir(STATE_DIR, 0o755)
+    except FileExistsError:
+        pass
+    st = os.lstat(STATE_DIR)
+    if not stat.S_ISDIR(st.st_mode) or st.st_uid != os.geteuid():
+        raise OSError("%s is not a folder of ours" % STATE_DIR)
+    os.chmod(STATE_DIR, 0o755)
+    fd = os.open(os.path.join(STATE_DIR, ".lock"),
+                 os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC, 0o644)
+    fcntl.flock(fd, fcntl.LOCK_EX)
+    return fd
+
+
+# ---------------------------------------------------------------- fonts
+
+def install_fonts(quiet):
+    """All the fonts or none: each cabinet and each font is checked
+    before the first one is put in place."""
+    if fonts_present():
+        return True
+    say("Downloading the fonts...", quiet)
+    work = tempfile.mkdtemp(dir=STATE_DIR, prefix=".fonts-")
+    try:
+        for cab, sha in FONT_CABS:
+            dest = os.path.join(work, cab)
+            for url in FONT_URLS:
+                if download(url % cab, dest, MAX_DOWNLOAD):
+                    if sha256_file(dest) == sha:
+                        break
+                    os.unlink(dest)
+            else:
+                print("%s could not be downloaded" % cab, file=sys.stderr)
+                return False
+            out = os.path.join(work, cab + ".d")
+            os.mkdir(out)
+            code, text = run(["cabextract", "-q", "-L", "-d", out, dest])
+            if code != 0:
+                print(text, end="", file=sys.stderr)
+                return False
+        for name, cab, short, sha in FONTS:
+            path = os.path.join(work, cab + ".d", short)
+            if not os.path.isfile(path) or os.path.islink(path) or sha256_file(path) != sha:
+                print("%s is not the expected font" % short, file=sys.stderr)
+                return False
+        say("Adding the fonts...", quiet)
+        os.makedirs(FONT_DIR, 0o755, exist_ok=True)
+        for name, cab, short, _ in FONTS:
+            place(os.path.join(work, cab + ".d", short), name)
+            link = os.path.join(FONT_DIR, short)
+            tmp = os.path.join(FONT_DIR, ".%s.new" % short)
+            if os.path.lexists(tmp):
+                os.unlink(tmp)
+            os.symlink(name, tmp)
+            os.replace(tmp, link)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    run(["fc-cache", FONT_DIR])
+    return fonts_present()
+
+
+def place(src, name):
+    """Copies a checked file into the fonts folder under its name."""
+    tmp = os.path.join(FONT_DIR, ".%s.new" % name)
+    if os.path.lexists(tmp):
+        os.unlink(tmp)
+    try:
+        with open(src, "rb") as f, open(tmp, "xb") as g:
+            shutil.copyfileobj(f, g)
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, os.path.join(FONT_DIR, name))
+    except BaseException:
+        if os.path.lexists(tmp):
+            os.unlink(tmp)
+        raise
+
+
+def remove_fonts(quiet):
+    say("Removing the fonts...", quiet)
+    for name, _, short, _ in FONTS:
+        link = os.path.join(FONT_DIR, short)
+        if os.path.islink(link) and os.readlink(link) == name:
+            os.unlink(link)
+        try:
+            os.unlink(os.path.join(FONT_DIR, name))
+        except FileNotFoundError:
+            pass
+    try:
+        os.rmdir(FONT_DIR)
+    except OSError:
+        pass                    # not there, or holds something else
+    run(["fc-cache", os.path.dirname(FONT_DIR)])
+    return not fonts_present()
+
+
+# ---------------------------------------------------------------- runtime
+
+def read_signers(path):
+    """redist-signers.txt: {"code"|"time": {sha256: [url, ...]}}."""
+    pins = {"code": {}, "time": {}}
+    with open(path) as f:
+        for number, line in enumerate(f, 1):
+            line = line.split("#", 1)[0].split()
+            if not line:
+                continue
+            if (len(line) != 3 or line[0] not in pins
+                    or not re.fullmatch(r"[0-9A-Fa-f]{64}", line[1])
+                    or not re.match(r"https?://", line[2])):
+                raise ValueError("%s:%d: not a signer line" % (path, number))
+            pins[line[0]].setdefault(line[1].lower(), []).append(line[2])
+    if not all(pins.values()):
+        raise ValueError("%s: needs code and time lines" % path)
+    return pins
+
+
+def download(url, dest, limit):
+    """Fetches url into the new file dest; False when it cannot."""
+    try:
+        with urllib.request.urlopen(url, timeout=TIMEOUT) as r, \
+                open(dest, "xb") as f:
+            got = 0
+            for chunk in iter(lambda: r.read(1 << 20), b""):
+                got += len(chunk)
+                if got > limit:
+                    raise ValueError("too big")
+                f.write(chunk)
+        return True
+    except (OSError, ValueError, urllib.error.URLError):
+        try:
+            os.unlink(dest)
+        except FileNotFoundError:
+            pass
+        return False
+
+
+def pem(der):
+    text = base64.b64encode(der).decode()
+    lines = [text[i:i + 64] for i in range(0, len(text), 64)]
+    return "-----BEGIN CERTIFICATE-----\n%s\n-----END CERTIFICATE-----\n" % "\n".join(lines)
+
+
+def fetch_roots(pins, work):
+    """The pinned root certificates, fetched and checked, as PEM files:
+    {"code": path, "time": path}, or None when any kind has none."""
+    files = {}
+    for kind, roots in pins.items():
+        text = ""
+        for sha, urls in roots.items():
+            for i, url in enumerate(urls):
+                dest = os.path.join(work, "%s-%s-%d.der" % (kind, sha[:16], i))
+                if not download(url, dest, MAX_CERT):
+                    continue
+                with open(dest, "rb") as f:
+                    der = f.read()
+                if hashlib.sha256(der).hexdigest() == sha:
+                    text += pem(der)
+                    break
+        if not text:
+            return None
+        files[kind] = os.path.join(work, kind + ".pem")
+        with open(files[kind], "w") as f:
+            f.write(text)
+    return files
+
+
+def signed_by_microsoft(path, arch, roots):
+    """True when osslsigncode accepts the file's signature up to a pinned
+    root, Microsoft signed it, and it says it is this runtime."""
+    code, out = run(["osslsigncode", "verify", "-CAfile", roots["code"],
+                     "-TSA-CAfile", roots["time"], "-in", path])
+    if code != 0 or not re.search(r"^Signature verification: ok$", out, re.M):
+        return False
+    subject = re.search(r"^\s*Subject: (.*)$", out, re.M)     # the signer's own
+    if not subject:
+        return False
+    fields = re.findall(r"(?:^|[,/])\s*(CN|O)=([^,/]*)", subject.group(1))
+    if ("CN", "Microsoft Corporation") not in fields or ("O", "Microsoft Corporation") not in fields:
+        return False
+    desc = re.search(r"^\s*Text description: (.*)$", out, re.M)
+    pattern = r"Visual C\+\+ .*Redistributable.*\(%s\)" % re.escape(arch)
+    return bool(desc and re.search(pattern, desc.group(1)))
+
+
+def install_redist(quiet):
+    """Returns (all there, {arch: info} of the files in place)."""
+    have = good_redist(read_saved())
+    need = [arch for arch in REDIST if arch not in have]
+    if not need:
+        return True, have
+    try:
+        pins = read_signers(SIGNERS)
+    except (OSError, ValueError) as e:
+        print(e, file=sys.stderr)
+        return False, have
+    work = tempfile.mkdtemp(dir=STATE_DIR, prefix=".fetch-")
+    try:
+        say("Checking Microsoft's certificates...", quiet)
+        roots = fetch_roots(pins, work)
+        if roots is None:
+            print("Microsoft's certificates could not be fetched", file=sys.stderr)
+            return False, have
+        for arch in need:
+            say("Downloading the Visual C++ runtime (%s)..." % arch, quiet)
+            dest = os.path.join(work, redist_name(arch))
+            for url in REDIST[arch]:
+                if not download(url, dest, MAX_DOWNLOAD):
+                    continue
+                version = pe_version(dest)
+                if version and signed_by_microsoft(dest, arch, roots):
+                    os.chmod(dest, 0o644)
+                    info = {"name": redist_name(arch), "sha256": sha256_file(dest),
+                            "version": version, "url": url}
+                    os.replace(dest, os.path.join(STATE_DIR, info["name"]))
+                    have[arch] = info
+                    break
+                print("%s did not pass the signature check" % url, file=sys.stderr)
+                os.unlink(dest)
+            else:
+                print("no usable Visual C++ runtime (%s)" % arch, file=sys.stderr)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    return len(have) == len(REDIST), have
+
+
+def install_older(quiet):
+    """Returns (all there, {key: info} of the older runtimes in place)."""
+    have = good_older(read_saved())
+    need = [(key, url, pin) for key, url, pin in OLDER if key not in have]
+    if not need:
+        return True, have
+    work = tempfile.mkdtemp(dir=STATE_DIR, prefix=".fetch-")
+    try:
+        for key, url, pin in need:
+            say("Downloading the Visual C++ %s runtime..." % key, quiet)
+            dest = os.path.join(work, older_name(key))
+            if not download(url, dest, MAX_DOWNLOAD):
+                print("%s could not be downloaded" % url, file=sys.stderr)
+                continue
+            if sha256_file(dest) != pin:
+                print("%s is not the file Raye knows" % url, file=sys.stderr)
+                os.unlink(dest)
+                continue
+            os.chmod(dest, 0o644)
+            os.replace(dest, os.path.join(STATE_DIR, older_name(key)))
+            have[key] = {"name": older_name(key), "sha256": pin}
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    return len(have) == len(OLDER), have
+
+
+def remove_redist(quiet):
+    say("Removing the Visual C++ runtime...", quiet)
+    names = [redist_name(arch) for arch in REDIST] + [older_name(key) for key, _, _ in OLDER]
+    for name in names:
+        try:
+            os.unlink(os.path.join(STATE_DIR, name))
+        except FileNotFoundError:
+            pass
+    return True
+
+
+# ---------------------------------------------------------------- main
+
+def usage():
+    print("usage: raye-windows-components status\n"
+          "       raye-windows-components install [--quiet] [fonts|vcredist ...]\n"
+          "       raye-windows-components remove [--quiet] fonts|vcredist ...",
+          file=sys.stderr)
+    return 2
+
+
+def main(argv):
+    quiet = "--quiet" in argv
+    args = [a for a in argv if a != "--quiet"]
+    if not args or args[0] not in ("status", "install", "remove"):
+        return usage()
+    command, names = args[0], args[1:]
+    if (any(n not in NAMES for n in names) or (command == "status" and names)
+            or (command == "remove" and not names)):
+        return usage()
+    if command == "status":
+        print(json.dumps(current()))
+        return 0
+    if not is_root():
+        print("raye-windows-components: %s needs root access" % command,
+              file=sys.stderr)
+        return 4
+    names = [n for n in NAMES if n in names] or list(NAMES)
+    # what it adds is for every account, whatever umask pkexec gave it
+    os.umask(0o022)
+    try:
+        lock = open_state_dir()
+    except OSError as e:
+        print("raye-windows-components: %s" % e, file=sys.stderr)
+        return 0 if quiet else 1
+    try:
+        files = good_redist(read_saved())
+        older = good_older(read_saved())
+        ok = True
+        for name in names:
+            # a full disk or a broken folder stops this component only
+            try:
+                if command == "install" and name == "fonts":
+                    ok = install_fonts(quiet) and ok
+                elif command == "install":
+                    done, files = install_redist(quiet)
+                    ok = done and ok
+                    done, older = install_older(quiet)
+                    ok = done and ok
+                elif name == "fonts":
+                    ok = remove_fonts(quiet) and ok
+                else:
+                    ok = remove_redist(quiet) and ok
+                    files, older = {}, {}
+            except OSError as e:
+                print("raye-windows-components: %s: %s" % (name, e), file=sys.stderr)
+                ok = False
+                if name == "vcredist":
+                    files = good_redist(read_saved())
+                    older = good_older(read_saved())
+        try:
+            save(fonts_present(), files, older)
+        except OSError as e:
+            print("raye-windows-components: %s" % e, file=sys.stderr)
+            ok = False
+    finally:
+        os.close(lock)
+    if not quiet:
+        print(json.dumps(current()))
+    return 0 if ok or quiet else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

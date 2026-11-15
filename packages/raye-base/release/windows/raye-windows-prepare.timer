@@ -1,0 +1,14 @@
+[Unit]
+Description=Prepare the Windows space a little after login
+
+[Timer]
+# after login, once the desktop has settled; again every hour in case
+# something it uses changed (Wine, its add-ons, the Visual C++ runtimes
+# raye-windows-components fetches after boot). Once ready it only checks,
+# which starts nothing.
+OnStartupSec=2min
+OnUnitActiveSec=1h
+RandomizedDelaySec=1min
+
+[Install]
+WantedBy=timers.target

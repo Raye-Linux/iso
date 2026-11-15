@@ -1,0 +1,6 @@
+# The sched-ext/scx release Raye builds, and the crates it needs.
+# scx-<v>.tar.gz: https://github.com/sched-ext/scx/archive/refs/tags/v<v>.tar.gz
+# scx-vendor-<v>.tar.xz: made by fetch-scx.sh (cargo vendor on the
+# patched release); its SHA-256 is of the tar inside the .xz.
+efce300f7816c2ef14028acee58150c792dadf4ebe4950aff263b54771adb2f4  scx-1.1.4.tar.gz
+c9e0b762d0660070a7729ec1a19aa3f21e2a504632cbc25c03fba72b2084753b  scx-vendor-1.1.4.tar.xz

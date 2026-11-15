@@ -1,0 +1,112 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Source packages of the desktop packages Raye patches, for the apt tree.
+#
+#   desktop-sources OUT
+#
+# The binaries of plasma-workspace and plasma-desktop are Ubuntu's sources
+# with the Raye series of raye/desktop/patches/<source> on top; they are
+# GPL, so their sources are published beside them. desktop/build.sh only
+# builds binaries (dpkg-buildpackage -b), so this makes the matching
+# source package: Ubuntu's .dsc, the Raye patches added to its quilt
+# series (debian/patches/raye/), and the debian/changelog taken from the
+# shipped binary itself -- so the version and the changelog are exactly
+# the ones of what is published.
+#
+# Settings (environment):
+#   DESKTOP=/srv/raye/desktop              patches/ and components
+#   DESKTOP_DEBS=/var/tmp/raye/desktop-debs   the shipped binaries
+#   UBUNTU_SRC="dir ..."                   where Ubuntu's .dsc and files are
+#   COMPARE="source=tree ..."              a tree a binary was built from:
+#                                          the new source must unpack to the
+#                                          same files, or nothing is written
+set -euo pipefail
+
+out=${1:?usage: desktop-sources OUT}
+desktop=${DESKTOP:-/srv/raye/desktop}
+debs=${DESKTOP_DEBS:-/var/tmp/raye/desktop-debs}
+ubuntu_src=${UBUNTU_SRC:-}
+compare=${COMPARE:-}
+
+die() { echo "desktop-sources: $*" >&2; exit 1; }
+command -v dpkg-source >/dev/null || die "dpkg-dev is not installed"
+
+work=$(mktemp -d /var/tmp/raye-desktop-sources.XXXXXX)
+trap 'rm -rf "$work"' EXIT
+mkdir -p "$out"
+
+while read -r source expected; do
+    case $source in ''|\#*) continue ;; esac
+    series=$desktop/patches/$source
+    dsc=
+    for d in $ubuntu_src; do
+        [ -f "$d/${source}_${expected}.dsc" ] && { dsc=$d/${source}_${expected}.dsc; break; }
+    done
+    [ -n "$dsc" ] || die "no ${source}_${expected}.dsc in UBUNTU_SRC"
+    # the changelog of the binary named after the source package
+    deb=$(ls "$debs/${source}_"*+raye*_*.deb 2>/dev/null | head -1)
+    [ -n "$deb" ] || die "no shipped ${source} binary in $debs"
+
+    echo "== $source: $(basename "$dsc") + $(ls "$series"/*.patch | wc -l) Raye patch(es)"
+    w=$work/$source
+    mkdir -p "$w/deb"
+    dpkg-source -q -x "$dsc" "$w/tree" >/dev/null
+    dpkg-deb --fsys-tarfile "$deb" | tar -x -C "$w/deb" "./usr/share/doc/$source/changelog.Debian.gz"
+    # the shipped changelog is trimmed by dh_installchangelogs: take its
+    # first entry (the Raye one) and put it over Ubuntu's full changelog,
+    # which is what build.sh did
+    { zcat "$w/deb/usr/share/doc/$source/changelog.Debian.gz" | awk '{print} /^ -- /{exit}'
+      echo
+      cat "$w/tree/debian/changelog"; } > "$w/changelog"
+    mv "$w/changelog" "$w/tree/debian/changelog"
+    version=$(dpkg-parsechangelog -l "$w/tree/debian/changelog" -S Version)
+    case $version in *+raye*) ;; *) die "$deb: changelog version $version is not a Raye one" ;; esac
+
+    # Each Raye patch is applied the way build.sh applies it (patch -p1, with
+    # its default fuzz), then recorded by dpkg-source as a quilt patch of
+    # its own, raye-<name>. Recording refreshes it against this exact
+    # source, so the package unpacks with dpkg-source's fuzz 0. The patch
+    # header keeps the text of the Raye patch, above the refreshed diff.
+    for p in "$series"/*.patch; do
+        name=raye-$(basename "$p")
+        (cd "$w/tree" && patch -p1 --silent < "$p")
+        (cd "$w/tree" && EDITOR=true VISUAL=true dpkg-source -q --commit . "$name" >/dev/null)
+        f=$w/tree/debian/patches/$name
+        [ -f "$f" ] || die "$source: dpkg-source recorded no $name"
+        { echo "Origin: Raye Linux, raye/desktop/patches/$source/$(basename "$p")"
+          echo "Forwarded: no"
+          echo
+          sed -n '1,/^\(diff \|--- \|Index: \)/p' "$p" | sed '$d'
+          sed -n '/^Index: \|^--- /,$p' "$f"; } > "$f.new"
+        mv "$f.new" "$f"
+    done
+    (cd "$w" && dpkg-source -q -b tree >/dev/null)
+    newdsc=$(ls "$w/${source}_"*+raye*.dsc)
+
+    for pair in $compare; do
+        [ "${pair%%=*}" = "$source" ] || continue
+        built=${pair#*=}
+        dpkg-source -q -x "$newdsc" "$w/check" >/dev/null
+        # what the build left behind is not source; debian/patches differ by
+        # construction (there the series was applied with patch, outside quilt).
+        # Links are compared as links: upstream ships some that point nowhere
+        # in the source tree (plasma-desktop's sddm-theme/components), and
+        # following one fails on both sides.
+        diff -rq --no-dereference -x .pc -x 'obj-*' -x patches -x .debhelper -x tmp -x files \
+                -x '*.substvars' -x '*-build-stamp' -x '*.debhelper.log' -x '*.debhelper' \
+                $(sed -n 's/^Package: //p' "$w/check/debian/control" | sed 's/^/-x /') \
+                "$built" "$w/check" > "$w/diff" 2> "$w/diff.err" || true
+        # a directory loop in upstream's test data is reported, not compared
+        grep -v 'recursive directory loop' "$w/diff.err" >> "$w/diff" || true
+        if [ -s "$w/diff" ]; then
+            cat "$w/diff" >&2
+            die "$source: the source package does not unpack to the tree $built was built from"
+        fi
+        echo "   same files as $built"
+    done
+    cp "$newdsc" "$out/"
+    for f in $(sed -n '/^Checksums-Sha256:/,/^[^ ]/{s/^ [0-9a-f]* [0-9]* //p}' "$newdsc"); do
+        cp "$w/$f" "$out/"
+    done
+    echo "   $(basename "$newdsc")"
+done < "$desktop/components"

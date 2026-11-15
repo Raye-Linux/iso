@@ -1,0 +1,11 @@
+#!/bin/sh
+set -e
+#DEBHELPER#
+# every file raye-release took the place of, whatever the version that did it
+if [ "$1" = remove ] || [ "$1" = purge ] || [ "$1" = abort-install ] || [ "$1" = disappear ]; then
+    # --list does not filter by package: keep the lines that end in ours
+    dpkg-divert --list | while read -r kind _ file _ to _ owner; do
+        [ "$kind" = diversion ] && [ "$owner" = raye-release ] || continue
+        dpkg-divert --package raye-release --remove --rename --divert "$to" "$file"
+    done
+fi

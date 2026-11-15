@@ -1,0 +1,74 @@
+# Raye boot menu of the live image. background.png, logo.png and the
+# select_*.png pill come from grub-theme-raye in the image (build.sh
+# copies them next to this file); the text is pictures made by art.py.
+# Everything hangs off the middle of the screen so the block stays
+# centred whatever mode the firmware gives: the pictures do not scale.
+
+title-text: ""
+desktop-image: "background.png"
+desktop-image-scale-method: "stretch"
+desktop-color: "#0e0a16"
+terminal-font: "GNU Unifont Regular 16"
+terminal-left: "0"
+terminal-top: "0"
+terminal-width: "100%"
+terminal-height: "100%"
+terminal-border: "0"
+
+# logo.png (from grub-theme-raye) is the whole eye centred in 220 px
++ image {
+    left = 50%-110
+    top = 50%-300
+    file = "logo.png"
+}
+
++ image {
+    left = 50%-240
+    top = 50%-118
+    file = "title.png"
+}
+
++ image {
+    left = 50%-240
+    top = 50%-74
+    file = "release.png"
+}
+
+# the entries are drawn by their icons (icons/<class>.png, the full row);
+# GRUB's own text is made invisible
++ boot_menu {
+    left = 50%-240
+    top = 50%-20
+    width = 480
+    height = 240
+    item_font = "GNU Unifont Regular 16"
+    selected_item_font = "GNU Unifont Regular 16"
+    item_color = "#00000000"
+    selected_item_color = "#00000000"
+    item_height = 44
+    item_spacing = 10
+    item_padding = 0
+    icon_width = 340
+    icon_height = 44
+    item_icon_space = 0
+    selected_item_pixmap_style = "select_*.png"
+    scrollbar = false
+}
+
+# drains in the timeout seconds, gone once a key is pressed
++ progress_bar {
+    id = "__timeout__"
+    left = 50%-100
+    top = 100%-124
+    width = 200
+    height = 28
+    show_text = false
+    bar_style = "timer_*.png"
+    highlight_style = "timer_fill_*.png"
+}
+
++ image {
+    left = 50%-240
+    top = 100%-92
+    file = "hint.png"
+}

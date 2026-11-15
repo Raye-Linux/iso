@@ -1,0 +1,489 @@
+#!/bin/sh
+# Opens a Windows program (.exe or .msi) with Wine.
+#
+# Known programs have a profile in /usr/share/raye/windows-profiles: the
+# Microsoft pieces they need, a few settings, and one shared space for the
+# installer and the installed program. When a program has a Linux version
+# that runs better (Steam, Discord...), Raye offers that one instead.
+# Unknown programs get a space of their own, named after the file, so one
+# misbehaving program cannot break the others.
+#
+# Every space starts as a copy of the ready one raye-windows-prepare
+# builds after login, so it opens at once with the core fonts, DXVK and
+# vkd3d-proton already in.
+#
+# Nothing pops up. Wine shows a "configuration is being updated" window
+# each time it sets up or upgrades a space; that work runs here with
+# Wine's display drivers switched off, so it has nowhere to draw. The
+# program itself then starts as usual.
+#
+# The Microsoft pieces some profiles need (fonts, Visual C++, .NET) come
+# from Microsoft, under its own licence; Raye does not ship them, they
+# are fetched quietly the first time.
+#
+# Programs run on raye-wine, Raye's own build of the layer in
+# /opt/raye-wine. It brings Mono and Gecko itself, and raye-wine-gpu tells
+# whether Direct3D can use Vulkan on this computer. engine=system in
+# /etc/raye/windows.conf or ~/.config/raye/windows.conf (or
+# RAYE_WINDOWS_ENGINE=system) picks another Wine on the PATH instead, when
+# there is one. debug=on there (or RAYE_WINDOWS_DEBUG=on) lets Wine and
+# DXVK print their messages; by default they print nothing.
+#
+# Every program gets default.profile first, then its own profile if it has
+# one. The space keeps the name of that profile in .raye-profile.
+#
+#   raye-run-windows program.exe|setup.msi [--args ARGS]
+#   raye-run-windows --space SPACE --run 'C:\path\program.exe' [--args ARGS]
+#   raye-run-windows --space SPACE --uninstall 'COMMAND' [--name N] [--icon I]
+#   raye-run-windows --space SPACE --open FILE|LINK
+#
+# The --space forms are what Start menu entries and raye-windows (Settings,
+# "Uninstall") call: they run in a space that already exists. --open is
+# what a file or link the program's profile names (opens=) is handed to.
+# --args after a setup gives it switches, the quiet ones the Store passes.
+#
+# After a setup the space is left to settle, at most RAYE_WINDOWS_SETTLE
+# seconds (60). With RAYE_WINDOWS_SETTLE_END=stop, what still runs after
+# that is ended, so the registry is written and the Store sees the new
+# program at once.
+
+set -u
+usage() {
+    echo "usage: raye-run-windows program.exe [--args ARGS]" >&2
+    echo "       raye-run-windows --space SPACE (--run TARGET [--args ARGS] | --uninstall COMMAND | --open FILE|LINK)" >&2
+    exit 2
+}
+file="" space="" target="" targs="" uninstall="" open="" setup_args=""
+if [ "${1:-}" = --space ]; then
+    while [ $# -gt 0 ]; do
+        [ $# -ge 2 ] || usage
+        case $1 in
+            --space) space=$2 ;;
+            --run) target=$2 ;;
+            --args) targs=$2 ;;
+            --uninstall) uninstall=$2 ;;
+            --open) open=$2 ;;
+            --name|--icon) ;;
+            *) usage ;;
+        esac
+        shift 2
+    done
+    case $space in ""|*/*|.*) usage ;; esac
+    [ -n "$target" ] || [ -n "$uninstall" ] || [ -n "$open" ] || usage
+else
+    file=${1:-}
+    [ -f "$file" ] || usage
+    if [ $# -gt 1 ]; then
+        [ $# -eq 3 ] && [ "$2" = --args ] || usage
+        setup_args=$3
+    fi
+fi
+
+profiles=${RAYE_WINDOWS_PROFILES_PATH:-/usr/share/raye/windows-profiles}
+name=$(basename "${file:-$target}")
+lname=$(printf '%s' "$name" | tr 'A-Z' 'a-z')
+
+fr() { case "${LANG:-}" in fr*) return 0 ;; esac; return 1; }
+say() { kdialog --title "Raye Linux" --icon raye-eye "$@"; }
+
+raye_wine=${RAYE_WINE_PREFIX:-/opt/raye-wine}
+engine=raye debug=off
+for conf in "${RAYE_WINDOWS_CONF:-/etc/raye/windows.conf}" \
+            "${XDG_CONFIG_HOME:-$HOME/.config}/raye/windows.conf"; do
+    v=$(sed -n 's/^[[:space:]]*engine[[:space:]]*=[[:space:]]*\(system\|raye\)[[:space:]]*$/\1/p' \
+        "$conf" 2>/dev/null | tail -n 1)
+    [ -n "$v" ] && engine=$v
+    v=$(sed -n 's/^[[:space:]]*debug[[:space:]]*=[[:space:]]*\(on\|off\)[[:space:]]*$/\1/p' \
+        "$conf" 2>/dev/null | tail -n 1)
+    [ -n "$v" ] && debug=$v
+done
+case ${RAYE_WINDOWS_ENGINE:-} in system|raye) engine=$RAYE_WINDOWS_ENGINE ;; esac
+case ${RAYE_WINDOWS_DEBUG:-} in on|off) debug=$RAYE_WINDOWS_DEBUG ;; esac
+[ -x "$raye_wine/bin/wine" ] || engine=system
+# a choice of another Wine only counts when there is one
+[ "$engine" = system ] && [ -x "$raye_wine/bin/wine" ] && ! command -v wine >/dev/null &&
+    [ ! -x /opt/wine-stable/bin/wine ] && engine=raye
+gpu_overrides=""
+if [ "$engine" = raye ]; then
+    PATH=$raye_wine/bin:$PATH
+    WINESERVER=$raye_wine/bin/wineserver
+    export WINESERVER
+    # read, never run: only these two answers are taken
+    gpu=$("$raye_wine/bin/raye-wine-gpu" --env 2>/dev/null)
+    gpu_overrides=$(printf '%s\n' "$gpu" |
+        sed -n "s/^RAYE_WINE_OVERRIDES='\([A-Za-z0-9_.,;=-]*\)'\$/\1/p" | tail -n 1)
+    printf '%s\n' "$gpu" | grep -qx 'DXVK_ENABLE_NVAPI=1' && export DXVK_ENABLE_NVAPI=1
+fi
+# winetricks lives here, off everyone's PATH; it finds "wine" above
+PATH=$PATH:${RAYE_WINDOWS_BIN:-/usr/lib/raye/windows/bin}
+
+# run a Wine tool with no display: no window can show up. Setting up
+# a space also leaves out Mono and Gecko, which Wine would offer to
+# download; .NET and web views come from winetricks when a program needs them.
+hidden() {
+    env -u DISPLAY -u WAYLAND_DISPLAY \
+        WINEDLLOVERRIDES="winemenubuilder.exe,winex11.drv,winewayland.drv=d${extra:-}" \
+        "$@" >/dev/null 2>&1
+}
+hidden_setup() {
+    [ "$engine" = raye ] || extra=";mscoree,mshtml="
+    settle=1
+    hidden "$@"
+    set -- $?
+    extra=""
+    return "$1"
+}
+
+# wineserver is not always on the PATH, it lives with the rest of Wine;
+# winetricks finds it through this variable
+[ "$engine" = raye ] ||
+for ws in "$(command -v wineserver)" /opt/wine-stable/bin/wineserver \
+          /usr/lib/*/wine/wineserver /usr/lib/wine/wineserver; do
+    if [ -x "$ws" ]; then WINESERVER=$ws; export WINESERVER; break; fi
+done
+
+wine_inf() {
+    if [ "$engine" = raye ]; then
+        echo "$raye_wine/share/wine/wine.inf"
+        return
+    fi
+    for f in /opt/wine-stable/share/wine/wine.inf /usr/share/wine/wine.inf; do
+        [ -f "$f" ] && { echo "$f"; return; }
+    done
+}
+
+# Wine compares this file with its own wine.inf and upgrades the space
+# when they differ; doing it first, hidden, keeps that window away
+needs_update() {
+    inf=$(wine_inf)
+    [ -n "$inf" ] || return 1
+    # Wine writes it with a Windows line ending: drop the \r
+    [ "$(tr -d '\r' < "$WINEPREFIX/.update-timestamp" 2>/dev/null | cut -d' ' -f1)" != \
+      "$(stat -c %Y "$inf")" ]
+}
+
+# find a profile whose patterns match the file name; a Start entry runs
+# in a space named after its profile, so it gets the same settings
+profile="" pname="" verbs="" env="" native="" title="" opens="" files=""
+[ -n "$space" ] && [ -f "$profiles/$space.profile" ] && profile=$profiles/$space.profile
+[ -n "$file" ] &&
+for p in "$profiles"/*.profile; do
+    [ -f "$p" ] || continue
+    match=$(sed -n 's/^match="\(.*\)"$/\1/p' "$p")
+    # no globbing: run from Downloads, npp.* would become the real file name,
+    # capitals and all, and stop matching
+    set -f
+    for pattern in $match; do
+        # shellcheck disable=SC2254
+        case "$lname" in $pattern) profile=$p ;; esac
+    done
+    set +f
+    [ -n "$profile" ] && break
+done
+# some downloads belong in another program's space: a VST installer has
+# to put its plugin where FL Studio looks, so it runs there, with that
+# program's profile
+if [ -n "$file" ] && [ -n "$profile" ]; then
+    host=$(sed -n 's/^space="\([a-z0-9-]*\)"$/\1/p' "$profile")
+    [ -n "$host" ] && [ -f "$profiles/$host.profile" ] && profile=$profiles/$host.profile
+fi
+if [ -n "$profile" ]; then
+    pname=$(sed -n 's/^name="\(.*\)"$/\1/p' "$profile")
+    verbs=$(sed -n 's/^verbs="\(.*\)"$/\1/p' "$profile")
+    env=$(sed -n 's/^env="\(.*\)"$/\1/p' "$profile")
+    native=$(sed -n 's/^native="\(.*\)"$/\1/p' "$profile")
+    title=$(sed -n 's/^title="\(.*\)"$/\1/p' "$profile")
+    opens=$(sed -n 's/^opens="\(.*\)"$/\1/p' "$profile")
+    files=$(sed -n 's/^files="\(.*\)"$/\1/p' "$profile")
+fi
+
+# a game its own publisher keeps off this system: say so before anything
+# installs, in its own words; going around it gets the account banned
+if [ -n "$file" ] && [ -n "$title" ] && command -v raye-windows-titles >/dev/null &&
+   [ "$(raye-windows-titles --state "$title" 2>/dev/null)" = blocked ]; then
+    rec=$(raye-windows-titles --json "$title" 2>/dev/null)
+    if fr; then key=why_fr; else key=why_en; fi
+    why=$(printf '%s' "$rec" | python3 -Ic 'import json,sys; print(json.load(sys.stdin).get(sys.argv[1],""))' "$key" 2>/dev/null)
+    if fr; then
+        q="${pname:-$name} ne peut pas fonctionner sur Raye. $why"; close="Fermer"; anyway="Ouvrir quand même"
+    else
+        q="${pname:-$name} can't run on Raye. $why"; close="Close"; anyway="Open anyway"
+    fi
+    # only a click on "Open anyway" goes on; no answer at all means no
+    say --yes-label "$close" --no-label "$anyway" --warningyesno "$q"
+    [ $? -eq 1 ] || exit 0
+fi
+
+if [ -n "$file" ] && [ -n "$native" ]; then
+    if fr; then q="$pname existe aussi pour Raye, et cette version fonctionne mieux. L'ouvrir dans le Store ?"
+    else q="$pname also exists for Raye, and that version runs better. Open it in the Store?"; fi
+    if say --yes-label "Store" --no-label "Windows" --yesno "$q"; then
+        exec raye-store "$native"
+    fi
+fi
+
+# the space is named after the profile, or after the file
+if [ -n "$space" ]; then
+    slug=$space
+elif [ -n "$profile" ]; then
+    slug=$(basename "$profile" .profile)
+else
+    slug=$(printf '%s' "${lname%.*}" | tr -cs 'a-z0-9' '-' | sed 's/^-*//; s/-*$//')
+fi
+[ -n "$slug" ] || slug=program
+export WINEPREFIX="${XDG_DATA_HOME:-$HOME/.local/share}/raye/windows/$slug"
+if [ -n "$space" ] && [ ! -d "$WINEPREFIX/drive_c" ]; then
+    echo "raye-run-windows: there is no space $space" >&2
+    exit 3
+fi
+
+# raye-wine's share picker names the program from this application id; a
+# part of an id cannot start with a digit, and it needs a desktop file
+if [ "$engine" = raye ]; then
+    app=$(printf '%s' "$slug" | tr -c 'a-z0-9' '_')
+    case $app in [0-9]*) app=_$app ;; esac
+    RAYE_WINDOWS_APP_ID=org.raye.windows.$app
+    export RAYE_WINDOWS_APP_ID
+    apps="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
+    if [ ! -f "$apps/$RAYE_WINDOWS_APP_ID.desktop" ] && mkdir -p "$apps"; then
+        label=${pname:-${name%.*}}
+        [ -n "$label" ] || label=$slug
+        if [ -n "$file" ]; then
+            exec_path=$(printf '%s' "$(realpath "$file")" | sed 's/[\\"`$]/\\&/g')
+            printf '[Desktop Entry]\nType=Application\nName=%s\nIcon=raye-eye\nNoDisplay=true\nExec=raye-run-windows "%s"\n' \
+                "$label" "$exec_path" > "$apps/$RAYE_WINDOWS_APP_ID.desktop"
+        else
+            printf '[Desktop Entry]\nType=Application\nName=%s\nIcon=raye-eye\nNoDisplay=true\nExec=raye-run-windows --space %s\n' \
+                "$label" "$slug" > "$apps/$RAYE_WINDOWS_APP_ID.desktop"
+        fi
+    fi
+    # the files and links the program opens on Windows (profile opens=)
+    # come to it here too, as Windows' own association in the space says;
+    # nothing else is taken over
+    if [ -n "$opens" ] && [ -d "$apps" ]; then
+        label=${pname:-$slug}
+        want=$(printf '[Desktop Entry]\nType=Application\nName=%s\nIcon=raye-eye\nNoDisplay=true\nExec=raye-run-windows --space %s --open %%u\nMimeType=%s;\n' \
+            "$label" "$slug" "${opens%;}")
+        if [ "$(cat "$apps/$RAYE_WINDOWS_APP_ID.desktop" 2>/dev/null)" != "$want" ]; then
+            printf '%s\n' "$want" > "$apps/$RAYE_WINDOWS_APP_ID.desktop"
+            command -v update-desktop-database >/dev/null && update-desktop-database -q "$apps" 2>/dev/null
+            if command -v xdg-mime >/dev/null; then
+                for t in $(printf '%s' "$opens" | tr ';' ' '); do
+                    xdg-mime default "$RAYE_WINDOWS_APP_ID.desktop" "$t" 2>/dev/null
+                done
+            fi
+        fi
+    fi
+fi
+# the default profile first, then the program's own; with debug=on in
+# windows.conf Wine and DXVK print what they have to say again
+if [ "$debug" = on ]; then
+    export WINEDEBUG="${WINEDEBUG:-fixme-all}"
+else
+    export WINEDEBUG=-all
+    default_env=$(sed -n 's/^env="\(.*\)"$/\1/p' \
+        "${RAYE_WINDOWS_DEFAULT_PROFILE:-/usr/share/raye/windows/default.profile}" 2>/dev/null)
+    for kv in $default_env; do export "$kv"; done
+fi
+for kv in $env; do export "$kv"; done
+# Raye makes the Start entries itself (raye-windows scan): Wine's own would
+# add a "Wine" folder and take over file types
+WINEDLLOVERRIDES="winemenubuilder.exe=d${WINEDLLOVERRIDES:+;$WINEDLLOVERRIDES}"
+[ -n "$gpu_overrides" ] && WINEDLLOVERRIDES="$WINEDLLOVERRIDES;$gpu_overrides"
+export WINEDLLOVERRIDES
+
+# setting a space up without the ready one, or with pieces to add, takes
+# a while: say so, in Raye's words, while nothing else is on screen. The
+# notice stays until the set-up is over (a first space can take minutes)
+noticed="" notice_id=""
+notice() {
+    [ -z "$noticed" ] || return 0
+    noticed=1
+    { [ -n "${DISPLAY:-}" ] || [ -n "${WAYLAND_DISPLAY:-}" ]; } || return 0
+    command -v notify-send >/dev/null || return 0
+    label=${pname:-${name%.*}}
+    if fr; then text="Préparation de $label…"; else text="Preparing $label…"; fi
+    notice_id=$(timeout 5 notify-send --app-name=Raye --icon=raye-eye --expire-time=0 --print-id "$text" 2>/dev/null)
+    case $notice_id in ''|*[!0-9]*) notice_id="" ;; *) trap end_notice EXIT ;; esac
+}
+end_notice() {
+    [ -n "$notice_id" ] || return 0
+    busctl --user call org.freedesktop.Notifications /org/freedesktop/Notifications \
+        org.freedesktop.Notifications CloseNotification u "$notice_id" >/dev/null 2>&1
+    notice_id=""
+}
+
+template="${XDG_DATA_HOME:-$HOME/.local/share}/raye/windows/.template"
+fresh="" settle=""
+if [ ! -d "$WINEPREFIX/drive_c" ] && [ -f "$template/.raye-ready" ]; then
+    # the ready space from raye-windows-prepare: a copy, instant on btrfs
+    mkdir -p "$(dirname "$WINEPREFIX")"
+    [ -d "$WINEPREFIX.new" ] && rm -r "$WINEPREFIX.new"
+    cp -a --reflink=auto "$template" "$WINEPREFIX.new" &&
+        rm -f "$WINEPREFIX.new/.raye-ready" &&
+        rmdir "$WINEPREFIX" 2>/dev/null
+    mv "$WINEPREFIX.new" "$WINEPREFIX" && fresh=1
+fi
+if [ ! -d "$WINEPREFIX/drive_c" ]; then
+    # not ready yet (first minutes after the first login, or offline)
+    mkdir -p "$WINEPREFIX"
+    notice
+    hidden_setup wineboot --init
+    fresh=1
+fi
+# a space made with an older Wine is upgraded here, out of sight
+needs_update && notice && hidden_setup wineboot --update
+# which profile the space was made with, for Settings
+[ -n "$profile" ] && [ ! -f "$WINEPREFIX/.raye-profile" ] &&
+    basename "$profile" .profile > "$WINEPREFIX/.raye-profile" 2>/dev/null
+# Raye's settings for the space (colours, and what some programs need, like
+# WebView2 running as Windows 8) follow the .reg files of this system: a
+# space made before an update, or copied from an older ready space, gets
+# them now. Nothing happens when its stamp already matches
+prepare=${RAYE_WINDOWS_PREPARE:-/usr/libexec/raye-windows-prepare}
+[ "$engine" = raye ] && [ -x "$prepare" ] && "$prepare" --look "$WINEPREFIX" >/dev/null 2>&1
+# what this program needs on top of the ready space. Some of these are
+# real installers that open windows: they run on an invisible screen.
+# What the ready space already brings (Visual C++, core fonts) is not
+# fetched again.
+if [ -n "$verbs" ] && [ -f "$WINEPREFIX/.raye-components" ]; then
+    have=" $(cat "$WINEPREFIX/.raye-components") " keep=""
+    for v in $verbs; do
+        case $have in *" $v "*) ;; *) keep="$keep $v" ;; esac
+    done
+    verbs=${keep# }
+fi
+if [ -n "$fresh" ] && [ -n "$verbs" ]; then
+    settle=1
+    notice
+    # shellcheck disable=SC2086  # one winetricks verb per word
+    if command -v xvfb-run >/dev/null; then
+        env -u WAYLAND_DISPLAY timeout 20m xvfb-run -a winetricks -q $verbs </dev/null >/dev/null 2>&1
+    else
+        hidden timeout 20m winetricks -q $verbs </dev/null
+    fi
+fi
+
+# the set-up processes have no display: let them all end, so the program
+# starts a fresh Wine session that can show its windows. Only ours: a
+# space can keep a process of its own for good (Edge WebView2's updater,
+# installed by FL Studio and Roblox Studio), and waiting for that one
+# kept every Start entry of the space from opening
+[ -n "${settle:-}" ] && [ -n "${WINESERVER:-}" ] && "$WINESERVER" -w
+end_notice
+
+if [ -n "$uninstall" ]; then
+    # "C:\Program Files\X\uninst.exe" /S, or MsiExec.exe /X{...}
+    case $uninstall in
+        \"*) prog=${uninstall#\"}; rest=${prog#*\"}; prog=${prog%%\"*} ;;
+        *)
+            # unquoted, like WinRAR's: the program runs up to the first .exe,
+            # spaces and all, the way Windows reads it
+            head=$(printf '%s' "$uninstall" | tr 'A-Z' 'a-z')
+            case $head in
+                *.exe|*.exe\ *)
+                    head=${head%%.exe*}
+                    prog=$(printf '%s' "$uninstall" | cut -c1-$((${#head} + 4))) ;;
+                *) prog=${uninstall%% *} ;;
+            esac
+            rest=${uninstall#"$prog"} ;;
+    esac
+    # shellcheck disable=SC2086  # the switches are separate words
+    wine "$prog" $rest
+    rc=$?
+    # uninstallers often copy themselves to a temp folder and go on there
+    [ -n "${WINESERVER:-}" ] && "$WINESERVER" -w
+    exit $rc
+fi
+if [ -n "$open" ]; then
+    # only what the profile names: a link of one of its schemes, or a file
+    # with one of its extensions (never an .exe that happens to be handed in)
+    case $open in
+        file://*) open=$(python3 -Ic 'import sys, urllib.parse as u; print(u.unquote(u.urlsplit(sys.argv[1]).path))' "$open") ;;
+    esac
+    if [ -f "$open" ]; then
+        ext=$(printf '%s' "${open##*.}" | tr 'A-Z' 'a-z')
+        case " $files " in *" $ext "*) ;; *) echo "raye-run-windows: $slug does not open .$ext files" >&2; exit 2 ;; esac
+        key=.$ext
+    else
+        key=${open%%:*}
+        case ";${opens%;};" in
+            *";x-scheme-handler/$key;"*) ;;
+            *) echo "raye-run-windows: $slug does not open $key links" >&2; exit 2 ;;
+        esac
+    fi
+    # the program's own "open" command, from what it registered in the
+    # space. Wine's start cannot do it: it reads only the machine's
+    # classes, and most installers register for the user alone
+    exec python3 -I - "$WINEPREFIX" "$key" "$open" <<'PY'
+import os, re, sys
+prefix, key, what = sys.argv[1:4]
+
+def classes():
+    """HKCU then HKLM Software\\Classes, as {lower key: {lower name: value}}"""
+    out = {}
+    for name, root in (("system.reg", "software\\classes\\"), ("user.reg", "software\\classes\\")):
+        try:
+            text = open(os.path.join(prefix, name), encoding="utf-8", errors="replace").read()
+        except OSError:
+            continue
+        cur = None
+        for line in text.splitlines():
+            if line.startswith("["):
+                k = line[1:line.rfind("]")].replace("\\\\", "\\").lower()
+                cur = out.setdefault(k[len(root):], {}) if k.startswith(root) else None
+            elif cur is not None:
+                m = re.match(r'^(@|"((?:[^"\\]|\\.)*)")=(?:str\(2\):)?"((?:[^"\\]|\\.)*)"$', line)
+                if m:
+                    unq = lambda v: re.sub(r'\\(.)', r'\1', v)
+                    cur["" if m.group(1) == "@" else unq(m.group(2)).lower()] = unq(m.group(3))
+    return out
+
+c = classes()
+target = key.lower()
+if target.startswith("."):
+    target = c.get(target, {}).get("", "").lower()
+command = ""
+for verb in ("open",):
+    command = c.get("%s\\shell\\%s\\command" % (target, verb), {}).get("", "")
+if not target or not command:
+    sys.exit("raye-run-windows: nothing in this space opens %s" % key)
+arg = ("Z:" + what.replace("/", "\\")) if os.path.isfile(what) else what
+m = re.match(r'\s*(?:"([^"]+)"|(\S+))\s*(.*)$', command)
+exe, rest = m.group(1) or m.group(2), m.group(3)
+args = []
+for word in re.findall(r'"[^"]*"|\S+', rest):
+    word = word[1:-1] if word.startswith('"') else word
+    args.append(word.replace("%1", arg).replace("%L", arg))
+os.execvp("wine", ["wine", exe] + args)
+PY
+fi
+if [ -n "$target" ]; then
+    # a shortcut starts its program in the program's folder, and some (OBS)
+    # only find their own files from there
+    case $target in
+        [Cc]:\\*\\*)
+            dir=$(printf '%s' "${target#??}" | sed 's/\\[^\\]*$//; s#\\#/#g')
+            [ -d "$WINEPREFIX/drive_c$dir" ] && cd "$WINEPREFIX/drive_c$dir" ;;
+    esac
+    # shellcheck disable=SC2086  # a shortcut's arguments, one per word
+    exec wine "$target" $targs
+fi
+
+# shellcheck disable=SC2086  # the setup's switches, one per word
+case "$lname" in
+    *.msi) wine msiexec /i "$file" $setup_args ;;
+    *) wine "$file" $setup_args ;;
+esac
+rc=$?
+# an installer may have added programs: give them their Start menu entries.
+# Let the space settle first, but not forever, for the same updater; the
+# Store asks for what is left to be stopped, which writes the registry
+if [ -n "${WINESERVER:-}" ] &&
+   ! timeout "${RAYE_WINDOWS_SETTLE:-60}" "$WINESERVER" -w &&
+   [ "${RAYE_WINDOWS_SETTLE_END:-}" = stop ]; then
+    "$WINESERVER" -k
+    timeout 20 "$WINESERVER" -w
+fi
+command -v raye-windows >/dev/null && raye-windows scan "$slug" >/dev/null 2>&1
+exit $rc

@@ -1,0 +1,12 @@
+#!/bin/sh
+# At boot: show "Restart to Windows" in the menu when Windows is on this
+# computer, hide it when it is not.
+set -u
+dest=/usr/local/share/applications/raye-restart-to-windows.desktop
+if /usr/libexec/raye-boot-windows --check >/dev/null 2>&1; then
+    mkdir -p "$(dirname "$dest")"
+    cp /usr/share/raye/dualboot/raye-restart-to-windows.desktop "$dest.new" &&
+        mv "$dest.new" "$dest"
+else
+    rm -f "$dest"
+fi

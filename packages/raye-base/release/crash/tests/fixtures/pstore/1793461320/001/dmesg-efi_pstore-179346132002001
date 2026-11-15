@@ -1,0 +1,6 @@
+Panic#1 Part2
+<6>[  398.402117] wlp3s0: associated
+<6>[  398.511930] IPv6: ADDRCONF(NETDEV_CHANGE): wlp3s0: link becomes ready
+<6>[  405.880215] usb 3-2: new full-speed USB device number 4 using xhci_hcd
+<6>[  406.034771] input: USB Optical Mouse as /devices/pci0000:00/0000:00:14.0/usb3/3-2/3-2:1.0/0003:046D:C077.0002/input/input21
+<6>[  412.118204] sysrq: Trigger a crash

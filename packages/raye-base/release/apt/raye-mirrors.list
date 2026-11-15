@@ -1,0 +1,4 @@
+# Where the Raye packages come from, tried in this order (lowest
+# priority first). Both hold the same signed tree.
+https://dl.rayelinux.com/apt/	priority:1
+https://raye-linux.github.io/packages/	priority:2

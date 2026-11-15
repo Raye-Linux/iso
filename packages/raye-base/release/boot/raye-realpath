@@ -1,0 +1,30 @@
+#!/bin/sh
+# The cryptroot boot scripts call realpath to walk the devices under the
+# root disk, and busybox in the initramfs has no such applet: they printed
+# "realpath: not found" and skipped stacked devices. Busybox's readlink -f
+# does the work.
+PREREQ=""
+prereqs() { echo "$PREREQ"; }
+case "$1" in
+prereqs) prereqs; exit 0 ;;
+esac
+
+target="${DESTDIR}/usr/bin/realpath"
+[ -e "$target" ] && exit 0
+mkdir -p "${target%/*}"
+cat > "$target" <<'EOF'
+#!/bin/sh
+# realpath [-e] [--] PATH, the part the cryptroot scripts use
+path=
+for arg; do
+    case "$arg" in
+    -e | --) ;;
+    *) path=$arg ;;
+    esac
+done
+[ -n "$path" ] || exit 1
+real=$(readlink -f "$path") && [ -e "$real" ] || exit 1
+echo "$real"
+EOF
+chmod 755 "$target"
+exit 0

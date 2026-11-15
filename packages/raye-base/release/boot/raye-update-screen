@@ -1,0 +1,18 @@
+#!/bin/sh
+# Updates wait for this start (/system-update points at Raye Update's
+# folder): "Working on updates" goes on the boot screen the moment the
+# disk is open, not seconds later when raye-update itself starts.
+PREREQ=""
+prereqs() { echo "$PREREQ"; }
+case "$1" in
+prereqs) prereqs; exit 0 ;;
+esac
+
+link="${rootmnt:-/root}/system-update"
+[ -L "$link" ] || exit 0
+[ "$(readlink "$link")" = /var/lib/raye-update/offline ] || exit 0
+plymouth --ping 2>/dev/null || exit 0
+# the same words raye-update sends; it sends them again when it starts
+plymouth display-message --text=raye:mode:updates 2>/dev/null
+plymouth system-update --progress=0 2>/dev/null
+exit 0

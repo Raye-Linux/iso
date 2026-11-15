@@ -1,0 +1,220 @@
+#!/usr/bin/python3 -I
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Removes the menu entries and file types Wine made by itself in an
+account, before Raye made its own: the "Wine" menu folder and its
+entries, the wine-extension-*.desktop files that took over .txt or .pdf,
+and the lines of mimeapps.list that point at them.
+
+    raye-windows-cleanup            once per account (later runs do nothing)
+    raye-windows-cleanup --again    run it even if it ran before
+
+Run before raye-windows-prepare by raye-windows-prepare.service. Only
+files Wine names wine-* (or its applications/wine folder) are touched;
+a link is removed, never followed. Always exits 0.
+
+Every run, not once: a ~/.wine left by the layer of an earlier release
+becomes the space named "default" (~/.local/share/raye/windows/default),
+moved in one piece so nothing in it is lost, and its programs get their
+Start entries. It stays where it is while another Wine is installed (the
+person's own, then), while a program of it runs, or when "default"
+already exists.
+"""
+import fnmatch
+import os
+import pwd
+import shutil
+import subprocess
+import sys
+
+# 2: once more after the move to raye-wine, for entries the old layer made
+DONE_VERSION = "2"
+
+
+def home():
+    return os.environ.get("HOME") or pwd.getpwuid(os.getuid()).pw_dir
+
+
+def xdg(var, default):
+    value = os.environ.get(var, "")
+    return value if os.path.isabs(value) else os.path.join(home(), default)
+
+
+def remove(path):
+    """True when something was removed. A link (even to a folder) is
+    removed as a link."""
+    try:
+        if os.path.islink(path) or os.path.isfile(path):
+            os.unlink(path)
+            return True
+        if os.path.isdir(path):
+            shutil.rmtree(path)
+            return True
+    except OSError:
+        pass
+    return False
+
+
+def remove_matching(folder, patterns):
+    removed = False
+    try:
+        names = sorted(os.listdir(folder))
+    except OSError:
+        return False
+    for name in names:
+        if any(fnmatch.fnmatchcase(name, p) for p in patterns):
+            removed = remove(os.path.join(folder, name)) or removed
+    return removed
+
+
+def wine_entry(name):
+    return name.startswith("wine-") and name.endswith(".desktop")
+
+
+def clean_mimeapps(path):
+    """Drops wine-*.desktop from every line of a mimeapps.list, and the
+    lines left with nothing. True when the file changed."""
+    if os.path.islink(path) or not os.path.isfile(path):
+        return False
+    try:
+        with open(path, encoding="utf-8") as f:
+            lines = f.read().splitlines(keepends=True)
+    except (OSError, UnicodeDecodeError):
+        return False
+    out, changed = [], False
+    for line in lines:
+        body = line.rstrip("\r\n")
+        if "=" not in body or body.lstrip().startswith(("#", "[")):
+            out.append(line)
+            continue
+        key, value = body.split("=", 1)
+        apps = [a for a in value.split(";") if a]
+        keep = [a for a in apps if not wine_entry(a.strip())]
+        if len(keep) == len(apps):
+            out.append(line)
+            continue
+        changed = True
+        if keep:
+            out.append("%s=%s;%s" % (key, ";".join(keep), line[len(body):] or "\n"))
+    if not changed:
+        return False
+    tmp = "%s.%d.tmp" % (path, os.getpid())
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write("".join(out))
+        os.chmod(tmp, os.stat(path).st_mode & 0o7777)
+        os.replace(tmp, path)
+    except OSError:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        return False
+    return True
+
+
+def refresh(cmd, folder):
+    if not os.path.isdir(folder) or not shutil.which(cmd):
+        return
+    try:
+        subprocess.run([cmd, folder], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL, timeout=120)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
+def cleanup():
+    data = xdg("XDG_DATA_HOME", ".local/share")
+    config = xdg("XDG_CONFIG_HOME", ".config")
+    apps = os.path.join(data, "applications")
+    mime = os.path.join(data, "mime")
+
+    removed_apps = remove(os.path.join(apps, "wine"))
+    removed_apps = remove_matching(apps, ["wine-extension-*.desktop",
+                                          "wine-protocol-*.desktop"]) or removed_apps
+    remove_matching(os.path.join(config, "menus", "applications-merged"), ["wine-*.menu"])
+    remove_matching(os.path.join(data, "desktop-directories"), ["wine-*"])
+    removed_types = remove_matching(os.path.join(mime, "packages"),
+                                    ["x-wine-extension-*.xml", "x-wine-protocol-*.xml"])
+    for path in (os.path.join(config, "mimeapps.list"), os.path.join(apps, "mimeapps.list")):
+        clean_mimeapps(path)
+    if removed_apps:
+        refresh("update-desktop-database", apps)
+    if removed_types:
+        refresh("update-mime-database", mime)
+
+
+OTHER_WINES = ("/usr/local/bin/wine", "/usr/bin/wine", "/usr/bin/wine64",
+               "/opt/wine-stable/bin/wine", "/opt/wine-devel/bin/wine", "/opt/wine-staging/bin/wine")
+SERVER_ROOT = "/tmp"
+
+
+def other_wine():
+    return next((w for w in OTHER_WINES if os.access(w, os.X_OK)), None)
+
+
+def server_running(prefix):
+    try:
+        st = os.stat(prefix)
+    except OSError:
+        return False
+    sock = os.path.join(SERVER_ROOT, ".wine-%d" % os.getuid(),
+                        "server-%x-%x" % (st.st_dev, st.st_ino), "socket")
+    return os.path.exists(sock)
+
+
+def adopt_dot_wine():
+    """Moves ~/.wine to the default space. The space name, or None."""
+    old = os.path.join(home(), ".wine")
+    if os.path.islink(old) or not os.path.isdir(old):
+        return None
+    if not (os.path.isdir(os.path.join(old, "drive_c")) or
+            os.path.isfile(os.path.join(old, "system.reg"))):
+        return None
+    if other_wine() or server_running(old):
+        return None
+    spaces = os.path.join(xdg("XDG_DATA_HOME", ".local/share"), "raye", "windows")
+    new = os.path.join(spaces, "default")
+    if os.path.lexists(new):
+        return None
+    try:
+        os.makedirs(spaces, exist_ok=True)
+        os.rename(old, new)             # never a copy: on another disk it stays put
+    except OSError:
+        return None
+    tool = shutil.which("raye-windows")
+    if tool:
+        try:
+            subprocess.run([tool, "scan", "default"], stdin=subprocess.DEVNULL,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=300)
+        except (OSError, subprocess.SubprocessError):
+            pass
+    return "default"
+
+
+def main(argv):
+    if argv not in ([], ["--again"]):
+        print("usage: raye-windows-cleanup [--again]", file=sys.stderr)
+        return 2
+    if os.geteuid() == 0:
+        return 0                        # only ever in a person's own account
+    adopt_dot_wine()
+    state = os.path.join(xdg("XDG_STATE_HOME", ".local/state"), "raye")
+    done = os.path.join(state, "windows-cleanup")
+    try:
+        with open(done) as f:
+            if f.read().strip() == DONE_VERSION and not argv:
+                return 0
+    except OSError:
+        pass
+    cleanup()
+    try:
+        os.makedirs(state, exist_ok=True)
+        with open(done, "w") as f:
+            f.write(DONE_VERSION + "\n")
+    except OSError:
+        pass
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

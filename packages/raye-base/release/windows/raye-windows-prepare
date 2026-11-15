@@ -1,0 +1,930 @@
+#!/usr/bin/python3 -I
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Builds the ready-made Windows space every program starts from, in the
+background, so opening a .exe is a copy and nothing else: no window, no
+question, no minute of waiting, no network.
+
+    raye-windows-prepare               build or refresh the ready space
+    raye-windows-prepare --look SPACE  give one space the current colours
+                                       and display scale
+
+The ready space is ~/.local/share/raye/windows/.template. It gets:
+
+- Wine Mono and Wine Gecko from raye-wine-addons, which Wine finds by
+  itself in /usr/share/wine when they are the versions it was built
+  for (versions.txt of raye-wine-addons says which). When they are not
+  there, .NET and HTML are left out instead of letting Wine ask to
+  download them.
+- DXVK (DirectX 8 to 11 on Vulkan) and vkd3d-proton (DirectX 12),
+  copied from raye-wine-addons.
+- Microsoft's Visual C++ runtimes, 2005 to 2022, when
+  raye-windows-components has put the checked installers in
+  /var/lib/raye/windows/redist; a year that is not there uses Wine's own.
+  They run on a screen nobody sees (xvfb-run): their setup needs one.
+  Their DLLs then load from Microsoft's files, as winetricks does, and
+  .raye-components names the winetricks verbs they stand for, so the
+  runner does not fetch them again. No core fonts: programs see the
+  system's.
+- The Raye colours (raye-night.reg or raye-day.reg, following the
+  Plasma colour scheme), dark or light mode, flat menus, Inter for
+  Segoe UI, no crash dialog, no menu entries made by Wine, and LogPixels
+  from the display scale.
+- Documents, Pictures, Music, Videos and Downloads open the person's own
+  folders; Desktop is a folder of the space, so an installer's desktop
+  shortcut does not land on the real desktop (Raye makes its own
+  launcher for it).
+
+Every Wine call runs with no display, so nothing can draw a window.
+
+Spaces are made with raye-wine, Raye's own build of the layer in
+/opt/raye-wine. It ships Mono, Gecko and Direct3D on Vulkan itself: the
+add-ons above are then not copied. engine=system in /etc/raye/windows.conf
+or ~/.config/raye/windows.conf (the person's file wins, the variable
+RAYE_WINDOWS_ENGINE wins over both) picks another Wine instead, when there
+is one.
+
+The space is rebuilt when its stamp (.template/.raye-ready) no longer
+matches: another Wine, other add-ons, new Visual C++ installers or other
+.reg files. A half-built space is thrown away, never used.
+
+The colour and scale stamp, SPACE/.raye-look, is one line:
+
+    scheme=<night|day> reg=<sha256 of that .reg file> dpi=<LogPixels>
+
+`--look SPACE` compares it with the current values and only starts Wine
+when they differ, so it can run before every launch; it exits 1 when it
+could not apply them (the stamp is then left as it was). Copies of the
+ready space keep their .raye-look.
+
+Run by raye-windows-prepare.timer a little after login, and every few
+hours after that. It always exits 0 so the timer just tries again later.
+"""
+import fcntl
+import hashlib
+import json
+import os
+import pwd
+import shutil
+import subprocess
+import sys
+import time
+
+ADDONS = "/usr/share/raye/windows"          # reg files, dxvk/, vkd3d-proton/
+VERSIONS = "/usr/share/raye/windows/versions.txt"
+REDIST = "/var/lib/raye/windows/redist"
+WINE_DIRS = ("/opt/wine-stable/bin",)
+WINESERVER_GLOBS = ("/usr/lib/x86_64-linux-gnu/wine/wineserver", "/usr/lib/wine/wineserver")
+SERVER_ROOT = "/tmp"                        # wineserver keeps its socket here
+WINE_DATA = "/usr/share/wine"               # where Wine looks for Mono and Gecko
+STAMP_FORMAT = "3"
+RAYE_WINE = "/opt/raye-wine"
+ENGINE_CONFS = ("/etc/raye/windows.conf",)   # then the person's own
+ENGINES = ("system", "raye")
+
+# the person's folders the space opens; Desktop stays a folder of its own
+FOLDERS = (("Documents", "XDG_DOCUMENTS_DIR"), ("Pictures", "XDG_PICTURES_DIR"),
+           ("Music", "XDG_MUSIC_DIR"), ("Videos", "XDG_VIDEOS_DIR"),
+           ("Downloads", "XDG_DOWNLOAD_DIR"))
+# DLL folders of the add-ons: (add-on, its folder, Windows folder)
+DLLS = (("dxvk", "x64", "system32"), ("dxvk", "x32", "syswow64"),
+        ("vkd3d-proton", "x64", "system32"), ("vkd3d-proton", "x86", "syswow64"))
+REDIST_ARCHS = ("x86", "x64")
+OLDER_KEYS = ("2005-x86", "2005-x64", "2008-x86", "2008-x64", "2010-x86", "2010-x64",
+              "2012-x86", "2012-x64", "2013-x86", "2013-x64")
+# year, the winetricks verbs it stands for, the DLLs then taken from it
+RUNTIMES = (
+    ("2005", "vcrun2005", "atl80 msvcm80 msvcp80 msvcr80 vcomp"),
+    ("2008", "vcrun2008", "atl90 msvcm90 msvcp90 msvcr90 vcomp90"),
+    ("2010", "vcrun2010", "atl100 msvcp100 msvcr100 vcomp100"),
+    ("2012", "vcrun2012", "atl110 msvcp110 msvcr110 vcomp110"),
+    ("2013", "vcrun2013", "atl120 msvcp120 msvcr120 vcomp120"),
+    ("14", "vcrun2015 vcrun2017 vcrun2019 vcrun2022",
+     "concrt140 msvcp140 msvcp140_1 msvcp140_2 msvcp140_atomic_wait msvcp140_codecvt_ids "
+     "vcamp140 vccorlib140 vcomp140 vcruntime140 vcruntime140_1"),
+)
+COMPONENTS_FILE = ".raye-components"
+XVFB_RUN = "xvfb-run"
+
+TIMEOUT_BOOT = 15 * 60
+TIMEOUT_REDIST = 10 * 60
+TIMEOUT_REG = 2 * 60
+TIMEOUT_WAIT = 2 * 60
+LOG_MAX = 1 << 20
+
+
+def home():
+    return os.environ.get("HOME") or pwd.getpwuid(os.getuid()).pw_dir
+
+
+def xdg(var, default):
+    value = os.environ.get(var, "")
+    return value if os.path.isabs(value) else os.path.join(home(), default)
+
+
+def base_dir():
+    return os.path.join(xdg("XDG_DATA_HOME", ".local/share"), "raye", "windows")
+
+
+def log_path():
+    return os.path.join(xdg("XDG_STATE_HOME", ".local/state"), "raye", "windows-prepare.log")
+
+
+def log(msg):
+    path = log_path()
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        if os.path.getsize(path) > LOG_MAX:
+            os.replace(path, path + ".old")
+    except OSError:
+        pass
+    try:
+        with open(path, "a") as f:
+            f.write("%s %s\n" % (time.strftime("%Y-%m-%dT%H:%M:%S"), msg))
+    except OSError:
+        pass
+
+
+def sha256(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def read_text(path):
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            return f.read()
+    except OSError:
+        return None
+
+
+def write_atomic(path, text):
+    tmp = "%s.%d.tmp" % (path, os.getpid())
+    with open(tmp, "w") as f:
+        f.write(text)
+    os.replace(tmp, path)
+
+
+def remove_tree(path):
+    """Removes a space or a half-built one. A link is removed, never
+    followed; links inside (z: to /, Documents to the home folder) are
+    removed as links too."""
+    if os.path.islink(path) or os.path.isfile(path):
+        os.unlink(path)
+    elif os.path.isdir(path):
+        shutil.rmtree(path)
+
+
+# ------------------------------------------------------------------ Wine
+
+class Wine:
+    def __init__(self, wine, server, inf, version, raye=False):
+        self.wine, self.server, self.inf, self.version = wine, server, inf, version
+        self.raye = raye
+
+
+def conf_engine(path):
+    """The last engine= line of a windows.conf, or None."""
+    value = None
+    for line in (read_text(path) or "").splitlines():
+        key, _, v = line.strip().partition("=")
+        if key.strip() == "engine" and v.strip() in ENGINES:
+            value = v.strip()
+    return value
+
+
+def engine():
+    """raye or system: which build of the layer runs Windows programs."""
+    choice = None
+    for path in ENGINE_CONFS + (os.path.join(xdg("XDG_CONFIG_HOME", ".config"), "raye",
+                                             "windows.conf"),):
+        choice = conf_engine(path) or choice
+    env = os.environ.get("RAYE_WINDOWS_ENGINE", "")
+    if env in ENGINES:
+        choice = env
+    raye = os.access(os.path.join(RAYE_WINE, "bin", "wine"), os.X_OK)
+    if choice == "system" and raye and not system_wine():
+        return "raye"
+    return "raye" if raye and choice != "system" else "system"
+
+
+def system_wine():
+    path = os.environ.get("PATH", "/usr/bin:/bin")
+    return shutil.which("wine", path=path) or next(
+        (os.path.join(d, "wine") for d in WINE_DIRS if os.access(os.path.join(d, "wine"), os.X_OK)),
+        None)
+
+
+def find_wine():
+    path = os.environ.get("PATH", "/usr/bin:/bin")
+    raye = engine() == "raye"
+    if raye:
+        path = os.path.join(RAYE_WINE, "bin")
+    wine = shutil.which("wine", path=path)
+    for d in WINE_DIRS:
+        if not wine and os.access(os.path.join(d, "wine"), os.X_OK):
+            wine = os.path.join(d, "wine")
+    if not wine:
+        return None
+    here = os.path.dirname(os.path.realpath(wine))
+    server = None
+    for cand in [shutil.which("wineserver", path=path), os.path.join(here, "wineserver")] \
+            + ([] if raye else list(WINESERVER_GLOBS)):
+        if cand and os.access(cand, os.X_OK):
+            server = cand
+            break
+    inf = None
+    for cand in (os.path.join(here, "..", "share", "wine", "wine.inf"),
+                 os.path.join(WINE_DATA, "wine.inf")):
+        if os.path.isfile(cand):
+            inf = os.path.normpath(cand)
+            break
+    try:
+        out = subprocess.run([wine, "--version"], capture_output=True, text=True,
+                             timeout=30, env=wine_env(None, None)).stdout
+    except (OSError, subprocess.SubprocessError):
+        out = ""
+    version = out.strip().split()[0] if out.strip() else ""
+    if version.startswith("wine-"):
+        version = version[len("wine-"):]
+    return Wine(wine, server, inf, version, raye)
+
+
+def wine_env(prefix, server, overrides="", screen=False):
+    """Wine with no display: nothing it starts can show a window. Wine's
+    menu builder is off in every call. With screen, xvfb-run gives it an
+    invisible one."""
+    env = {k: v for k, v in os.environ.items() if k not in ("DISPLAY", "WAYLAND_DISPLAY")}
+    env["WINEDEBUG"] = "-all"
+    env["WINEDLLOVERRIDES"] = ("winemenubuilder.exe=d" if screen else
+                               "winemenubuilder.exe=d;winex11.drv,winewayland.drv=d") + overrides
+    if prefix:
+        env["WINEPREFIX"] = prefix
+    if server:
+        env["WINESERVER"] = server
+    return env
+
+
+def run_hidden(wine, prefix, args, timeout, overrides="", screen=False):
+    """Runs a Wine command with no display, its output into the log.
+    True when it ended well in time."""
+    env = wine_env(prefix, wine.server, overrides, screen)
+    if screen:
+        args = [XVFB_RUN, "-a"] + list(args)
+    try:
+        os.makedirs(os.path.dirname(log_path()), exist_ok=True)
+        with open(log_path(), "a") as out:
+            r = subprocess.run(args, env=env, stdin=subprocess.DEVNULL, stdout=out,
+                               stderr=subprocess.STDOUT, timeout=timeout)
+        return r.returncode == 0
+    except subprocess.TimeoutExpired:
+        log("timed out: %s" % " ".join(args[1:2] or args))
+        stop_server(wine, prefix)
+        return False
+    except OSError as e:
+        log("could not run %s: %s" % (args[0], e))
+        return False
+
+
+def wait_server(wine, prefix):
+    """Lets every process of the space end (and the registry be saved)."""
+    if not wine.server:
+        return
+    try:
+        subprocess.run([wine.server, "-w"], env=wine_env(prefix, wine.server),
+                       stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL, timeout=TIMEOUT_WAIT)
+    except subprocess.TimeoutExpired:
+        stop_server(wine, prefix)
+    except OSError:
+        pass
+
+
+def stop_server(wine, prefix):
+    if not wine.server:
+        return
+    try:
+        subprocess.run([wine.server, "-k"], env=wine_env(prefix, wine.server),
+                       stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
+def server_running(prefix):
+    """True when a program of this space is running: its wineserver has
+    a socket named after the space folder's device and inode."""
+    try:
+        st = os.stat(prefix)
+    except OSError:
+        return False
+    sock = os.path.join(SERVER_ROOT, ".wine-%d" % os.getuid(),
+                        "server-%x-%x" % (st.st_dev, st.st_ino), "socket")
+    return os.path.exists(sock)
+
+
+# ------------------------------------------------------------------ add-ons
+
+def addons_for(version, table):
+    """(mono, gecko) Wine `version` looks for, from versions.txt of
+    raye-wine-addons: the longest first column equal to the version or
+    a prefix of it ending at a dot. None when no row matches."""
+    best = None
+    for line in (table or "").splitlines():
+        cols = line.split("#", 1)[0].split()
+        if len(cols) != 4:
+            continue
+        wine, mono, gecko, _ = cols
+        if version == wine or version.startswith(wine + "."):
+            if best is None or len(wine) > len(best[0]):
+                best = (wine, mono, gecko)
+    return (best[1], best[2]) if best else None
+
+
+def wine_data_dirs(wine):
+    dirs = [WINE_DATA]
+    if wine.inf:
+        d = os.path.dirname(wine.inf)
+        if d not in dirs:
+            dirs.insert(0, d)
+    return dirs
+
+
+def raye_addons():
+    """(mono, gecko) raye-wine ships, from its share/wine/raye/versions."""
+    found = {}
+    for line in (read_text(os.path.join(RAYE_WINE, "share", "wine", "raye", "versions"))
+                 or "").splitlines():
+        cols = line.split()
+        if len(cols) == 2:
+            found[cols[0]] = cols[1]
+    if "mono" in found and "gecko64" in found:
+        return found["mono"], found["gecko64"]
+    return None
+
+
+def runtime_overrides(wine, quiet=False):
+    """DLL overrides that keep Wine from asking to download Mono or
+    Gecko when the versions it wants are not installed."""
+    wanted = raye_addons() if wine.raye else addons_for(wine.version, read_text(VERSIONS))
+    mono = gecko = False
+    if wanted:
+        dirs = wine_data_dirs(wine)
+        mono = any(os.path.isdir(os.path.join(d, "mono", "wine-mono-" + wanted[0])) for d in dirs)
+        gecko = all(any(os.path.isdir(os.path.join(d, "gecko", "wine-gecko-%s-%s" % (wanted[1], arch)))
+                        for d in dirs) for arch in ("x86", "x86_64"))
+    off = []
+    if not mono:
+        off.append("mscoree")
+    if not gecko:
+        off.append("mshtml")
+    if off and not quiet:
+        log("Wine %s: %s not installed, left out" % (wine.version or "?", " and ".join(
+            {"mscoree": "Mono", "mshtml": "Gecko"}[o] for o in off)))
+    return ";" + ",".join(off) + "=" if off else ""
+
+
+def addon_dlls():
+    """[(source dll, Windows folder)] from DXVK and vkd3d-proton."""
+    found = []
+    for addon, sub, target in DLLS:
+        d = os.path.join(ADDONS, addon, sub)
+        try:
+            names = sorted(os.listdir(d))
+        except OSError:
+            continue
+        for name in names:
+            src = os.path.join(d, name)
+            if name.lower().endswith(".dll") and os.path.isfile(src) and not os.path.islink(src):
+                found.append((src, target))
+    return found
+
+
+def install_addons(prefix):
+    """Copies the DXVK and vkd3d-proton DLLs in; returns the registry
+    lines that make Wine use them."""
+    names = set()
+    windows = os.path.join(prefix, "drive_c", "windows")
+    for src, target in addon_dlls():
+        dest = os.path.join(windows, target)
+        if not os.path.isdir(dest):
+            continue
+        shutil.copyfile(src, os.path.join(dest, os.path.basename(src)))
+        names.add(os.path.basename(src)[:-4].lower())
+    if not names:
+        return ""
+    lines = ["", "[HKEY_CURRENT_USER\\Software\\Wine\\DllOverrides]"]
+    lines += ['"%s"="native"' % n for n in sorted(names)]
+    return "\n".join(lines) + "\n"
+
+
+def redist_files():
+    """The Visual C++ installers raye-windows-components kept, each still
+    the file that passed its check: [(path, year)], oldest first."""
+    text = read_text(os.path.join(REDIST, "components.json"))
+    try:
+        saved = json.loads(text) if text else {}
+    except ValueError:
+        saved = {}
+    if not isinstance(saved, dict):
+        return []
+    wanted = []
+    older = saved.get("older")
+    if isinstance(older, dict):
+        for key in OLDER_KEYS:
+            info = older.get(key)
+            if isinstance(info, dict) and info.get("name") == "vcredist-%s.exe" % key:
+                wanted.append((info, key.split("-")[0]))
+    files = saved.get("files")
+    if isinstance(files, dict):
+        for arch in REDIST_ARCHS:
+            info = files.get(arch)
+            if isinstance(info, dict) and info.get("name") == "vc_redist.%s.exe" % arch:
+                wanted.append((info, "14"))
+    good = []
+    for info, year in wanted:
+        path = os.path.join(REDIST, info["name"])
+        try:
+            if os.path.isfile(path) and not os.path.islink(path) and sha256(path) == info.get("sha256"):
+                good.append((path, year))
+        except OSError:
+            pass
+    return good
+
+
+def layer_copy(path):
+    """True for one of the layer's own DLLs: it says so in its DOS stub."""
+    try:
+        with open(path, "rb") as f:
+            head = f.read(0x60)
+    except OSError:
+        return False
+    return head[0x40:0x50] == b"Wine builtin DLL" or head[0x40:0x54] == b"Wine placeholder DLL"
+
+
+def set_aside(prefix, name, year):
+    """Moves the layer's copies of what this installer brings out of its
+    way. They claim Microsoft's own version numbers, so Windows Installer
+    would keep them and the program would never get Microsoft's file."""
+    windows = os.path.join(prefix, "drive_c", "windows")
+    x64 = "x64" in name
+    paths = []
+    if year in ("2005", "2008"):
+        sxs = os.path.join(windows, "winsxs")
+        lead = "%s_microsoft.vc%s0." % ("amd64" if x64 else "x86", "8" if year == "2005" else "9")
+        try:
+            for d in sorted(os.listdir(sxs)):
+                if d.startswith(lead):
+                    paths += [os.path.join(sxs, d, f) for f in sorted(os.listdir(os.path.join(sxs, d)))
+                              if f.lower().endswith(".dll")]
+        except OSError:
+            pass
+    else:
+        folder = os.path.join(windows, "system32" if x64 else "syswow64")
+        paths = [os.path.join(folder, dll + ".dll")
+                 for y, _, dlls in RUNTIMES if y == year for dll in dlls.split()]
+    moved = []
+    for path in paths:
+        if layer_copy(path):
+            os.replace(path, path + ".raye-layer")
+            moved.append(path)
+            # the installer skips an assembly whose manifest is already registered
+            manifest = os.path.join(os.path.dirname(os.path.dirname(path)), "manifests",
+                                    os.path.basename(os.path.dirname(path)) + ".manifest")
+            if year in ("2005", "2008") and manifest not in moved and os.path.isfile(manifest):
+                os.replace(manifest, manifest + ".raye-layer")
+                moved.append(manifest)
+    return moved
+
+
+def put_back(moved):
+    """After the installer: whatever it did not replace goes back."""
+    for path in moved:
+        if os.path.exists(path):
+            os.unlink(path + ".raye-layer")
+        else:
+            os.replace(path + ".raye-layer", path)
+
+
+def install_redist(wine, prefix, files, overrides):
+    """Runs each installer; returns the years whose every file went in."""
+    if not shutil.which(XVFB_RUN):
+        log("no xvfb-run: the space keeps Wine's own runtime")
+        return set()
+    temp = os.path.join(prefix, "drive_c", "windows", "temp")
+    os.makedirs(temp, exist_ok=True)
+    done, failed = set(), set()
+    for path, year in files:
+        name = os.path.basename(path)
+        copy = os.path.join(temp, name)
+        shutil.copyfile(path, copy)
+        switches = ["/install", "/quiet", "/norestart"] if year == "14" else ["/q"]
+        moved = set_aside(prefix, name, year)
+        if run_hidden(wine, prefix, [wine.wine, "C:\\windows\\temp\\" + name] + switches,
+                      TIMEOUT_REDIST, overrides, screen=True):
+            done.add(year)
+        else:
+            failed.add(year)
+            log("%s did not install, the space keeps Wine's own runtime" % name)
+        wait_server(wine, prefix)
+        put_back(moved)
+        try:
+            os.unlink(copy)
+        except OSError:
+            pass
+    return done - failed
+
+
+def runtime_reg(years):
+    """DllOverrides that load the installed runtimes' own DLLs."""
+    names = sorted(dll for year, _, dlls in RUNTIMES if year in years for dll in dlls.split())
+    if not names:
+        return ""
+    lines = ["Windows Registry Editor Version 5.00", "",
+             "[HKEY_CURRENT_USER\\Software\\Wine\\DllOverrides]"]
+    lines += ['"%s"="native,builtin"' % n for n in names]
+    return "\n".join(lines) + "\n"
+
+
+def components_line(years):
+    """The winetricks verbs this space already has, one line."""
+    verbs = [v for year, words, _ in RUNTIMES if year in years for v in words.split()]
+    text = read_text(os.path.join(REDIST, "components.json"))
+    try:
+        if text and json.loads(text).get("fonts") is True:
+            verbs.append("corefonts")
+    except (ValueError, AttributeError):
+        pass
+    return " ".join(verbs)
+
+
+# ------------------------------------------------------------------ folders
+
+def user_dirs():
+    """XDG_*_DIR from user-dirs.dirs, as absolute paths."""
+    dirs = {}
+    text = read_text(os.path.join(xdg("XDG_CONFIG_HOME", ".config"), "user-dirs.dirs")) or ""
+    for line in text.splitlines():
+        line = line.strip()
+        if not line.startswith("XDG_") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        value = value.strip().strip('"')
+        if value.startswith("$HOME"):
+            value = home() + value[len("$HOME"):]
+        if os.path.isabs(value):
+            dirs[key.strip()] = os.path.normpath(value)
+    return dirs
+
+
+def user_folder(prefix):
+    users = os.path.join(prefix, "drive_c", "users")
+    name = os.environ.get("USER") or pwd.getpwuid(os.getuid()).pw_name
+    if "/" not in name and name not in ("", ".", "..") and os.path.isdir(os.path.join(users, name)):
+        return os.path.join(users, name)
+    try:
+        for entry in sorted(os.listdir(users)):
+            p = os.path.join(users, entry)
+            if entry.lower() != "public" and os.path.isdir(p) and not os.path.islink(p):
+                return p
+    except OSError:
+        pass
+    return None
+
+
+def set_folders(prefix):
+    folder = user_folder(prefix)
+    if not folder:
+        return
+    desktop = os.path.join(folder, "Desktop")
+    if os.path.islink(desktop):
+        os.unlink(desktop)
+    os.makedirs(desktop, exist_ok=True)
+    # Wine swaps an empty folder for a link to the real desktop when it
+    # updates the space; a hidden file keeps it a folder
+    keep = os.path.join(desktop, ".raye-keep")
+    if not os.path.exists(keep):
+        open(keep, "w").close()
+    dirs = user_dirs()
+    real_home = os.path.normpath(home())
+    for name, key in FOLDERS:
+        target = dirs.get(key)
+        if not target or target == real_home or not os.path.isdir(target):
+            continue
+        path = os.path.join(folder, name)
+        if os.path.islink(path):
+            if os.readlink(path) == target:
+                continue
+            os.unlink(path)
+        elif os.path.isdir(path):
+            try:
+                os.rmdir(path)          # only when empty: files stay where they are
+            except OSError:
+                continue
+        elif os.path.exists(path):
+            continue
+        os.symlink(target, path)
+
+
+# ------------------------------------------------------------------ look
+
+def kde_groups(text):
+    groups, current = {}, None
+    for line in (text or "").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("["):
+            current = groups.setdefault(line, {})
+        elif current is not None and "=" in line:
+            key, value = line.split("=", 1)
+            current[key.strip()] = value.strip()
+    return groups
+
+
+def kde_files():
+    files = [os.path.join(xdg("XDG_CONFIG_HOME", ".config"), "kdeglobals")]
+    for d in (os.environ.get("XDG_CONFIG_DIRS") or "/etc/xdg").split(":"):
+        if os.path.isabs(d):
+            files.append(os.path.join(d, "kdeglobals"))
+    return files
+
+
+def kde_value(group, key):
+    """A kdeglobals value the way Plasma reads it: the person's file
+    first, then the system ones."""
+    for path in kde_files():
+        value = kde_groups(read_text(path)).get("[%s]" % group, {}).get(key)
+        if value is not None:
+            return value
+    return None
+
+
+def scheme():
+    """night or day, following the Plasma colour scheme."""
+    name = (kde_value("General", "ColorScheme") or "").lower()
+    if name == "rayeday":
+        return "day"
+    if name == "rayenight":
+        return "night"
+    rgb = (kde_value("Colors:Window", "BackgroundNormal") or "").split(",")
+    try:
+        r, g, b = (int(c) for c in rgb)
+    except ValueError:
+        return "night"
+    return "day" if (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 > 0.5 else "night"
+
+
+def output_scale():
+    """The largest scale of the screens KWin knows, or None."""
+    text = read_text(os.path.join(xdg("XDG_CONFIG_HOME", ".config"), "kwinoutputconfig.json"))
+    try:
+        data = json.loads(text) if text else None
+    except ValueError:
+        return None
+    scales = []
+    for section in data if isinstance(data, list) else []:
+        if isinstance(section, dict) and section.get("name") == "outputs":
+            for out in section.get("data") or []:
+                s = out.get("scale") if isinstance(out, dict) else None
+                if isinstance(s, (int, float)) and not isinstance(s, bool):
+                    scales.append(float(s))
+    return max(scales) if scales else None
+
+
+def x11_scale():
+    try:
+        return float(kde_value("KScreen", "ScaleFactor") or "")
+    except ValueError:
+        return None
+
+
+def log_pixels():
+    """LogPixels for Windows programs: 96 times the Plasma scale."""
+    if os.environ.get("XDG_SESSION_TYPE") == "x11":
+        scale = x11_scale() or output_scale()
+    else:
+        scale = output_scale() or x11_scale()
+    if not scale or scale != scale:
+        scale = 1.0
+    return max(96, min(480, int(round(96 * scale))))
+
+
+def reg_file(name):
+    return os.path.join(ADDONS, "raye-%s.reg" % name)
+
+
+def look_key():
+    name = scheme()
+    return "scheme=%s reg=%s dpi=%d" % (name, sha256(reg_file(name)), log_pixels()), name
+
+
+def look_reg(name, extra=""):
+    """The .reg text to import: the scheme's file, LogPixels, and what the
+    caller adds."""
+    text = read_text(reg_file(name)) or ""
+    text = text.rstrip("\n") + "\n\n[HKEY_CURRENT_USER\\Control Panel\\Desktop]\n"
+    text += '"LogPixels"=dword:%08x\n' % log_pixels()
+    return text + extra
+
+
+def import_reg(wine, prefix, text, overrides=""):
+    temp = os.path.join(prefix, "drive_c", "windows", "temp")
+    os.makedirs(temp, exist_ok=True)
+    path = os.path.join(temp, "raye-look.reg")
+    with open(path, "w", encoding="ascii", errors="replace") as f:
+        f.write(text)
+    try:
+        return run_hidden(wine, prefix, [wine.wine, "reg", "import",
+                                         "C:\\windows\\temp\\raye-look.reg"],
+                          TIMEOUT_REG, overrides)
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+
+def look(prefix, wine=None):
+    """Gives a space the current colours and scale; Wine only starts when
+    they changed."""
+    prefix = os.path.abspath(prefix)
+    if not os.path.isdir(os.path.join(prefix, "drive_c")):
+        print("raye-windows-prepare: %s is not a Windows space" % prefix, file=sys.stderr)
+        return 1
+    try:
+        key, name = look_key()
+    except OSError:
+        log("the colour files are missing")
+        return 1
+    stamp = os.path.join(prefix, ".raye-look")
+    if (read_text(stamp) or "").strip() == key:
+        return 0
+    wine = wine or find_wine()
+    if not wine:
+        return 1
+    running = server_running(prefix)
+    if not import_reg(wine, prefix, look_reg(name), runtime_overrides(wine, quiet=True)):
+        log("could not give %s its colours" % os.path.basename(prefix))
+        return 1
+    if not running:
+        wait_server(wine, prefix)
+    write_atomic(stamp, key + "\n")
+    return 0
+
+
+# ------------------------------------------------------------------ ready space
+
+def template_stamp(wine):
+    """What the ready space depends on, hashed into one line."""
+    parts = ["format " + STAMP_FORMAT, "wine " + wine.version]
+    if wine.raye:
+        parts.append("engine raye")
+    if wine.inf:
+        try:
+            st = os.stat(wine.inf)
+            parts.append("inf %d %d" % (int(st.st_mtime), st.st_size))
+        except OSError:
+            pass
+    for name in ("night", "day"):
+        try:
+            parts.append("reg %s %s" % (name, sha256(reg_file(name))))
+        except OSError:
+            parts.append("reg %s none" % name)
+    for addon in ("dxvk", "vkd3d-proton"):
+        parts.append("%s %s" % (addon, (read_text(os.path.join(ADDONS, addon, "VERSION"))
+                                        or "none").strip()))
+    parts.append("versions " + hashlib.sha256((read_text(VERSIONS) or "").encode()).hexdigest())
+    for d in wine_data_dirs(wine):
+        for kind in ("mono", "gecko"):
+            try:
+                parts.append("%s %s" % (kind, " ".join(sorted(os.listdir(os.path.join(d, kind))))))
+            except OSError:
+                pass
+    for path, _ in redist_files():
+        parts.append("redist " + sha256(path))
+    return STAMP_FORMAT + " " + hashlib.sha256("\n".join(parts).encode()).hexdigest()
+
+
+def build(wine, base, stamp):
+    template = os.path.join(base, ".template")
+    work = os.path.join(base, ".template.new")
+    if os.path.lexists(work):
+        remove_tree(work)
+    key, name = look_key()
+    os.makedirs(work)
+    overrides = runtime_overrides(wine)
+    log("preparing the Windows space (Wine %s)" % (wine.version or "?"))
+    if not run_hidden(wine, work, [wine.wine, "wineboot", "--init"], TIMEOUT_BOOT, overrides):
+        log("setting up the space failed, trying again later")
+        stop_server(wine, work)
+        remove_tree(work)
+        return False
+    wait_server(wine, work)
+    set_folders(work)
+    extra = "" if wine.raye else install_addons(work)
+    if not import_reg(wine, work, look_reg(name, extra), overrides):
+        log("could not write the space's settings, trying again later")
+        stop_server(wine, work)
+        remove_tree(work)
+        return False
+    wait_server(wine, work)
+    files = redist_files()
+    years = install_redist(wine, work, files, overrides) if files else set()
+    if years and not import_reg(wine, work, runtime_reg(years), overrides):
+        log("could not point the space at the Visual C++ runtimes")
+        years = set()
+    wait_server(wine, work)
+    write_atomic(os.path.join(work, COMPONENTS_FILE), components_line(years) + "\n")
+    write_atomic(os.path.join(work, ".raye-look"), key + "\n")
+    write_atomic(os.path.join(work, ".raye-ready"), stamp + "\n")
+    old = os.path.join(base, ".template.old")
+    if os.path.lexists(old):
+        remove_tree(old)
+    if os.path.lexists(template):
+        os.rename(template, old)
+    os.rename(work, template)
+    if os.path.lexists(old):
+        remove_tree(old)
+    log("ready")
+    return True
+
+
+def prepare():
+    if os.geteuid() == 0:
+        return 0                        # the space belongs to a person, not to root
+    base = base_dir()
+    os.makedirs(base, exist_ok=True)
+    # Closing this file RELEASES the lock, so it has to stay open for
+    # the whole run -- and then be closed, which it was not: the lock was
+    # released by the garbage collector. That is a habit of CPython, not a
+    # guarantee (a live traceback referencing this frame is enough to keep
+    # it), and it leaked a descriptor in every caller that runs prepare()
+    # more than once. "with" says both things at once.
+    with open(os.path.join(base, ".prepare.lock"), "w") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            return 0                    # already running
+        return prepare_locked(base)
+
+
+# raised when the way Start entries get their icons changes: every space
+# is scanned again once, so the entries an older version made are redone
+ICONS_STAMP = "2"
+
+
+def rescan_icons(base, run=subprocess.run):
+    stamp = os.path.join(base, ".raye-icons")
+    if (read_text(stamp) or "").strip() == ICONS_STAMP:
+        return
+    for entry in sorted(os.listdir(base)):
+        if entry.startswith(".") or not os.path.isdir(os.path.join(base, entry, "drive_c")):
+            continue
+        try:
+            run(["raye-windows", "scan", entry], stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=120)
+        except (OSError, subprocess.SubprocessError) as e:
+            log("icons of %s: %s" % (entry, e))
+            return
+    write_atomic(stamp, ICONS_STAMP + "\n")
+
+
+def prepare_locked(base):
+    """prepare() once the space is ours; it holds the lock throughout."""
+    rescan_icons(base)
+    # left by an older version of this script when it was interrupted
+    for entry in os.listdir(base):
+        if entry.startswith((".template.broken.", ".template.old.")):
+            remove_tree(os.path.join(base, entry))
+    wine = find_wine()
+    if not wine:
+        return 0
+    try:
+        stamp = template_stamp(wine)
+        template = os.path.join(base, ".template")
+        if (read_text(os.path.join(template, ".raye-ready")) or "").strip() == stamp:
+            look(template, wine)
+            return 0
+        build(wine, base, stamp)
+    except OSError as e:
+        log("stopped: %s" % e)
+    return 0
+
+
+def main(argv):
+    if len(argv) == 2 and argv[0] == "--look":
+        return look(argv[1])
+    if argv == ["--help"]:
+        print(__doc__.split("\n\n")[1])
+        return 0
+    if argv:
+        print("usage: raye-windows-prepare [--look SPACE]", file=sys.stderr)
+        return 2
+    return prepare()
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

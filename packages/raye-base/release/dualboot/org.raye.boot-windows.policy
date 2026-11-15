@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<policyconfig>
+  <vendor>Raye Linux</vendor>
+  <action id="org.raye.boot-windows">
+    <description>Start Windows next time</description>
+    <description xml:lang="fr">Démarrer Windows la prochaine fois</description>
+    <message>Restarting into Windows needs your permission</message>
+    <message xml:lang="fr">Redémarrer sur Windows demande votre autorisation</message>
+    <!-- the same as restarting: allowed for whoever sits at the computer -->
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>yes</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/libexec/raye-boot-windows</annotate>
+  </action>
+</policyconfig>

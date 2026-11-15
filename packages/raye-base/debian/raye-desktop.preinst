@@ -1,0 +1,23 @@
+#!/bin/sh
+# Files of other packages that raye-desktop puts its own in place of (the
+# Windows set of user folders, once it ships): the stock file moves aside
+# to <file>.ubuntu, so updates of its package keep landing next to ours.
+#
+# The list is filled in at build time with what the build really shipped
+# (debian/raye-release-paths, "divert").
+set -e
+
+DIVERT="#RAYE_DIVERT#"
+
+case "$1" in
+    install|upgrade)
+        for f in $DIVERT; do
+            dpkg-divert --package raye-desktop --add --rename \
+                --divert "$f.ubuntu" "$f"
+        done
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

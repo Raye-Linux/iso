@@ -1,0 +1,5 @@
+# Security updates. They land on security.ubuntu.com first; the archive
+# servers below carry the same -security pocket a few minutes later.
+http://security.ubuntu.com/ubuntu/	priority:1
+http://ca.archive.ubuntu.com/ubuntu/	priority:2
+http://gb.archive.ubuntu.com/ubuntu/	priority:3

@@ -1,0 +1,5 @@
+# Start menu search defaults. Apps to get come from Raye Store, under its
+# own "Raye Store" entry; settings come from Raye Settings' own entry.
+[Plugins]
+krunner_appstreamEnabled=false
+krunner_systemsettingsEnabled=false

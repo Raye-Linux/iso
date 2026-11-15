@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- File types of Windows programs Raye knows (their profile names them in
+     opens=), so Files can hand them to the program. Patterns only: the
+     contents of these files say nothing a sniffer could use. -->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-roblox-place">
+    <comment>Roblox place</comment>
+    <comment xml:lang="fr">Emplacement Roblox</comment>
+    <alias type="application/x-roblox-rbxl"/>
+    <alias type="application/x-roblox-rbxlx"/>
+    <glob pattern="*.rbxl"/>
+    <glob pattern="*.rbxlx"/>
+  </mime-type>
+  <mime-type type="application/x-roblox-model">
+    <comment>Roblox model</comment>
+    <comment xml:lang="fr">Modèle Roblox</comment>
+    <alias type="application/x-roblox-rbxm"/>
+    <alias type="application/x-roblox-rbxmx"/>
+    <glob pattern="*.rbxm"/>
+    <glob pattern="*.rbxmx"/>
+  </mime-type>
+</mime-info>

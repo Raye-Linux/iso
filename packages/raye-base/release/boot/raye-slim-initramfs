@@ -1,0 +1,97 @@
+#!/bin/sh
+# Leaves out of the initramfs the drivers a Raye PC never starts from:
+# network cards (network boot, NFS root), InfiniBand, Fibre Channel and
+# iSCSI adapters, and the firmware only they use. MODULES=most puts them
+# all in: two thirds of the modules and most of the firmware, which the
+# boot loader reads through the firmware at every start. Disks, USB,
+# keyboards and screens stay, so the disk still starts in another PC.
+#
+# Nothing is left out on the live system, with MODULES other than most,
+# when the disk is opened over the network (a Tang server), or with
+# RAYE_INITRAMFS_NETWORK=yes in a file of /etc/initramfs-tools/conf.d.
+PREREQ=""
+prereqs() { echo "$PREREQ"; }
+case "$1" in
+prereqs) prereqs; exit 0 ;;
+esac
+
+export LC_ALL=C
+
+# the tests point these at a fake system
+root=${RAYE_SLIM_ROOT:-}
+modinfo=${RAYE_SLIM_MODINFO:-modinfo}
+
+[ "${MODULES:-most}" = most ] || exit 0
+[ -n "${DESTDIR:-}" ] && [ -n "${MODULESDIR:-}" ] || exit 0
+[ -e "$root/usr/share/initramfs-tools/scripts/casper" ] && exit 0
+if cat "$root/etc/initramfs-tools/initramfs.conf" "$root"/etc/initramfs-tools/conf.d/* 2>/dev/null |
+        grep -Eq '^[[:space:]]*(RAYE_INITRAMFS_NETWORK="?yes|BOOT="?nfs)'; then
+    exit 0
+fi
+if [ -z "$root" ] && [ -r /etc/crypttab ] && command -v clevis >/dev/null 2>&1; then
+    for source in $(grep -v '^[[:space:]]*#' /etc/crypttab | awk '{ print $2 }'); do
+        case "$source" in
+        UUID=*) dev=$(blkid -U "${source#UUID=}" 2>/dev/null) ;;
+        /dev/*) dev=$source ;;
+        *) dev="" ;;
+        esac
+        [ -n "$dev" ] || continue
+        clevis luks list -d "$dev" 2>/dev/null | grep -q tang && exit 0
+    done
+fi
+
+mods="$DESTDIR$MODULESDIR"
+[ -d "$mods/kernel" ] || exit 0
+tmp=$(mktemp -d) || exit 0
+trap 'rm -rf "$tmp"' EXIT
+
+(cd "$mods" && find kernel -name '*.ko*' -type f) | sort > "$tmp/present"
+grep -E '^kernel/(drivers/net|drivers/infiniband|drivers/target|drivers/nvme/target|net/sunrpc|fs/(nfs|nfs_common|lockd|smb))/|^kernel/drivers/scsi/(be2iscsi|bfa|bnx2fc|bnx2i|csiostor|cxgbi|elx|fcoe|fnic|libfc|lpfc|qedf|qedi|qla2xxx|qla4xxx|snic)/|^kernel/drivers/scsi/(iscsi_tcp|libiscsi|libiscsi_tcp|iscsi_boot_sysfs)\.ko|^kernel/drivers/nvme/host/nvme-(fc|rdma|tcp)\.ko' \
+    "$tmp/present" > "$tmp/out" || true
+[ -s "$tmp/out" ] || exit 0
+
+# whatever needs a module that goes cannot load either: it goes too
+if [ -r "$root$MODULESDIR/modules.dep" ]; then
+    awk -v present="$tmp/present" -v out="$tmp/out" '
+        BEGIN {
+            while ((getline m < present) > 0) here[m] = 1
+            while ((getline m < out) > 0) gone[m] = 1
+        }
+        { sub(":", ""); deps[$1] = $0 }
+        END {
+            do {
+                more = 0
+                for (m in deps) {
+                    if (!(m in here) || (m in gone)) continue
+                    n = split(deps[m], d, " ")
+                    for (i = 2; i <= n; i++)
+                        if (d[i] in gone) { gone[m] = 1; more = 1; break }
+                }
+            } while (more)
+            for (m in gone) print m
+        }' "$root$MODULESDIR/modules.dep" | sort > "$tmp/out.new"
+    mv "$tmp/out.new" "$tmp/out"
+fi
+comm -23 "$tmp/present" "$tmp/out" > "$tmp/kept"
+
+# firmware that only the modules which go asked for
+fw() { sed "s|^|$mods/|" "$1" | xargs -r "$modinfo" -F firmware 2>/dev/null | sort -u; }
+fw "$tmp/out" > "$tmp/fw-out"
+fw "$tmp/kept" > "$tmp/fw-kept"
+if [ -r "$root$MODULESDIR/modules.builtin.modinfo" ]; then
+    tr '\0' '\n' < "$root$MODULESDIR/modules.builtin.modinfo" |
+        sed -n 's/^[^=]*\.firmware=//p' >> "$tmp/fw-kept"
+    sort -u -o "$tmp/fw-kept" "$tmp/fw-kept"
+fi
+comm -23 "$tmp/fw-out" "$tmp/fw-kept" | while read -r name; do
+    case "$name" in
+    "" | /* | *..*) continue ;;
+    esac
+    rm -f "$DESTDIR/lib/firmware/$name" "$DESTDIR/lib/firmware/$name.zst" "$DESTDIR/lib/firmware/$name.xz"
+done
+[ -d "$DESTDIR/lib/firmware" ] && find "$DESTDIR/lib/firmware" -mindepth 1 -type d -empty -delete
+
+sed "s|^|$mods/|" "$tmp/out" | xargs -r rm -f
+find "$mods/kernel" -mindepth 1 -type d -empty -delete
+[ "${verbose:-}" = y ] && echo "raye-slim-initramfs: left out $(wc -l < "$tmp/out") modules"
+exit 0

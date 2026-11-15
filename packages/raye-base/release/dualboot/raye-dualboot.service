@@ -1,0 +1,10 @@
+[Unit]
+Description=Show "Restart to Windows" when Windows is installed
+ConditionPathIsDirectory=/sys/firmware/efi
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/raye-dualboot
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=Restore Points
+Name[fr]=Points de restauration
+GenericName=Advanced snapshot settings
+GenericName[fr]=Réglages avancés des instantanés
+Comment=Create, browse and restore system restore points
+Comment[fr]=Créer, parcourir et restaurer les points de restauration du système
+Exec=btrfs-assistant-launcher
+Icon=btrfs-assistant
+Categories=System;Settings;
+Terminal=false
+Keywords=btrfs;snapshot;snapper;restore;rollback;
+Keywords[fr]=btrfs;instantané;snapper;restauration;retour;

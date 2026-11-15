@@ -1,0 +1,160 @@
+#!/usr/bin/python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""The two Cloudflare rules that make dl.rayelinux.com a folder browser.
+
+    cloudflare-dl-rules            show the rules it would set, and what is there now
+    cloudflare-dl-rules --apply    set them (the other rules of the phases are kept)
+
+R2 does not serve index.html for a folder. On the zone rayelinux.com,
+for the host dl.rayelinux.com only:
+
+  rewrite   (http_request_transform)        a path ending in / is fetched
+                                            as that path + index.html
+  redirect  (http_request_dynamic_redirect) a folder without its final /
+                                            gets a 301 to the same with /
+
+The folders of dists/ are named one by one, read from the local tree:
+Release, InRelease, Packages and the by-hash files have no dot in their
+names, so a general "no dot means a folder" rule must never reach
+dists/. Under pool/ every file has a dot, and the general rule is safe.
+
+The token is CF_API_TOKEN in $R2_ENV (root, 0600). It goes to curl on
+its standard input, never on a command line, and is never printed.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import pathlib
+import stat
+import subprocess
+import sys
+
+sys.dont_write_bytecode = True  # no __pycache__ in the repo
+HERE = pathlib.Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+import raye_pages  # noqa: E402
+import raye_publish as rp  # noqa: E402
+
+API = "https://api.cloudflare.com/client/v4"
+ZONE = "rayelinux.com"
+HOST = "dl.rayelinux.com"
+PATH = "http.request.uri.path"
+REF_INDEX, REF_SLASH = "raye_dl_folder_index", "raye_dl_folder_slash"
+
+
+def token(path):
+    st = pathlib.Path(path).stat()
+    if st.st_mode & (stat.S_IRWXG | stat.S_IRWXO):
+        raise rp.PublishError(f"{path} must have mode 0600")
+    for line in pathlib.Path(path).read_text().splitlines():
+        key, sep, value = line.strip().partition("=")
+        if sep and key.strip() == "CF_API_TOKEN" and value.strip():
+            return value.strip().strip('"').strip("'")
+    raise rp.PublishError(f"{path}: no CF_API_TOKEN")
+
+
+def call(tok, method, path, body=None):
+    """(HTTP status, JSON) of one API call; the token goes on stdin."""
+    cmd = ["curl", "-sS", "-K", "-", "-X", method, "-w", "\n%{http_code}",
+           "-H", "Content-Type: application/json", f"{API}{path}"]
+    config = f'header = "Authorization: Bearer {tok}"\n'
+    if body is not None:
+        # the body goes in the config as well, so stdin carries both
+        config += "data-binary = " + json.dumps(json.dumps(body)) + "\n"
+    p = subprocess.run(cmd, input=config, capture_output=True, text=True)
+    if p.returncode:
+        raise rp.PublishError(f"curl: {p.stderr.strip() or p.returncode}")
+    text, _, code = p.stdout.rpartition("\n")
+    try:
+        return int(code), json.loads(text or "{}")
+    except ValueError as e:
+        raise rp.PublishError(f"{method} {path}: not JSON ({e})")
+
+
+def dists_folders(tree):
+    """URL paths of the folders of dists/, without their final /."""
+    tree = pathlib.Path(tree)
+    found = ["/apt", "/apt/dists", "/apt/pool"]
+    for d in sorted(p for p in (tree / "dists").rglob("*") if p.is_dir()):
+        found.append("/apt/" + d.relative_to(tree).as_posix())
+    return found
+
+
+def quoted(values):
+    return "{" + " ".join(json.dumps(v) for v in values) + "}"
+
+
+def wanted_rules(tree):
+    index = {
+        "ref": REF_INDEX,
+        "description": "dl.rayelinux.com: a folder is served by its index.html",
+        "expression": f'(http.host eq "{HOST}" and ends_with({PATH}, "/"))',
+        "action": "rewrite",
+        "action_parameters": {"uri": {"path": {"expression": f'concat({PATH}, "{raye_pages.INDEX}")'}}},
+        "enabled": True,
+    }
+    slash = {
+        "ref": REF_SLASH,
+        "description": "dl.rayelinux.com: a folder without its final / gets it",
+        "expression": (f'(http.host eq "{HOST}" and not ends_with({PATH}, "/") and '
+                       f'({PATH} in {quoted(dists_folders(tree))} or '
+                       f'(starts_with({PATH}, "/apt/pool/") and not {PATH} contains ".")))'),
+        "action": "redirect",
+        "action_parameters": {"from_value": {
+            "status_code": 301, "preserve_query_string": True,
+            "target_url": {"expression": f'concat("https://{HOST}", {PATH}, "/")'}}},
+        "enabled": True,
+    }
+    return {"http_request_transform": index, "http_request_dynamic_redirect": slash}
+
+
+def merged(existing, rule):
+    """The rules of a phase with ours put in, everything else kept as it is."""
+    keep = [{k: v for k, v in r.items() if k in ("ref", "description", "expression", "action",
+                                                  "action_parameters", "enabled", "logging")}
+            for r in existing if r.get("ref") != rule["ref"]]
+    return keep + [rule]
+
+
+def main(argv=None):
+    conf = rp.settings()
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--apply", action="store_true", help="set the rules")
+    args = ap.parse_args(argv)
+    try:
+        tok = token(conf["R2_ENV"])
+        code, zones = call(tok, "GET", f"/zones?name={ZONE}")
+        if code != 200 or not zones.get("result"):
+            raise rp.PublishError(f"zone {ZONE} not found ({code})")
+        zone = zones["result"][0]["id"]
+        for phase, rule in wanted_rules(pathlib.Path(conf["STAGE"]) / "apt").items():
+            code, cur = call(tok, "GET", f"/zones/{zone}/rulesets/phases/{phase}/entrypoint")
+            existing = cur.get("result", {}).get("rules", []) if code == 200 else []
+            if code not in (200, 404):
+                raise rp.PublishError(f"{phase}: {code} {cur.get('errors')}")
+            others = [r.get("description", r.get("id")) for r in existing if r.get("ref") != rule["ref"]]
+            mine = [r for r in existing if r.get("ref") == rule["ref"]]
+            same = bool(mine) and all(mine[0].get(k) == rule[k] for k in ("expression", "action",
+                                                                          "action_parameters"))
+            print(f"{phase}: {len(others)} other rule(s) kept"
+                  + (f" ({'; '.join(others)})" if others else "")
+                  + (", ours already set" if same else ", ours to " + ("update" if mine else "add")))
+            print(f"  if {rule['expression']}")
+            if not args.apply or same:
+                continue
+            code, out = call(tok, "PUT", f"/zones/{zone}/rulesets/phases/{phase}/entrypoint",
+                             {"rules": merged(existing, rule)})
+            if code != 200 or not out.get("success"):
+                raise rp.PublishError(f"{phase}: refused, {code} {out.get('errors')}")
+            print("  set")
+    except (rp.PublishError, OSError) as e:
+        print(f"cloudflare-dl-rules: {e}", file=sys.stderr)
+        return 1
+    if not args.apply:
+        print("nothing changed (--apply sets them)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

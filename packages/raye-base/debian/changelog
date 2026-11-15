@@ -1,3 +1,10 @@
+raye-base (0.5.7~beta1) resolute; urgency=medium
+
+  * The boot menu shows for 3 seconds, with a "Raye Linux (safe
+    graphics)" entry that boots with nomodeset.
+
+ -- techoraye <190692880+techoraye@users.noreply.github.com>  Sun, 15 Nov 2026 14:58:53 +0000
+
 raye-base (0.5.6~beta1) resolute; urgency=medium
 
   * Tests check that ntsync is loaded at boot and handed to the person at

@@ -1,3 +1,10 @@
+raye-base (0.5.9~beta1) resolute; urgency=medium
+
+  * "Restart to Windows" only shows when Windows is really there: a firmware
+    entry left behind after Windows was erased no longer counts.
+
+ -- techoraye <190692880+techoraye@users.noreply.github.com>  Sun, 15 Nov 2026 23:42:50 +0000
+
 raye-base (0.5.8~beta1) resolute; urgency=medium
 
   * USB sticks and external USB disks keep at most 32 MB of a copy waiting

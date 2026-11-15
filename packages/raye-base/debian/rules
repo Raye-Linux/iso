@@ -21,6 +21,7 @@ ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
 	sh release/tuning/tests/test-raye-vm-cursor.sh
 	sh release/grub/tests/test-raye-update-grub.sh
 	sh release/tuning/tests/test-raye-start-if-needed.sh
+	sh release/dualboot/tests/test-boot-windows.sh
 	sh release/fsck/tests/test-raye-fsck-message.sh
 	sh release/kernel/tests/test-raye-kernel-setup.sh
 	python3 -B -m unittest discover -s release/tpm/tests

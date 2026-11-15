@@ -1,3 +1,11 @@
+raye-base (0.5.8~beta1) resolute; urgency=medium
+
+  * USB sticks and external USB disks keep at most 32 MB of a copy waiting
+    in memory: the copy bar follows what is really written, and copies and
+    ejects no longer seem frozen.
+
+ -- techoraye <190692880+techoraye@users.noreply.github.com>  Sun, 15 Nov 2026 20:43:24 +0000
+
 raye-base (0.5.7~beta1) resolute; urgency=medium
 
   * The boot menu shows for 3 seconds, with a "Raye Linux (safe

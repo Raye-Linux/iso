@@ -1,0 +1,6 @@
+# USB sticks and external USB disks: keep at most 32 MB of a copy waiting in
+# memory. Without this, a copy fills gigabytes of RAM in seconds, the copy bar
+# reaches 100 % while nothing is on the drive yet, and the copy or the eject
+# then seems frozen while the real write happens. With it, the bar follows
+# what is really written and ejecting is quick. Internal disks are untouched.
+ACTION=="add|change", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", ENV{ID_BUS}=="usb", TEST=="bdi/max_bytes", ATTR{bdi/strict_limit}="1", ATTR{bdi/max_bytes}="33554432"

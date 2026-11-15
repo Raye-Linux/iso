@@ -134,6 +134,10 @@ def test_new_command_line_reaches_the_menu(tmp_path):
     (tmp_path / "etc/grub.d/05_raye_boot_picture").write_text("#!/bin/sh\n")
     subprocess.run(["sh", "-e", "-c", block], check=True)
     assert runs(tmp_path) == 3
+    # and a new safe graphics entry (11_raye_safe_graphics)
+    (tmp_path / "etc/grub.d/11_raye_safe_graphics").write_text("#!/bin/sh\n")
+    subprocess.run(["sh", "-e", "-c", block], check=True)
+    assert runs(tmp_path) == 4
 
 
 def test_failed_update_grub_tries_again_next_time(tmp_path):

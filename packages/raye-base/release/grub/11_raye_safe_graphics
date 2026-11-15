@@ -1,0 +1,51 @@
+#!/bin/sh
+# "Raye Linux (safe graphics)": the normal entry once more, with nomodeset.
+#
+# Some graphics cards (an AMD RX 550 was the first report) leave the screen
+# black once their driver takes over. With nomodeset the kernel keeps the
+# picture the firmware set up, the same as the "Safe graphics" entry of the
+# install USB, so a person can still reach the desktop, pick a working
+# driver or send a report.
+#
+# The entry is not written by hand: 10_linux knows the root disk, the
+# encryption, the subvolume and the kernel and initrd names. It runs again
+# here with nomodeset added to the command line, and its first entry (the
+# plain one, newest kernel) is kept under a new title and a new id, so the
+# saved default and the recordfail state of the normal entry stay its own.
+# Nothing here is a boot binary: Secure Boot sees the same signed GRUB and
+# the same signed kernel.
+set -e
+
+linux=${RAYE_GRUB_LINUX:-${grub_mkconfig_dir:-/etc/grub.d}/10_linux}
+[ -x "$linux" ] || exit 0
+
+case " $GRUB_CMDLINE_LINUX_DEFAULT $GRUB_CMDLINE_LINUX " in
+    *" nomodeset "*) safe=$GRUB_CMDLINE_LINUX_DEFAULT ;;
+    *) safe="$GRUB_CMDLINE_LINUX_DEFAULT nomodeset" ;;
+esac
+
+# 10_linux reads its settings from the environment grub-mkconfig exported;
+# its "Found linux image" lines were already printed by the real pass.
+GRUB_CMDLINE_LINUX_DEFAULT=$safe GRUB_DISABLE_RECOVERY=true \
+    "$linux" 2>/dev/null | awk -v q="'" '
+    # the first entry, kept whole or not at all: a block cut short would
+    # leave grub.cfg unreadable, and then no entry starts at all
+    !inside && /^menuentry / {
+        inside = 1
+        # the first quoted word is the title, the last one the entry id
+        n = split($0, part, q)
+        if (n < 5) exit
+        part[2] = "Raye Linux (safe graphics)"
+        id = part[n - 1]
+        sub(/^gnulinux-(simple-)?/, "", id)
+        part[n - 1] = "raye-safe-graphics-" id
+        block = part[1]
+        for (i = 2; i <= n; i++) block = block q part[i]
+        next
+    }
+    inside {
+        block = block "\n" $0
+        if ($0 == "}") { done = 1; exit }
+    }
+    END { if (done) print block }
+'

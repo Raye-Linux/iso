@@ -85,11 +85,6 @@ echo "Generating grub configuration file ..." >&2
 echo "Warning: os-prober will be executed to detect other bootable partitions." >&2
 exit 0
 STUB
-    cat > "$bin/grub-editenv" <<'STUB'
-#!/bin/sh
-[ -e "$CTL/grubenv" ] && cat "$CTL/grubenv"
-exit 0
-STUB
     for g in grub-set-default grub-reboot; do
         cat > "$bin/$g" <<STUB
 #!/bin/sh
@@ -348,9 +343,8 @@ check 'quiet_output' "no apt, GRUB or raye-tpm lines on stdout/stderr"
 check 'grep -q "os-prober" "$(logfile)" && grep -q "raye-tpm says" "$(logfile)"' "tool output kept in the log"
 check 'called "raye-tpm bind-next --kernel raye"' "binding predicted for the Raye kernel"
 check '[ ! -d "$(state keys)" ]' "no passphrase copy when the prediction worked"
-check 'called "grub-set-default gnulinux-$ubuntu-advanced-$uuid"' "Ubuntu's kernel stays the default"
-check 'called "grub-reboot gnulinux-$raye-advanced-$uuid"' "one trial boot of the Raye kernel"
-check 'grep -qx "GRUB_DISABLE_SUBMENU=y" "$R/etc/default/grub.d/60-raye-kernel.cfg"' "the kernels sit in the main menu"
+check 'called "grub-set-default gnulinux-advanced-$uuid>gnulinux-$ubuntu-advanced-$uuid"' "Ubuntu's kernel stays the default"
+check 'called "grub-reboot gnulinux-advanced-$uuid>gnulinux-$raye-advanced-$uuid"' "one trial boot of the Raye kernel"
 check '[ "$(cat "$(state trial)")" = "$(cat "$R/proc/sys/kernel/random/boot_id")" ]' "trial remembers the boot that set it"
 check 'grep -qx "GRUB_DEFAULT=saved" "$R/etc/default/grub.d/60-raye-kernel.cfg"' "GRUB keeps the saved entry"
 teardown
@@ -441,7 +435,7 @@ mkdir -p "$R/var/lib/raye-kernel"; : > "$(state trial)"
 add_tpm_disk vda3 yes
 run finish
 check '[ $rc = 0 ] && out_is "Raye kernel kept"' "only Raye's line"
-check 'called "grub-set-default gnulinux-$raye-advanced-$uuid"' "it becomes the default"
+check 'called "grub-set-default 0"' "it becomes the default: the menu's first line, not inside Advanced options"
 check 'called "raye-tpm prune"' "old bindings pruned"
 check 'called "raye-tpm bind-next --kernel ubuntu"' "Ubuntu's kernel keeps a binding"
 check '[ ! -e "$(state trial)" ] && [ ! -e "$(state failed)" ]' "trial done"
@@ -556,19 +550,6 @@ mkdir -p "$R/var/lib/raye-kernel"; : > "$(state pending)"
 echo "[key 1]" > "$CTL/list-new"
 run finish
 check '[ -e "$(state pending)" ]' "pending kept"
-teardown
-
-setup "finish: a computer set up before, default inside the submenu"
-mkdir -p "$R/etc/default/grub.d"
-echo GRUB_DEFAULT=saved > "$R/etc/default/grub.d/60-raye-kernel.cfg"
-echo "saved_entry=gnulinux-advanced-$uuid>gnulinux-$raye-advanced-$uuid" > "$CTL/grubenv"
-run finish
-check 'called "grub-set-default gnulinux-$raye-advanced-$uuid"' "the default leaves the submenu"
-check 'grep -qx "GRUB_DISABLE_SUBMENU=y" "$R/etc/default/grub.d/60-raye-kernel.cfg"' "the kernels move to the main menu"
-check 'called "update-grub"' "menu rebuilt"
-: > "$CALLS"
-run finish
-check '! called "update-grub" && ! called "grub-set-default"' "done once only"
 teardown
 
 # ================================================================ remove

@@ -62,11 +62,21 @@ if [ "$1" = configure ]; then
     safe="$DPKG_ROOT/etc/grub.d/11_raye_safe_graphics"
     if [ -z "$DPKG_ROOT" ] && [ -e /boot/grub/grub.cfg ] && [ -x /usr/sbin/update-grub ] \
         && [ -r "$cfg" ]; then
-        # a default saved inside the old "Advanced options" submenu
-        # ("submenu>entry") keeps only the entry, now in the main menu
+        # The menu keeps "Advanced options"; it must open on its first line.
+        # 0.5.11 to 0.5.13 moved the kernels out of the submenu: undo that.
+        sed -i '/^GRUB_DISABLE_SUBMENU=y$/d' /etc/default/grub.d/60-raye-kernel.cfg 2>/dev/null || true
+        # A Raye kernel kept as the default by its own entry (inside the submenu,
+        # "submenu>entry", or moved out by 0.5.13)
+        # opened the menu there: the first line starts the newest kernel, so
+        # when that is the Raye one it becomes the default. Never during the
+        # one trial boot of a new Raye kernel.
         saved=$(grub-editenv - list 2>/dev/null | sed -n 's/^saved_entry=//p')
+        newest=$(ls /boot/vmlinuz-* 2>/dev/null | sed 's|.*/vmlinuz-||' | sort -V | tail -n 1)
         case $saved in
-        *">"*) grub-set-default "${saved#*>}" || true ;;
+        *-raye-*)
+            if [ ! -e /var/lib/raye-kernel/trial ] && [ "${newest%-raye}" != "$newest" ]; then
+                grub-set-default 0 || true
+            fi ;;
         esac
         sum=$(cat "$cfg" "$picture" "$safe" 2>/dev/null | md5sum)
         if [ "$sum" != "$(cat "$stamp" 2>/dev/null)" ] && update-grub; then

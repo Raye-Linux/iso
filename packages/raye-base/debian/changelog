@@ -1,3 +1,11 @@
+raye-base (0.5.15~beta1) resolute; urgency=high
+
+  * The start menu keeps its usual layout ("Raye Linux GNU/Linux", then
+    "Advanced options") and opens on its first line, which starts the
+    Raye kernel. Undoes the kernels-in-the-main-menu change of 0.5.11-0.5.13.
+
+ -- techoraye <190692880+techoraye@users.noreply.github.com>  Mon, 16 Nov 2026 14:27:46 +0000
+
 raye-base (0.5.14~beta1) resolute; urgency=medium
 
   * The advanced restore point tool (Btrfs Assistant) is hidden from the

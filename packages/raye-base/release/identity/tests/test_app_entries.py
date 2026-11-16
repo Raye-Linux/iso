@@ -20,11 +20,12 @@ HIDDEN = {
     "org.kde.kwalletmanager.desktop": "kwalletmanager5 %F",
     "synaptic.desktop": "synaptic-pkexec",
     "winetricks.desktop": "winetricks --gui",
+    # Settings > Recovery covers it; kept for support from a terminal
+    "btrfs-assistant.desktop": "btrfs-assistant-launcher",
 }
 RENAMED = {
     "org.kde.kdeconnect.app.desktop": ("Your Phone", "Votre téléphone", "kdeconnect-app"),
     "org.kde.partitionmanager.desktop": ("Disk Management", "Gestion des disques", "partitionmanager"),
-    "btrfs-assistant.desktop": ("Restore Points", "Points de restauration", "btrfs-assistant-launcher"),
 }
 BRANDS = re.compile(r"kde|plasma|wine|kwallet|synaptic", re.I)
 SHOWN_KEYS = re.compile(r"^(name|genericname|comment)(\[.*\])?$")

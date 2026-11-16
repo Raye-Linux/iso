@@ -12,3 +12,6 @@ Categories=System;Settings;
 Terminal=false
 Keywords=btrfs;snapshot;snapper;restore;rollback;
 Keywords[fr]=btrfs;instantané;snapper;restauration;retour;
+# Settings > System > Recovery does this the Raye way ("Go back to an
+# earlier state"); the advanced tool stays for support, from a terminal.
+NoDisplay=true

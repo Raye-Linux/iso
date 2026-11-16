@@ -1,3 +1,11 @@
+raye-base (0.5.13~beta1) resolute; urgency=high
+
+  * The start menu no longer opens on "Advanced options" on any computer:
+    every kernel sits in the main menu, and a default saved inside the old
+    submenu is moved over when this update installs.
+
+ -- techoraye <190692880+techoraye@users.noreply.github.com>  Mon, 16 Nov 2026 13:37:15 +0000
+
 raye-base (0.5.12~beta1) resolute; urgency=high
 
   * The start menu no longer opens inside "Advanced options": the kernels

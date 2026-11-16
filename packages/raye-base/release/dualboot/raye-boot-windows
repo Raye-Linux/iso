@@ -7,12 +7,15 @@
 #
 # A firmware boot entry is not proof that Windows is still there: when
 # Windows was erased to install Raye, its entry often stays in the firmware.
-# An entry only counts if the partition it points to still exists and, when
-# that partition is mounted, still holds Windows' boot loader.
+# An entry only counts if a Windows partition (NTFS or BitLocker) is still on
+# a disk, the partition the entry points to still exists and, when that
+# partition is mounted, it still holds Windows' boot loader. (Erasing Windows
+# to install Raye can leave its loader on the shared boot partition.)
 set -u
 EFIBOOTMGR=${EFIBOOTMGR:-efibootmgr}
 BY_PARTUUID=${BY_PARTUUID:-/dev/disk/by-partuuid}
 FINDMNT=${FINDMNT:-findmnt}
+LSBLK=${LSBLK:-lsblk}
 
 # entries that look like Windows: by name, or by Windows' own loader
 candidates=$("$EFIBOOTMGR" -v 2>/dev/null |
@@ -32,7 +35,12 @@ still_there() {
     [ -e "$mnt/EFI/Microsoft/Boot/bootmgfw.efi" ]
 }
 
+windows_partition() {
+    "$LSBLK" -rno FSTYPE 2>/dev/null | grep -qix -E 'ntfs|ntfs3|bitlocker'
+}
+
 entry=
+windows_partition || candidates=
 for e in $candidates; do
     if still_there "$e"; then
         entry=$e

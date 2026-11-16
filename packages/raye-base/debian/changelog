@@ -1,3 +1,11 @@
+raye-base (0.5.10~beta1) resolute; urgency=medium
+
+  * "Restart to Windows" also needs a Windows partition (NTFS or BitLocker)
+    on a disk: a loader left on the boot partition after Windows was erased
+    no longer counts.
+
+ -- techoraye <190692880+techoraye@users.noreply.github.com>  Mon, 16 Nov 2026 00:16:36 +0000
+
 raye-base (0.5.9~beta1) resolute; urgency=medium
 
   * "Restart to Windows" only shows when Windows is really there: a firmware

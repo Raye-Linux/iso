@@ -47,6 +47,7 @@ failed=$state/failed
 keep_dir=$state/keys
 grubcfg=$R/etc/default/grub.d/60-raye-kernel.cfg
 grub_menu=$R/boot/grub/grub.cfg
+grub_env=$R/boot/grub/grubenv
 crypttab=$R/etc/crypttab
 tpm_tool=$R/usr/libexec/raye-tpm
 tpm_flag=$R/var/lib/raye-tpm/needs-password   # left by the boot check
@@ -128,7 +129,6 @@ install_kernel() {
 
 # ----------------------------------------------------------------- GRUB
 # menu ids: the "Advanced options" submenu, and one kernel in it
-submenu_id() { grep -o "gnulinux-advanced-[0-9a-f-]*" "$grub_menu" 2>/dev/null | head -n 1; }
 entry_id() {
     [ -n "$1" ] || return 0
     grep -o "gnulinux-$1-advanced-[0-9a-f-]*" "$grub_menu" 2>/dev/null | head -n 1
@@ -281,16 +281,30 @@ tpm_needs_password() {
     [ "$(cached_tpm_state)" = stale ]
 }
 
+# Computers set up before: the default pointed inside "Advanced options",
+# so the start menu opened in that submenu. The kernels now sit in the main
+# menu and the default loses its "submenu>" part. Run at every boot, once
+# it is done it does nothing.
+flatten_menu() {
+    [ -f "$grubcfg" ] || return 0
+    grep -qx 'GRUB_DISABLE_SUBMENU=y' "$grubcfg" && return 0
+    printf 'GRUB_DISABLE_SUBMENU=y\n' >> "$grubcfg"
+    saved=$(grub-editenv "$grub_env" list 2>/dev/null | sed -n 's/^saved_entry=//p')
+    case $saved in
+    *">"*) quietly grub-set-default "${saved#*>}" ;;
+    esac
+    quietly update-grub
+}
+
 # ---------------------------------------------------------------- steps
 # Ubuntu's kernel stays the default; the Raye kernel gets one boot
 try_once() {
     mkdir -p "$(dirname "$grubcfg")"
-    printf 'GRUB_DEFAULT=saved\n' > "$grubcfg"
+    printf 'GRUB_DEFAULT=saved\nGRUB_DISABLE_SUBMENU=y\n' > "$grubcfg"
     quietly update-grub
-    sub=$(submenu_id)
     old=$(entry_id "$(newest generic)")
     new=$(entry_id "$(newest raye)")
-    if [ -z "$sub" ] || [ -z "$old" ] || [ -z "$new" ]; then
+    if [ -z "$old" ] || [ -z "$new" ]; then
         warn "the start menu has no entry for both kernels: nothing tried"
         return 1
     fi
@@ -301,7 +315,7 @@ try_once() {
     *) note "no prediction for the Raye kernel: the password is asked once"
        keep_tpm_keys ;;
     esac
-    if quietly grub-set-default "$sub>$old" && quietly grub-reboot "$sub>$new"; then
+    if quietly grub-set-default "$old" && quietly grub-reboot "$new"; then
         # the boot that set it up: finish leaves it alone until the next one
         boot_id > "$trial"
         return 0
@@ -388,6 +402,7 @@ rebind)
     ;;
 finish)
     root_only finish
+    flatten_menu
     if [ -f "$trial" ]; then
         # run again on the boot that set it up (a package upgrade restarts
         # this unit, or someone ran it by hand): the trial boot is still ahead
@@ -400,9 +415,8 @@ finish)
         case "$(uname -r)" in
         *-raye)
             # it started: it is now the kernel this computer boots
-            sub=$(submenu_id)
             id=$(entry_id "$(uname -r)")
-            [ -n "$sub" ] && [ -n "$id" ] && quietly grub-set-default "$sub>$id"
+            [ -n "$id" ] && quietly grub-set-default "$id"
             rebind_tpm
             # the bindings no kernel uses any more go; Ubuntu's kernel
             # keeps one (raye-tpm does nothing when it already has it)

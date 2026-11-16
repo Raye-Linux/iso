@@ -1,3 +1,11 @@
+raye-base (0.5.12~beta1) resolute; urgency=high
+
+  * The start menu no longer opens inside "Advanced options": the kernels
+    sit in the main menu and the Raye kernel is selected there. Computers
+    set up before are moved over at the next start.
+
+ -- techoraye <190692880+techoraye@users.noreply.github.com>  Mon, 16 Nov 2026 12:55:59 +0000
+
 raye-base (0.5.11~beta1) resolute; urgency=high
 
   * Plugging in a screen no longer freezes the session: PowerDevil no longer

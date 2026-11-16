@@ -1,3 +1,10 @@
+raye-base (0.5.11~beta1) resolute; urgency=high
+
+  * Plugging in a screen no longer freezes the session: PowerDevil no longer
+    probes every display connection (DDC/CI) for monitor brightness.
+
+ -- techoraye <190692880+techoraye@users.noreply.github.com>  Mon, 16 Nov 2026 12:39:56 +0000
+
 raye-base (0.5.10~beta1) resolute; urgency=medium
 
   * "Restart to Windows" also needs a Windows partition (NTFS or BitLocker)

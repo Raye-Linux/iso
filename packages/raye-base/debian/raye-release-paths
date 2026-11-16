@@ -82,6 +82,7 @@ raye-system  release/tuning/60-raye-laptop-wake.rules  usr/lib/udev/rules.d/60-r
 raye-system  release/tuning/60-raye-ntsync.rules   usr/lib/udev/rules.d/60-raye-ntsync.rules
 raye-system  release/tuning/60-raye-iosched.rules  usr/lib/udev/rules.d/60-raye-iosched.rules
 raye-system  release/tuning/60-raye-usb-writeback.rules  usr/lib/udev/rules.d/60-raye-usb-writeback.rules
+raye-system  release/tuning/60-raye-powerdevil.conf  usr/lib/environment.d/60-raye-powerdevil.conf
 raye-system  release/tuning/raye-mglru.conf        usr/lib/tmpfiles.d/raye-mglru.conf
 raye-system  ?release/tuning/raye-net.conf          usr/lib/modules-load.d/raye-net.conf
 raye-system  release/tuning/journald.conf          usr/lib/systemd/journald.conf.d/50-raye.conf

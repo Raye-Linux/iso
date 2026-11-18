@@ -10,3 +10,5 @@ text/html=firefox.desktop
 application/xhtml+xml=firefox.desktop
 # "Get" links in search results open the Raye Store
 x-scheme-handler/appstream=org.raye.store.desktop
+# a .deb opens the small installer of the Raye Store
+application/vnd.debian.binary-package=org.raye.store.install.desktop

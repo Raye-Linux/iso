@@ -1,6 +1,7 @@
 [Unit]
 Description=Install the graphics driver this computer needs
-ConditionPathExists=!/var/lib/raye/drivers-done
+ConditionPathExists=|!/var/lib/raye/drivers-done
+ConditionPathExists=|/var/lib/raye/drivers-nvidia-panel
 # No network-online.target here: wanted from multi-user.target it held
 # every start, up to a minute without a network, even once the driver
 # is in and this unit is skipped. It waits for the network itself.

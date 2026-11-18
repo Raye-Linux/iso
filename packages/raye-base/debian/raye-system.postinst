@@ -95,6 +95,14 @@ if [ "$1" = configure ]; then
     fi
 fi
 
+# a PC that got the NVIDIA driver before the NVIDIA Control Panel was asked
+# for: raye-drivers installs the panel at the next start
+if [ "$1" = configure ] &&
+   dpkg-query -W -f='${db:Status-Status} ${Package}\n' 'nvidia-driver-*' 2>/dev/null | grep -q '^installed ' &&
+   ! dpkg-query -W -f='${db:Status-Status}' nvidia-settings 2>/dev/null | grep -q '^installed'; then
+    mkdir -p /var/lib/raye && touch /var/lib/raye/drivers-nvidia-panel
+fi
+
 #DEBHELPER#
 
 exit 0

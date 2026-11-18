@@ -12,6 +12,19 @@
 
 set -u
 done_file=/var/lib/raye/drivers-done
+# set by raye-system's postinst on a PC that has the NVIDIA driver and no
+# NVIDIA Control Panel (installed before the panel was asked for)
+panel_file=/var/lib/raye/drivers-nvidia-panel
+
+# the NVIDIA Control Panel only, once
+if [ -e "$panel_file" ] && [ "${1:-}" != --again ]; then
+    getent hosts archive.ubuntu.com >/dev/null 2>&1 || exit 75
+    apt-get update -q || exit 75
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends nvidia-settings || exit 1
+    rm -f "$panel_file"
+    exit 0
+fi
+
 # --again: asked for from Raye Settings, look even if done once already
 [ "${1:-}" = --again ] || { [ -e "$done_file" ] && exit 0; }
 command -v ubuntu-drivers >/dev/null || exit 0
@@ -33,6 +46,12 @@ if [ -z "$modules" ]; then
     finish "skipped $recommended (unsigned)"
 fi
 
+# nvidia-settings is only a Recommends of the driver; it is the NVIDIA
+# Control Panel in Start
+panel=
+case $recommended in nvidia-driver-*) panel=nvidia-settings ;; esac
+
 apt-get update -q || exit 75
-DEBIAN_FRONTEND=noninteractive apt-get install -y -q "$recommended" "$modules" || exit 1
+# shellcheck disable=SC2086  # empty when there is no panel to add
+DEBIAN_FRONTEND=noninteractive apt-get install -y -q "$recommended" "$modules" $panel || exit 1
 finish "installed $recommended $modules"

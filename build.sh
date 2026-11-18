@@ -130,9 +130,10 @@ add_wine_debs() {
 # Packages with compiled code are built against resolute's libraries, in
 # a resolute tree of their own; the plain ones are built on the host.
 # archive comes before files, which builds against libraye-archive-dev
+# account: raye-desktop depends on raye-account (Raye account, since 0.5.4)
 # raye-scx (game mode's scheduler) needs packages/raye-scx/upstream, which
 # fetch-scx.sh fills once; the build itself does not touch the network.
-compiled_sources() { echo "$src/installer $src/settings $src/store $src/theme $src/archive $src/files $src/apps $here/packages/raye-scx"; }
+compiled_sources() { echo "$src/installer $src/settings $src/store $src/theme $src/archive $src/files $src/apps $src/account $here/packages/raye-scx"; }
 
 make_devroot() {
     [ -x "$devroot/usr/bin/dpkg-buildpackage" ] && return

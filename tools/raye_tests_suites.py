@@ -220,10 +220,13 @@ THEME_BUILT = (LOG + "holds FOUR ctest runs -- style \"out of 8\", qml "
 # "88% tests passed, 1 tests failed out of 8", then "dh_auto_test: error:
 # ... returned exit code 2" (line 1448) and dpkg-buildpackage failed. No
 # ISO comes out of that. settings2.log is the same build once green.
+# Re-measured on the 2026-11-18 build: settings gained sixteen test files and
+# moved its add_test lines since the 2026-11-07 figures.
 SETTINGS_BUILT = (
-    LOG + 'ends "100% tests passed, 0 tests failed out of 45", and the qml '
-    "entry is Start 45 of the forty-five. Their failure STOPS the "
-    "build: in settings.log (2026-11-01) Test #4 search was red (line "
+    "iso-build-20261118.log (2026-11-18) -- the build that produced the "
+    'image -- ends "100% tests passed, 0 tests failed out of 69" (line '
+    "10098), and the qml entry is Start 69 of the sixty-nine. Their "
+    "failure STOPS the build: in settings.log (2026-11-01) Test #4 search was red (line "
     "1324), the run "
     'ended "88% tests passed, 1 tests failed out of 8" (1439), then '
     '"dh_auto_test: error: ... returned exit code 2" (1448) and '
@@ -698,18 +701,18 @@ for _n in ("version", "storage-clean", "reset-settings"):
           env=SET_ENV, count="shell", timeout=300)
 skipped("settings/qtest", "settings",
         "CMakeLists.txt: the test-<name> QtTest programs",
-        no_build("settings/CMakeLists.txt:255",
-                 SETTINGS_BUILT + "✅ It covers 40 of 40: Start 2 "
-                 "accessibility through Start 41 updatestatus are exactly "
-                 "the forty test_*.cpp of tests/, and Starts 42-44 "
-                 "(reset_settings, storage_clean, version) are the shell "
-                 "entries beside them. The FATAL_ERROR at line 236 stops a "
-                 "build whose glob goes empty, so the forty cannot quietly "
-                 "become fewer."))
+        no_build("settings/CMakeLists.txt:256",
+                 SETTINGS_BUILT + "✅ It covers 56 of 56: Start 2 "
+                 "accessibility through Start 57 windowsdebug are exactly "
+                 "the fifty-six test_*.cpp of tests/, and Starts 58-68 "
+                 "(autologin through version) are the shell entries beside "
+                 "them. The FATAL_ERROR at line 241 stops a build whose "
+                 "glob goes empty, so the fifty-six cannot quietly become "
+                 "fewer."))
 skipped("settings/qml", "settings",
         "CMakeLists.txt: add_test(qml) -- raye-settings --check-qml",
-        no_build("settings/CMakeLists.txt:268",
-                 SETTINGS_BUILT + "It covers 1 of 1: \"Start 45: qml\" "
+        no_build("settings/CMakeLists.txt:271",
+                 SETTINGS_BUILT + "It covers 1 of 1: \"Start 69: qml\" "
                  "IS this suite, and it is the best-evidenced entry of the "
                  "whole set."))
 

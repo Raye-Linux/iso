@@ -4,7 +4,7 @@
 #
 #   raye-kernel-setup status    enrolled | pending | trial | failed |
 #                               tpm-needs-password | not-enrolled |
-#                               no-secure-boot
+#                               no-secure-boot | nvidia
 #                               (not-enrolled: not set up, key or not;
 #                               tpm-needs-password: the TPM no longer
 #                               opens an encrypted disk by itself)
@@ -78,6 +78,14 @@ is_root() { [ "$(id -u)" = 0 ]; }
 boot_id() { cat "$boot_id_file" 2>/dev/null; }
 secure_boot() { mokutil --sb-state 2>/dev/null | grep -q "SecureBoot enabled"; }
 enrolled() { mokutil --test-key "$cert" 2>&1 | grep -q "already enrolled"; }
+
+# NVIDIA's driver as raye-drivers installs it: modules Ubuntu built and
+# signed for its own kernel, which the Raye kernel cannot load. Until the
+# Raye kernel ships its own NVIDIA modules, switching would leave the PC on
+# the fallback driver, and the trial boot would keep it ("it started").
+nvidia_prebuilt() {
+    ls "$R"/var/lib/dpkg/info/linux-modules-nvidia-*.list >/dev/null 2>&1
+}
 
 # ------------------------------------------------------------- packages
 in_archive() { apt-cache show linux-image-raye >/dev/null 2>&1; }
@@ -329,6 +337,7 @@ status)
     if [ -f "$trial" ]; then echo trial
     elif [ -f "$failed" ]; then echo failed
     elif tpm_needs_password; then echo tpm-needs-password
+    elif [ ! -f "$pending" ] && nvidia_prebuilt; then echo nvidia
     elif ! secure_boot; then echo no-secure-boot
     # enrolled: the key is in and the kernel goes in at the next boot.
     # A key left in the firmware with nothing queued is not that.
@@ -341,6 +350,10 @@ tpm-status)
     ;;
 enroll)
     root_only enroll
+    if nvidia_prebuilt; then
+        warn "the Raye kernel is not available with the NVIDIA driver yet: nothing changed"
+        exit 1
+    fi
     mkdir -p "$state"
     rm -f "$failed"            # trying again
     if ! secure_boot || enrolled; then

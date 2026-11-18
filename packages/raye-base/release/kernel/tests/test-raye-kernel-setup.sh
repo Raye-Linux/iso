@@ -255,6 +255,25 @@ run status
 check 'out_is trial' "a trial boot outranks the TPM state"
 teardown
 
+setup "status and enroll: NVIDIA driver with prebuilt modules"
+# Raye installs NVIDIA's driver with the modules Ubuntu signed for its own
+# kernel: on the Raye kernel they would not load, the trial boot would still
+# "start" on the fallback driver, and the PC would keep a kernel with no
+# NVIDIA driver. Until the Raye kernel has its modules, the switch is refused.
+mkdir -p "$R/var/lib/dpkg/info"
+: > "$R/var/lib/dpkg/info/linux-modules-nvidia-580-generic-hwe-26.04.list"
+run status
+check 'out_is nvidia' "nvidia expected while NVIDIA's prebuilt modules are installed"
+run enroll
+check '[ $rc != 0 ]' "enroll must refuse on an NVIDIA PC"
+check '! called "mokutil --import"' "no key queued on an NVIDIA PC"
+check '! called "apt-get install"' "no kernel installed on an NVIDIA PC"
+check 'grep -q "NVIDIA" "$T/err"' "the refusal names NVIDIA"
+mkdir -p "$R/var/lib/raye-kernel"; : > "$(state trial)"
+run status
+check 'out_is trial' "a switch already under way keeps its own state"
+teardown
+
 # ============================================================ tpm-status
 setup "tpm-status: no encrypted disk"
 run tpm-status

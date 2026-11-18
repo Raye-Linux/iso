@@ -1,0 +1,12 @@
+[Unit]
+Description=Tell the boot menu the graphics of this start-up work
+Documentation=file:///etc/grub.d/09_raye_graphics
+After=display-manager.service
+ConditionPathExists=/boot/grub/grubenv
+
+[Service]
+Type=simple
+ExecStart=/usr/libexec/raye-graphics-ok
+
+[Install]
+WantedBy=graphical.target

@@ -1,3 +1,12 @@
+raye-base (0.5.16~beta1) resolute; urgency=high
+
+  * Graphics ladder: when a start never reaches the desktop twice in a row,
+    the next one tries amdgpu.dc=0, then nomodeset. Installs made in Safe
+    graphics leave nomodeset (800x600) for amdgpu.dc=0, with nomodeset
+    coming back by itself if the screen stays black.
+
+ -- techoraye <190692880+techoraye@users.noreply.github.com>  Wed, 18 Nov 2026 11:55:25 +0000
+
 raye-base (0.5.15~beta1) resolute; urgency=high
 
   * The start menu keeps its usual layout ("Raye Linux GNU/Linux", then

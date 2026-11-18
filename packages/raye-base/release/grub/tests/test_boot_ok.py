@@ -25,7 +25,10 @@ def test_runs_in_the_offline_update_start():
 
 def test_clears_recordfail_once_boot_is_mounted():
     u = unit()
-    assert u["Service"]["ExecStart"] == "/usr/bin/grub-editenv /boot/grub/grubenv unset recordfail"
+    lines = [l.split("=", 1)[1] for l in UNIT.read_text().splitlines() if l.startswith("ExecStart=")]
+    assert "/usr/bin/grub-editenv /boot/grub/grubenv unset recordfail" in lines
+    # an update start is not a failed graphics start (09_raye_graphics)
+    assert "/usr/bin/grub-editenv /boot/grub/grubenv set raye_gfx_fails=0" in lines
     assert "local-fs.target" in u["Unit"]["After"].split()
     assert u["Unit"]["DefaultDependencies"] == "no"
 

@@ -95,6 +95,9 @@ raye-system  release/grub/50-raye.cfg            etc/default/grub.d/50-raye.cfg
 raye-system  ?release/grub/01_raye_repair        etc/grub.d/01_raye_repair
 raye-system  release/grub/05_raye_boot_picture  etc/grub.d/05_raye_boot_picture
 raye-system  release/grub/11_raye_safe_graphics etc/grub.d/11_raye_safe_graphics
+raye-system  release/grub/09_raye_graphics      etc/grub.d/09_raye_graphics
+raye-system  release/grub/raye-graphics-ok      usr/libexec/raye-graphics-ok
+raye-system  release/grub/raye-graphics-ok.service usr/lib/systemd/system/raye-graphics-ok.service  no-start
 raye-system  ?release/grub/30_raye_windows       etc/grub.d/30_raye_windows
 raye-system  release/grub/raye-update-grub       usr/sbin/update-grub  divert
 raye-system  release/grub/raye-grub-titles       usr/libexec/raye-grub-titles

@@ -14,6 +14,8 @@ ConditionPathExists=/boot/grub/grubenv
 [Service]
 Type=oneshot
 ExecStart=/usr/bin/grub-editenv /boot/grub/grubenv unset recordfail
+# an update start is not a graphics failure (09_raye_graphics)
+ExecStart=/usr/bin/grub-editenv /boot/grub/grubenv set raye_gfx_fails=0
 
 [Install]
 WantedBy=system-update.target

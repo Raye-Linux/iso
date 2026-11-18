@@ -1,0 +1,42 @@
+#!/bin/sh
+# The graphics ladder: what the kernel is told about the graphics card,
+# chosen again at every start from what happened at the last ones.
+#
+#   level 0 (default)  nothing: the graphics driver as it comes
+#   level 1            amdgpu.dc=0: the older display path of AMD cards,
+#                      for cards (an RX 550 was the first report) that
+#                      leave the screen black with the newer one
+#   level 2            nomodeset: the picture the firmware set up, like the
+#                      "Safe graphics" entry of the install USB
+#
+# Each start counts one try in the boot menu's state (grubenv); reaching the
+# desktop (raye-graphics-ok) clears it. After two starts in a row where
+# nobody reached the desktop, the next start goes one level down, so a black
+# screen costs two restarts, never a reinstall. A level that reached the
+# desktop is kept. The words land on the normal entries through $raye_gfx,
+# written into the kernel command line by 50-raye.cfg.
+#
+# GRUB can only write its state on a plain /boot (ext4, FAT): elsewhere
+# (btrfs, LVM, a RAID) nothing is printed here and every start is level 0,
+# as before.
+set -e
+fs=$(${grub_probe:-grub-probe} --target=fs "${RAYE_BOOT_DIR:-/boot}" 2>/dev/null || true)
+case $fs in
+ext2|ext3|ext4|fat) ;;
+*) exit 0 ;;
+esac
+cat <<'GRUB'
+# the graphics ladder (09_raye_graphics)
+if [ "${raye_gfx_fails}" = 2 ]; then
+  if [ "${raye_gfx_level}" = 1 ]; then set raye_gfx_level=2
+  elif [ "${raye_gfx_level}" != 2 ]; then set raye_gfx_level=1
+  fi
+  set raye_gfx_fails=0
+fi
+if [ "${raye_gfx_fails}" = 1 ]; then set raye_gfx_fails=2; else set raye_gfx_fails=1; fi
+if [ "${raye_gfx_level}" = 2 ]; then set raye_gfx=nomodeset
+elif [ "${raye_gfx_level}" = 1 ]; then set raye_gfx=amdgpu.dc=0
+else set raye_gfx=
+fi
+if [ "${have_grubenv}" = true ]; then save_env raye_gfx_level raye_gfx_fails; fi
+GRUB

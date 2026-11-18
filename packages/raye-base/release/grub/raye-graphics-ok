@@ -1,0 +1,28 @@
+#!/bin/sh
+# Someone reached the desktop: the graphics level of this start works.
+# Clears the try the boot menu counted (09_raye_graphics) once a graphical
+# session of a person (not the sign-in screen) is open, within an hour.
+set -u
+ENV=${RAYE_GRUBENV:-/boot/grub/grubenv}
+LOGINCTL=${LOGINCTL:-loginctl}
+TRIES=${RAYE_GFX_TRIES:-720}
+[ -e "$ENV" ] || exit 0
+i=0
+while [ "$i" -lt "$TRIES" ]; do
+    # the subshell answers 0 only when such a session was found
+    if "$LOGINCTL" list-sessions --no-legend 2>/dev/null | {
+            while read -r id _; do
+                [ -n "$id" ] || continue
+                info=$("$LOGINCTL" show-session "$id" -p Class -p Type -p State 2>/dev/null)
+                case $info in *Class=user*) ;; *) continue ;; esac
+                case $info in *Type=wayland*|*Type=x11*) ;; *) continue ;; esac
+                case $info in *State=active*|*State=online*) exit 0 ;; esac
+            done
+            exit 1
+        }; then
+        exec grub-editenv "$ENV" set raye_gfx_fails=0
+    fi
+    i=$((i + 1))
+    sleep "${RAYE_GFX_WAIT:-5}"
+done
+exit 0

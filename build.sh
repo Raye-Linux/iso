@@ -446,6 +446,75 @@ Pin-Priority: 1001
 EOF
 }
 
+# Raye rebuilds a few Ubuntu packages (plasma-workspace, plasma-desktop...) with
+# its own patches, versioned "+raye". Two things break the image when Ubuntu
+# publishes a newer point release of them, measured on 2026-11-18 (Plasma 6.6.7):
+#  - the local build folder has no Release file, so the "o=Raye" pins of
+#    raye-pins.pref cannot reach it, and Ubuntu's 6.6.7 beats Raye's 6.6.6;
+#  - the other 6.6.7 packages (powerdevil...) need the 6.6.7 libraries, which
+#    Raye's 6.6.6 does not provide.
+# Same shape as the kernel pin: simulate first, pin only if it fails, and the
+# file never ships (clean_image removes it). The real fix is to rebase the Raye
+# patches on the new point release; this keeps the image consistent until then.
+HOLD_PIN=etc/apt/preferences.d/99raye-build-hold
+pin_raye_rebuilds() {
+    local dump raye p v hold
+    rm -f "$root/$HOLD_PIN"
+    if in_root apt-get install -q --simulate "$@" > /dev/null 2>&1; then
+        echo "ok: the package list installs without any build pin"
+        return 0
+    fi
+    # every version of every package (apt-cache dumpavail shows the candidate
+    # only, which hides the very Raye rebuilds this is about); the local
+    # folder is read in place by apt, it is not copied to the lists
+    dump=$(cat "$root"/var/lib/apt/lists/*_Packages "$root"/var/cache/raye-local/Packages 2>/dev/null || true)
+    raye=$(awk '/^Package:/{p=$2} /^Version:/{if ($2 ~ /\+raye/) print p}' <<<"$dump" | sort -u)
+    if [ -z "$raye" ]; then
+        echo "!! the package list does not install, and no Raye rebuild is involved" >&2
+        in_root apt-get install -q --simulate "$@" 2>&1 | tail -15 >&2
+        return 1
+    fi
+    # Raye's version of each rebuilt package
+    declare -A rv=()
+    while read -r p v; do rv[$p]=$v; done < <(
+        awk '/^Package:/{p=$2} /^Version:/{if ($2 ~ /\+raye/) print p, $2}' <<<"$dump" | sort -V)
+    # Ubuntu versions of other packages that need a NEWER build of a rebuilt
+    # package than Raye has (powerdevil 6.6.7 needs libkworkspace6-6 >= 6.6.7):
+    # those are held, apt falls back to the version that fits. Holding the
+    # whole point release is NOT possible: the archive keeps only the newest
+    # update, and Raye's own packages were built against parts of it.
+    hold=$(awk '/^Package:/{p=$2} /^Source:/{src=$2} /^Version:/{v=$2} /^(Pre-)?Depends:/{d=d","substr($0,index($0,":")+1)}
+                /^$/{ if (v !~ /\+raye/) { n=split(d,a,/[,|]/); for(i=1;i<=n;i++) { x=a[i]; if (x !~ /\(>= /) continue
+                    nm=x; sub(/^ +/,"",nm); sub(/[ (:].*/,"",nm); mv=x; sub(/.*\(>= */,"",mv); sub(/\).*/,"",mv); print (src ? src : p), v, nm, mv } } p=v=d=src="" }' <<<"$dump" |
+        while read -r p v dep min; do
+            [ -n "${rv[$dep]:-}" ] || continue
+            if dpkg --compare-versions "$min" gt "${rv[$dep]}"; then echo "$p $v"; fi
+        done | sort -u) || true
+    # a held binary drags its whole source package at that version: powerdevil
+    # 6.6.4 needs powerdevil-data (= 6.6.4), so 6.6.7 of the data must go too
+    hold=$(awk 'NR==FNR {h[$1" "$2]=1; next}
+                /^Package:/{p=$2} /^Source:/{src=$2} /^Version:/{v=$2}
+                /^$/{ if (((src ? src : p)" "v) in h) print p, v; p=v=src="" }' \
+               <(printf '%s\n' "$hold") - <<<"$dump" | sort -u) || true
+    {
+        echo "# Build-time only: clean_image removes this file. See pin_raye_rebuilds in iso/build.sh."
+        echo "Package: ${!rv[*]}"
+        echo "Pin: version /raye/"
+        echo "Pin-Priority: 1001"
+        while read -r p v; do
+            [ -n "$p" ] || continue
+            printf '\nPackage: %s\nPin: version %s\nPin-Priority: -1\n' "$p" "$v"
+            echo "!! holding $p $v back for this build: it needs a newer Raye rebuild than the one built" >&2
+        done <<<"$hold"
+    } > "$root/$HOLD_PIN"
+    if ! in_root apt-get install -q --simulate "$@" > /dev/null 2>&1; then
+        echo "!! still not installable with the build pin:" >&2
+        in_root apt-get install -q --simulate "$@" 2>&1 | tail -15 >&2
+        return 1
+    fi
+    echo "ok: installable with the build pin ($HOLD_PIN, removed from the image)"
+}
+
 install_system() {
     say "Installing Raye"
     mount_chroot
@@ -460,6 +529,7 @@ install_system() {
     pin_installable_kernel
     local pkgs
     mapfile -t pkgs < <(grep -v '^\s*#' "$here/config/live.list" | grep -v '^\s*$')
+    pin_raye_rebuilds "${pkgs[@]}"
     in_root apt-get install -y -q "${pkgs[@]}"
     in_root apt-get -y -q full-upgrade
 
@@ -549,6 +619,7 @@ clean_image() {
           "${root:?}/etc/apt/apt.conf.d/99mmdebstrap" "${root:?}/etc/apt/sources.list.d/raye-local.list"
     rm -rf "${root:?}/var/cache/raye-local"
     rm -f "${root:?}/etc/dpkg/dpkg.cfg.d/99raye-build"
+    rm -f "${root:?}/$HOLD_PIN"
     # the build-time kernel pin must never ship: it would freeze the image on an
     # old kernel for ever, and nothing in the image would say why
     rm -f "${root:?}/$KERNEL_PIN"

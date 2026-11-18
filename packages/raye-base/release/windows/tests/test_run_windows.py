@@ -77,6 +77,27 @@ class RunWindows(unittest.TestCase):
         self.assertEqual(r.returncode, rc, r.stderr)
         return [l.split("|") for l in self.log.read_text().splitlines()]
 
+    def test_a_program_starts_in_its_own_folder(self):
+        sub = self.tmp / "Downloads"
+        sub.mkdir()
+        exe = sub / "setup.exe"
+        exe.write_bytes(b"MZ")
+        self.run_it("setup.exe", cwd=str(sub))
+        self.assertEqual((self.tmp / "calls.log.pwd").read_text().strip(), str(sub))
+        self.assertEqual(self.log.read_text().splitlines()[-1].split("|")[3], str(exe))
+
+    def test_large_address_aware_by_default_and_a_profile_can_say_no(self):
+        self.script(self.raye / "bin" / "wine", FAKE_WINE.replace(
+            'pwd > "$FAKE_LOG.pwd"', 'pwd > "$FAKE_LOG.pwd"; echo "${WINE_LARGE_ADDRESS_AWARE-}" > "$FAKE_LOG.laa"'))
+        self.run_it()
+        self.assertEqual((self.tmp / "calls.log.laa").read_text().strip(), "1")
+        (self.tmp / "profiles" / "old.profile").write_text(
+            'name="Old"\nmatch="old*.exe"\nenv="WINE_LARGE_ADDRESS_AWARE=0"\n')
+        old = self.tmp / "old.exe"
+        old.write_bytes(b"MZ")
+        self.run_it(str(old))
+        self.assertEqual((self.tmp / "calls.log.laa").read_text().strip(), "0")
+
     def test_other_wine_when_chosen(self):
         calls = self.run_it(RAYE_WINDOWS_ENGINE="system")
         self.assertTrue(calls)

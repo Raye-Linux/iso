@@ -285,6 +285,9 @@ else
         "${RAYE_WINDOWS_DEFAULT_PROFILE:-/usr/share/raye/windows/default.profile}" 2>/dev/null)
     for kv in $default_env; do export "$kv"; done
 fi
+# a 32-bit game gets 4 GB, as Steam's layer gives every game; a profile
+# can still say WINE_LARGE_ADDRESS_AWARE=0
+export WINE_LARGE_ADDRESS_AWARE="${WINE_LARGE_ADDRESS_AWARE:-1}"
 for kv in $env; do export "$kv"; done
 # Raye makes the Start entries itself (raye-windows scan): Wine's own would
 # add a "Wine" folder and take over file types
@@ -470,6 +473,9 @@ if [ -n "$target" ]; then
     exec wine "$target" $targs
 fi
 
+# Windows starts a program in its own folder; a setup started from
+# Downloads would otherwise see the whole system as its current folder
+file=$(realpath "$file") && cd "$(dirname "$file")"
 # shellcheck disable=SC2086  # the setup's switches, one per word
 case "$lname" in
     *.msi) wine msiexec /i "$file" $setup_args ;;

@@ -37,7 +37,7 @@ def run_grub(code, env):
             return
         if stmt.startswith("set "):
             k, v = stmt[4:].split("=", 1)
-            env[k] = v
+            env[k] = v.strip('"')
         elif stmt.startswith("save_env"):
             env["saved"] = "yes"
     for line in lines:
@@ -86,7 +86,7 @@ def test_two_failed_starts_step_down_and_a_good_one_stays(tmp_path):
             env["raye_gfx_fails"] = "0"         # what raye-graphics-ok writes
     # two black starts at the normal level, two at amdgpu.dc=0, then nomodeset
     # works and stays
-    assert levels == ["", "", "amdgpu.dc=0", "amdgpu.dc=0", "nomodeset", "nomodeset"]
+    assert levels == ["", "", "amdgpu.dc=0 plymouth.enable=0", "amdgpu.dc=0 plymouth.enable=0", "nomodeset", "nomodeset"]
 
 
 def test_a_working_desktop_never_steps_down(tmp_path):

@@ -12,7 +12,8 @@
 #                      "Safe graphics" entry of the install USB
 #
 # Each start counts one try in the boot menu's state (grubenv); reaching the
-# desktop (raye-graphics-ok) clears it. After two starts in a row where
+# desktop (raye-graphics-ok) clears it. A try left from the last start also
+# shows the boot menu, hidden otherwise (50-raye.cfg). After two starts in a row where
 # nobody reached the desktop, the next start goes one level down, so a black
 # screen costs two restarts, never a reinstall. A level that reached the
 # desktop is kept. The words land on the normal entries through $raye_gfx,
@@ -29,6 +30,15 @@ ext2|ext3|ext4|fat) ;;
 esac
 cat <<'GRUB'
 # the graphics ladder (09_raye_graphics)
+# the last start never reached the desktop: the hidden menu shows this time
+if [ "${raye_gfx_fails}" = 1 ]; then
+  set timeout_style=menu
+  if [ "${timeout}" = 0 ]; then set timeout=3; fi
+fi
+if [ "${raye_gfx_fails}" = 2 ]; then
+  set timeout_style=menu
+  if [ "${timeout}" = 0 ]; then set timeout=3; fi
+fi
 if [ "${raye_gfx_fails}" = 2 ]; then
   if [ "${raye_gfx_level}" = 1 ]; then set raye_gfx_level=2
   elif [ "${raye_gfx_level}" != 2 ]; then set raye_gfx_level=1

@@ -1,0 +1,6 @@
+#!/bin/sh
+# KWin starts X11 the first time an X11 program opens and runs this then:
+# the tray icons of X11 programs, the accessibility settings and, when a
+# global menu is in use, the menus of GTK programs come with it.
+exec systemctl --user --no-block start plasma-xembedsniproxy.service plasma-kaccess.service \
+    plasma-gmenudbusmenuproxy.service

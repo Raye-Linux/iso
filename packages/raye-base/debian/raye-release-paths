@@ -99,6 +99,7 @@ raye-system  release/grub/09_raye_graphics      etc/grub.d/09_raye_graphics
 raye-system  release/grub/raye-graphics-ok      usr/libexec/raye-graphics-ok
 raye-system  release/grub/raye-graphics-ok.service usr/lib/systemd/system/raye-graphics-ok.service  no-start
 raye-system  ?release/grub/30_raye_windows       etc/grub.d/30_raye_windows
+raye-system  release/grub/31_raye_menu_wait      etc/grub.d/31_raye_menu_wait
 raye-system  release/grub/raye-update-grub       usr/sbin/update-grub  divert
 raye-system  release/grub/raye-grub-titles       usr/libexec/raye-grub-titles
 raye-system  release/grub/raye-boot-ok.service   usr/lib/systemd/system/raye-boot-ok.service  no-start
@@ -124,6 +125,7 @@ raye-system  release/boot/raye-greeter-back         usr/libexec/raye-greeter-bac
 raye-system  release/boot/raye-greeter-back@.service  usr/lib/systemd/system/raye-greeter-back@.service  no-start
 raye-system  release/boot/raye-realpath             usr/share/initramfs-tools/hooks/raye-realpath
 raye-system  release/boot/raye-slim-initramfs       usr/share/initramfs-tools/hooks/raye-slim-initramfs
+raye-system  release/boot/intel-microcode          etc/default/intel-microcode  divert
 raye-system  release/boot/raye-update-screen        usr/share/initramfs-tools/scripts/init-bottom/raye-update-screen
 raye-system  release/boot/raye-binfmt-needed        usr/libexec/raye-binfmt-needed
 raye-system  ?release/boot/*.preset                usr/lib/systemd/system-preset
@@ -230,6 +232,13 @@ raye-desktop  release/tuning/raye-vm-cursor  usr/lib/systemd/user-environment-ge
 raye-desktop  release/xdg/autostart/org.kde.kdeconnect.daemon.desktop  etc/xdg/autostart/org.kde.kdeconnect.daemon.desktop  divert
 raye-desktop  release/xdg/autostart/org.kde.kclockd-autostart.desktop  etc/xdg/autostart/org.kde.kclockd-autostart.desktop  divert
 raye-desktop  release/tuning/user/speech-dispatcher.service.d/raye-idle.conf  usr/lib/systemd/user/speech-dispatcher.service.d/raye-idle.conf
+raye-desktop  release/tuning/user/plasma-gmenudbusmenuproxy.service.d/raye-idle.conf  usr/lib/systemd/user/plasma-gmenudbusmenuproxy.service.d/raye-idle.conf
+raye-desktop  release/tuning/user/plasma-xembedsniproxy.service.d/raye-idle.conf  usr/lib/systemd/user/plasma-xembedsniproxy.service.d/raye-idle.conf
+raye-desktop  release/tuning/user/plasma-kaccess.service.d/raye-idle.conf  usr/lib/systemd/user/plasma-kaccess.service.d/raye-idle.conf
+# Ctrl+Win+Enter: the screen reader, with or without the accessibility
+# service running.
+raye-desktop  release/access/raye-screen-reader  usr/libexec/raye-screen-reader
+raye-desktop  release/access/org.raye.screen-reader.desktop  usr/share/kglobalaccel/org.raye.screen-reader.desktop
 raye-desktop  release/xdg                     etc/xdg
 
 # No smartcard check on the lock screen (pam_sss is not shipped).

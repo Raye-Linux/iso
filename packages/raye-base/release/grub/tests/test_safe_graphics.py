@@ -151,11 +151,13 @@ def grub_setting(name):
     return out.stdout
 
 
-def test_the_menu_shows_for_three_seconds():
-    # a hidden menu needs a key held at the right moment; a person
-    # looking at a black screen does not know that
-    assert grub_setting("GRUB_TIMEOUT_STYLE") == "menu"
-    assert grub_setting("GRUB_TIMEOUT") == "3"
+def test_the_menu_is_hidden_while_starts_go_well():
+    # it shows by itself after a start that did not reach the desktop
+    # (test_graphics_ladder), so nobody has to hold a key at the right moment
+    assert grub_setting("GRUB_TIMEOUT_STYLE") == "hidden"
+    assert grub_setting("GRUB_TIMEOUT") == "0"
+    # a start that was cut off (power, crash) shows it too
+    assert grub_setting("GRUB_RECORDFAIL_TIMEOUT") == "3"
 
 
 def test_the_normal_entry_stays_without_nomodeset():

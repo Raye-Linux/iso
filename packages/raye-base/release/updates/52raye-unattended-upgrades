@@ -19,7 +19,7 @@ Unattended-Upgrade::Origins-Pattern {
 Unattended-Upgrade::Package-Blacklist {
     "linux-(image|modules|signed|generic|lowlatency|virtual|firmware)";
     "shim-";
-    "grub-";
+    "grub-(?!theme-)";
     "grub2-";
     "nvidia-";
     "libnvidia-";
@@ -39,7 +39,7 @@ Unattended-Upgrade::Package-Blacklist {
     "libdbus-1";
     "libqt6";
     "qt6-";
-    "qml6-module-";
+    "qml6-module-(?!org-raye-)";
     "libkf6";
     "kf6-";
     "kio6?$";
@@ -89,7 +89,6 @@ Unattended-Upgrade::Package-Blacklist {
     "raye-theme$";
     "raye-shell$";
     "raye-style$";
-    "raye-polkit-agent$";
     "xdg-desktop-portal-raye$";
     // binaries of OFFLINE_SOURCES the names above miss (tools/unattended-held)
     "assistant-qt6$";

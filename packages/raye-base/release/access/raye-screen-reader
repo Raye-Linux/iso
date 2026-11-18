@@ -1,0 +1,10 @@
+#!/bin/sh
+# Ctrl+Win+Enter turns the screen reader on or off, as on Windows. The
+# accessibility service starts or stops it from its settings; it only runs
+# once an option is on (raye-start-if-needed), so it is started here, and
+# a running one reads its settings again.
+set -u
+now=$(kreadconfig6 --file kaccessrc --group ScreenReader --key Enabled --default false)
+if [ "$now" = true ]; then next=false; else next=true; fi
+kwriteconfig6 --file kaccessrc --group ScreenReader --key Enabled --type bool --notify "$next"
+exec kaccess

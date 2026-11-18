@@ -6,12 +6,26 @@
 #
 #   raye-start-if-needed kdeconnect   phone service, once a phone is paired
 #   raye-start-if-needed kclockd      alarms of Clock, once one is set
+#   raye-start-if-needed xembedsniproxy   tray icons of X11 programs
+#   raye-start-if-needed gmenudbusmenuproxy   menus of GTK programs for a
+#                                     global menu (widget or title bar button)
+#   raye-start-if-needed kaccess      accessibility, once an option is on
 #
-# Called by the sign-in entries in /etc/xdg/autostart. Exit 0 either way:
+# The last three are X11 programs: started at sign-in they would start X11
+# (Xwayland) for nothing. They come with X11 instead: KWin starts it the
+# first time an X11 program opens, then runs Xwayland-session.d, which
+# starts them again.
+#
+# Called by the sign-in entries in /etc/xdg/autostart and by the session
+# units of the desktop (plasma-*.service.d). Exit 0 either way:
 # not starting is not a failure.
 set -u
 cfg=${XDG_CONFIG_HOME:-$HOME/.config}
 bin=${RAYE_START_BIN:-/usr/bin}
+xdg=${RAYE_START_XDG:-/etc/xdg}
+pgrep=${RAYE_START_PGREP:-pgrep}
+
+x11_running() { "$pgrep" -x -u "$(id -u)" Xwayland >/dev/null 2>&1; }
 
 case ${1:-} in
 kdeconnect)
@@ -24,6 +38,35 @@ kclockd)
          inside && /=/ { found = 1 }
          END { exit !found }' "$cfg/kclockdrc" 2>/dev/null || exit 0
     exec "$bin/kclockd"
+    ;;
+gmenudbusmenuproxy)
+    # Raye's title bar and taskbar have no global menu; someone who adds
+    # the widget or the title bar button gets it at the next sign-in
+    # N is the application menu button; the account's kwinrc wins over the system's
+    buttons=$cfg/kwinrc
+    grep -qs '^ButtonsOn' "$buttons" || buttons=$xdg/kwinrc
+    grep -qs '^plugin=org.kde.plasma.appmenu$' "$cfg/plasma-org.kde.plasma.desktop-appletsrc" ||
+        grep -qs '^ButtonsOn\(Left\|Right\)=.*N' "$buttons" || exit 0
+    # GTK programs on X11 only
+    x11_running || exit 0
+    exec "$bin/gmenudbusmenuproxy"
+    ;;
+xembedsniproxy)
+    x11_running || exit 0
+    exec "$bin/xembedsniproxy"
+    ;;
+kaccess)
+    # at sign-in only for someone who uses an option (the screen reader
+    # starts from it); otherwise X11 programs get their keyboard settings
+    # from it once X11 runs. On Wayland the window manager reads them.
+    x11_running ||
+        awk -F= '/^\[/ { group = $0; next }
+                 $2 == "true" && ((group == "[ScreenReader]" && $1 == "Enabled") ||
+                     (group == "[Keyboard]" && $1 ~ /^(StickyKeys|SlowKeys|BounceKeys|Gestures)$/) ||
+                     (group == "[Mouse]" && $1 == "MouseKeys") ||
+                     (group == "[Bell]" && $1 == "VisibleBell")) { found = 1 }
+                 END { exit !found }' "$cfg/kaccessrc" 2>/dev/null || exit 0
+    exec "$bin/kaccess"
     ;;
 *)
     echo "raye-start-if-needed: unknown helper '${1:-}'" >&2

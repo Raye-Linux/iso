@@ -109,3 +109,15 @@ def test_update_screen_is_in_init_bottom():
     paths = (RELEASE.parent / "debian" / "raye-release-paths").read_text()
     assert ("release/boot/raye-update-screen        "
             "usr/share/initramfs-tools/scripts/init-bottom/raye-update-screen") in paths
+
+
+def test_gpu_manager_runs_only_where_a_driver_needs_it():
+    # it holds the sign-in screen at every start; it only matters with
+    # NVIDIA's driver or its graphics switching (PRIME) installed
+    cp = unit(BOOT / "gpu-manager.service.d" / "raye.conf")
+    raw = (BOOT / "gpu-manager.service.d" / "raye.conf").read_text()
+    conds = [l.split("=", 1)[1] for l in raw.splitlines() if l.startswith("ConditionPathExists=")]
+    assert sorted(conds) == ["|/usr/bin/nvidia-smi", "|/usr/bin/prime-select"]
+    assert cp.has_section("Unit")
+    paths = (RELEASE.parent / "debian" / "raye-release-paths").read_text()
+    assert "release/boot/*.d/*.conf               usr/lib/systemd/system" in paths

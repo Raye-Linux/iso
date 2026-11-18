@@ -126,3 +126,60 @@ def test_the_sign_in_screen_alone_does_not(tmp_path):
                                    "4": "Class=user\nType=tty\nState=active"})
     subprocess.run(["sh", str(OK)], env=env, check=True)
     assert not (tmp_path / "written").exists()
+
+
+def test_the_menu_shows_after_a_start_that_never_reached_the_desktop(tmp_path):
+    code = ladder_code(tmp_path)
+    # what 00_header leaves for a hidden menu
+    env = {"have_grubenv": "true", "timeout_style": "hidden", "timeout": "0"}
+    run_grub(code, env)
+    assert (env["timeout_style"], env["timeout"]) == ("hidden", "0")
+    # nobody reached the desktop: the next start shows the menu
+    run_grub(code, env)
+    assert (env["timeout_style"], env["timeout"]) == ("menu", "3")
+    # still nothing: the ladder steps down and the menu shows again
+    env["timeout_style"], env["timeout"] = "hidden", "0"
+    run_grub(code, env)
+    assert (env["timeout_style"], env["timeout"]) == ("menu", "3")
+    assert env["raye_gfx"].startswith("amdgpu.dc=0")
+    # someone signed in: hidden again
+    env["raye_gfx_fails"] = "0"
+    env["timeout_style"], env["timeout"] = "hidden", "0"
+    run_grub(code, env)
+    assert (env["timeout_style"], env["timeout"]) == ("hidden", "0")
+
+
+def test_a_longer_menu_wait_is_kept(tmp_path):
+    # recordfail already asked for its own wait
+    code = ladder_code(tmp_path)
+    env = {"have_grubenv": "true", "raye_gfx_fails": "1", "timeout": "5"}
+    run_grub(code, env)
+    assert (env["timeout_style"], env["timeout"]) == ("menu", "5")
+
+
+WAIT = GRUB / "31_raye_menu_wait"
+
+
+def menu_wait_code(timeout="0"):
+    env = {"PATH": "/usr/bin:/bin", "GRUB_TIMEOUT": timeout}
+    return subprocess.run(["sh", str(WAIT)], env=env, capture_output=True, text=True,
+                          check=True).stdout
+
+
+def test_another_system_on_the_disk_gets_three_seconds():
+    # 30_os-prober opens the menu for 10 seconds when it finds Windows
+    env = {"timeout_style": "menu", "timeout": "10"}
+    run_grub(menu_wait_code(), env)
+    assert env["timeout"] == "3"
+    # no other system: the hidden menu is left alone
+    env = {"timeout_style": "hidden", "timeout": "0"}
+    run_grub(menu_wait_code(), env)
+    assert (env["timeout_style"], env["timeout"]) == ("hidden", "0")
+
+
+def test_a_menu_wait_set_by_hand_is_left_alone():
+    assert menu_wait_code("10") == ""
+    assert os.access(WAIT, os.X_OK)
+    paths = (GRUB.parent.parent / "debian" / "raye-release-paths").read_text()
+    assert re.search(r"^raye-system\s+release/grub/31_raye_menu_wait\s+etc/grub.d/31_raye_menu_wait\s*$",
+                     paths, re.M)

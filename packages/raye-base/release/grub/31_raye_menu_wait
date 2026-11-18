@@ -1,0 +1,11 @@
+#!/bin/sh
+# Runs after 30_os-prober. When it finds Windows it opens the hidden menu
+# for 10 seconds; Raye gives every menu it shows 3 (50-raye.cfg). Left out
+# when the wait was set by hand.
+set -e
+[ "${GRUB_TIMEOUT:-}" = 0 ] || exit 0
+cat <<'GRUB'
+if [ "${timeout_style}" = menu ]; then
+  if [ "${timeout}" = 10 ]; then set timeout=3; fi
+fi
+GRUB

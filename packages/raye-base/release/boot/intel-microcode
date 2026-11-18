@@ -1,0 +1,15 @@
+# Intel processor microcode in the initramfs (read by the intel_microcode
+# hook of initramfs-tools; Raye's copy, the stock one is intel-microcode.ubuntu).
+#
+# Raye keeps the microcode of this PC's processor only, not that of every
+# Intel model (about 15 MB the boot loader reads at every start; nothing at
+# all on an AMD PC). Each kernel update builds the initramfs again on this
+# PC. The install USB keeps them all: it starts on any PC.
+#
+#   IUCODE_TOOL_INITRAMFS  no, auto or early
+#   IUCODE_TOOL_SCANCPUS   yes: only the processors of this PC
+#   IUCODE_TOOL_EXTRA_OPTIONS  passed to iucode_tool
+if [ ! -e "${RAYE_MICROCODE_ROOT:-}/usr/share/initramfs-tools/scripts/casper" ]; then
+    IUCODE_TOOL_INITRAMFS=auto
+    IUCODE_TOOL_SCANCPUS=yes
+fi

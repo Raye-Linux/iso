@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Screen reader
+Name[fr]=Lecteur d'écran
+Comment=Turn the screen reader on or off
+Comment[fr]=Activer ou désactiver le lecteur d'écran
+Exec=/usr/libexec/raye-screen-reader
+Icon=preferences-desktop-accessibility
+NoDisplay=true
+StartupNotify=false
+X-KDE-Shortcuts=Ctrl+Meta+Return

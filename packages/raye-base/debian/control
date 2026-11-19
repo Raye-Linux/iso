@@ -127,7 +127,7 @@ Depends: raye-system, raye-theme,
 #        raye-notes,
 #        raye-gamebar,
 #        raye-killer-helper,
-         spice-vdagent,
+         spice-vdagent, open-vm-tools-desktop, virtualbox-guest-x11,
          ${misc:Depends}
 Description: Raye Linux desktop
  The Plasma desktop as Raye Linux ships it, with the everyday apps,

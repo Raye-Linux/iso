@@ -1,0 +1,101 @@
+#!/bin/sh
+# On AMD cards, the desktop and the sign-in screen draw the mouse pointer
+# themselves until the kernel can show RGBA8888.
+#
+# amdgpu offers RGBA8888 on its planes but, before the fix (Raye kernel
+# 7.0.0-43.43+raye3), refuses every commit that uses it. KWin picks it
+# and retries without end: a black screen, or one that blinks, on some
+# cold starts ("Unsupported screen format RA24" in the kernel log). KWin
+# drawing the pointer itself keeps clear of it. That costs one frame of
+# pointer lag, so only on those machines.
+#
+#   raye-amd-cursor              as a user-environment generator: prints
+#                                KWIN_FORCE_SW_CURSOR=1 when needed
+#   raye-amd-cursor CMD ARGS...  runs CMD with it when needed (the sign-in
+#                                screen's KWin, see sddm-wayland-raye.conf)
+#   raye-amd-cursor --covered    exit 0 when an AMD card amdgpu drives (or
+#                                would, under nomodeset) is in the PC
+#
+# KWIN_FORCE_SW_CURSOR already set (0 or 1, in ~/.config/environment.d
+# or /etc/environment.d) always wins.
+set -u
+
+sys=${RAYE_SYS:-/sys}
+fixed_from=7.0.0-43.43+raye3
+
+# 0 when card $1 (a PCI device folder) is bound to driver $2
+bound_to() {
+    [ -d "$1/driver" ] || return 1
+    d=$(cd -P "$1/driver" 2>/dev/null && pwd -P) || return 1
+    [ "${d##*/}" = "$2" ]
+}
+
+# an AMD display output driven by amdgpu
+amd_display() {
+    for card in "$sys"/class/drm/card[0-9]*; do
+        [ -d "$card/device" ] || continue
+        case ${card##*/} in *-*) continue ;; esac
+        bound_to "$card/device" amdgpu || continue
+        for out in "$card"-*; do
+            [ -d "$out" ] && return 0
+        done
+    done
+    return 1
+}
+
+# amdgpu.dc=0: the older display path, which never offers RGBA8888
+older_path() {
+    [ -r "$sys/module/amdgpu/parameters/dc" ] || return 1
+    read -r dc < "$sys/module/amdgpu/parameters/dc" || return 1
+    [ "$dc" = 0 ]
+}
+
+kernel_fixed() {
+    rel=$(uname -r 2>/dev/null) || return 1
+    case $rel in
+    *-raye)
+        v=$(dpkg-query -W -f='${Version}' "linux-image-$rel" 2>/dev/null) || return 1
+        [ -n "$v" ] && dpkg --compare-versions "$v" ge "$fixed_from" ;;
+    *) return 1 ;;
+    esac
+}
+
+needed() {
+    [ -z "${KWIN_FORCE_SW_CURSOR+set}" ] && amd_display && ! older_path && ! kernel_fixed
+}
+
+# An AMD display device amdgpu drives, or would drive: under nomodeset no
+# driver is bound, so ask which modules claim it. When radeon claims it
+# too, it is an older card radeon keeps.
+covered() {
+    for dev in "$sys"/bus/pci/devices/*; do
+        [ -r "$dev/vendor" ] && [ -r "$dev/class" ] || continue
+        read -r vendor < "$dev/vendor" || continue
+        read -r class < "$dev/class" || continue
+        [ "$vendor" = 0x1002 ] || continue
+        case $class in 0x03*) ;; *) continue ;; esac
+        bound_to "$dev" amdgpu && return 0
+        [ -d "$dev/driver" ] && continue
+        [ -r "$dev/modalias" ] || continue
+        read -r alias < "$dev/modalias" || continue
+        mods=" "
+        for m in $(modprobe -R "$alias" 2>/dev/null); do mods="$mods$m "; done
+        case $mods in *" radeon "*) continue ;; esac
+        case $mods in *" amdgpu "*) return 0 ;; esac
+    done
+    return 1
+}
+
+case ${1-} in
+--covered) covered; exit ;;
+-*) echo "raye-amd-cursor: unknown option $1" >&2; exit 2 ;;
+"")
+    if needed; then echo KWIN_FORCE_SW_CURSOR=1; fi
+    exit 0 ;;
+esac
+
+if needed; then
+    KWIN_FORCE_SW_CURSOR=1
+    export KWIN_FORCE_SW_CURSOR
+fi
+exec "$@"

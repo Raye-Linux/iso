@@ -86,6 +86,9 @@ if [ "$1" = configure ]; then
             rm -f /etc/default/grub.d/90-raye-safe-graphics.cfg
             grub-editenv /boot/grub/grubenv set raye_gfx_level=1 raye_gfx_fails=0 2>/dev/null || true
         fi
+        # once, with the AMD RGBA8888 fix: an AMD PC the ladder left on a
+        # fallback level tries the normal one again
+        /usr/libexec/raye-graphics-retry || true
         sum=$(cat "$cfg" "$picture" "$safe" "$DPKG_ROOT/etc/grub.d/09_raye_graphics" \
             "$DPKG_ROOT/etc/grub.d/31_raye_menu_wait" 2>/dev/null | md5sum)
         if [ "$sum" != "$(cat "$stamp" 2>/dev/null)" ] && update-grub; then

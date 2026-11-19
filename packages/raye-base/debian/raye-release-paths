@@ -97,6 +97,7 @@ raye-system  release/grub/05_raye_boot_picture  etc/grub.d/05_raye_boot_picture
 raye-system  release/grub/11_raye_safe_graphics etc/grub.d/11_raye_safe_graphics
 raye-system  release/grub/09_raye_graphics      etc/grub.d/09_raye_graphics
 raye-system  release/grub/raye-graphics-ok      usr/libexec/raye-graphics-ok
+raye-system  release/grub/raye-graphics-retry   usr/libexec/raye-graphics-retry
 raye-system  release/grub/raye-graphics-ok.service usr/lib/systemd/system/raye-graphics-ok.service  no-start
 raye-system  ?release/grub/30_raye_windows       etc/grub.d/30_raye_windows
 raye-system  release/grub/31_raye_menu_wait      etc/grub.d/31_raye_menu_wait
@@ -229,6 +230,11 @@ raye-desktop  release/tuning/raye-start-if-needed  usr/libexec/raye-start-if-nee
 # itself, because a virtual GPU's cursor plane is not shown in a console
 # or over SPICE. Read by the user manager, inherited by the session.
 raye-desktop  release/tuning/raye-vm-cursor  usr/lib/systemd/user-environment-generators/90-raye-vm-cursor
+# On AMD cards, until the kernel shows RGBA8888, the desktop and the
+# sign-in screen draw the pointer themselves (a black screen otherwise).
+# raye-desktop.links makes it a user-environment generator too.
+raye-system   release/tuning/raye-amd-cursor  usr/libexec/raye-amd-cursor
+raye-desktop  release/tuning/sddm-wayland-raye.conf  etc/sddm.conf.d/sddm-wayland-raye.conf
 raye-desktop  release/xdg/autostart/org.kde.kdeconnect.daemon.desktop  etc/xdg/autostart/org.kde.kdeconnect.daemon.desktop  divert
 raye-desktop  release/xdg/autostart/org.kde.kclockd-autostart.desktop  etc/xdg/autostart/org.kde.kclockd-autostart.desktop  divert
 raye-desktop  release/tuning/user/speech-dispatcher.service.d/raye-idle.conf  usr/lib/systemd/user/speech-dispatcher.service.d/raye-idle.conf

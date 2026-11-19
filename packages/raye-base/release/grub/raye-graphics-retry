@@ -1,0 +1,44 @@
+#!/bin/sh
+# Once, when the AMD RGBA8888 fix comes in: a PC the graphics ladder left
+# on a fallback level (09_raye_graphics: amdgpu.dc=0, or nomodeset at
+# 800x600 without acceleration) goes back to the normal level, if its card
+# is one the fix covers (raye-amd-cursor --covered). Many of those black
+# screens were that bug. If the screen still stays black, the ladder steps
+# down again by itself after two starts.
+#
+# Only the ladder's own level is touched: nomodeset or amdgpu.dc= written
+# by the user in /etc/default/grub or grub.d stays as it is. Run by
+# raye-system's postinst; the mark makes sure it never runs twice.
+set -u
+ENV=${RAYE_GRUBENV:-/boot/grub/grubenv}
+MARK=${RAYE_GFX_RETRY_MARK:-/var/lib/raye-system/gfx-retry-rgba8888}
+DEFAULTS=${RAYE_GRUB_DEFAULTS:-/etc/default}
+AMD_CURSOR=${RAYE_AMD_CURSOR:-/usr/libexec/raye-amd-cursor}
+
+[ -e "$MARK" ] && exit 0
+done_once() { mkdir -p "${MARK%/*}" && : > "$MARK"; exit 0; }
+
+fs=$(${grub_probe:-grub-probe} --target=fs "${RAYE_BOOT_DIR:-/boot}" 2>/dev/null || true)
+case $fs in
+ext2|ext3|ext4|fat) ;;
+*) done_once ;;
+esac
+[ -e "$ENV" ] || done_once
+
+level=$(grub-editenv "$ENV" list 2>/dev/null | sed -n 's/^raye_gfx_level=//p')
+case $level in
+1 | 2) ;;
+*) done_once ;;
+esac
+
+if cat "$DEFAULTS/grub" "$DEFAULTS"/grub.d/*.cfg 2>/dev/null |
+        grep -v '^[[:space:]]*#' |
+        grep -q -E '(^|[^[:alnum:]_.])(nomodeset([^[:alnum:]_.]|$)|amdgpu\.dc=)'; then
+    done_once
+fi
+
+"$AMD_CURSOR" --covered || done_once
+
+# a failed write leaves no mark: the next upgrade tries again
+grub-editenv "$ENV" set raye_gfx_level=0 raye_gfx_fails=0 || exit 0
+done_once

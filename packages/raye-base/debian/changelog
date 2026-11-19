@@ -17,6 +17,10 @@ raye-base (1.0~beta1) resolute; urgency=high
   * Boot menu: Try Raye Linux without installing, in English and French.
   * VirtualBox and VMware guest tools come with the desktop (they only
     start inside their own kind of virtual machine), like QEMU's already did.
+  * On AMD cards with a kernel that lacks the RGBA8888 fix, the sign-in
+    screen and the desktop draw the pointer themselves, so the screen no
+    longer stays black; AMD PCs the graphics fallback had left in safe
+    graphics try normal graphics once more after this update.
 
  -- techoraye <190692880+techoraye@users.noreply.github.com>  Thu, 19 Nov 2026 06:00:00 +0000
 

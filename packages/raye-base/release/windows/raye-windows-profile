@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Which profile a Windows program runs with, for Settings.
 
-    raye-windows-profile [SPACE...]    JSON: {space: {profile, name, optimized}}
+    raye-windows-profile [SPACE...]    JSON: {space: {profile, name, optimized, game}}
 
 A space runs with its own profile (the name raye-run-windows wrote in
 SPACE/.raye-profile, or a profile named like the space, or one whose
@@ -10,6 +10,8 @@ match= patterns fit the space's name) or with the default one alone.
 "optimized" is true only when that profile's title= is a title Raye
 checked itself and marked works (raye-windows-titles --state): a profile
 nobody played through is still the default as far as anyone can tell.
+"game" is the profile's game= ("yes", "launcher") or null: whether Game
+Mode is on for the program until the person says otherwise.
 
 RAYE_WINDOWS_SPACES, RAYE_WINDOWS_PROFILES_PATH and RAYE_WINDOWS_TITLES
 replace the spaces folder, the profiles folder and the titles reader
@@ -91,12 +93,13 @@ def state(title, cache):
 def describe(space, cache):
     path = profile_of(space)
     if not path:
-        return {"profile": None, "name": None, "optimized": False}
+        return {"profile": None, "name": None, "optimized": False, "game": None}
     keys = read_profile(path) or {}
     title = keys.get("title", "")
     return {"profile": os.path.basename(path)[:-len(".profile")],
             "name": keys.get("name") or None,
-            "optimized": bool(title) and state(title, cache) == "works"}
+            "optimized": bool(title) and state(title, cache) == "works",
+            "game": keys.get("game") if keys.get("game") in ("yes", "launcher") else None}
 
 
 def main(argv):

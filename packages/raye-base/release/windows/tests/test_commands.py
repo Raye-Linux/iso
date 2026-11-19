@@ -252,7 +252,7 @@ class ProfileState(unittest.TestCase):
     def test_checked_title_is_optimized(self):
         self.space("winrar", "winrar")
         self.assertEqual(self.run_it(), {"winrar": {"profile": "winrar", "name": "WinRAR",
-                                                    "optimized": True}})
+                                                    "optimized": True, "game": None}})
 
     def test_profile_nobody_played_through_is_not(self):
         self.space("fl-studio", "fl-studio")
@@ -260,13 +260,13 @@ class ProfileState(unittest.TestCase):
         got = self.run_it()
         self.assertEqual(got["fl-studio"]["profile"], "fl-studio")
         self.assertFalse(got["fl-studio"]["optimized"])
-        self.assertEqual(got["7-zip"], {"profile": "7-zip", "name": "7-Zip", "optimized": False})
+        self.assertEqual(got["7-zip"], {"profile": "7-zip", "name": "7-Zip", "optimized": False, "game": None})
 
     def test_unknown_program_runs_on_the_default(self):
         self.space("some-tool")
         self.space("default")
         got = self.run_it()
-        self.assertEqual(got["some-tool"], {"profile": None, "name": None, "optimized": False})
+        self.assertEqual(got["some-tool"], {"profile": None, "name": None, "optimized": False, "game": None})
         self.assertEqual(got["default"]["profile"], None)
 
     def test_space_from_before_the_marker(self):
@@ -280,6 +280,12 @@ class ProfileState(unittest.TestCase):
         got = self.run_it()
         self.assertEqual(list(got), ["x"])
         self.assertFalse(got["x"]["optimized"])
+
+    def test_a_launcher_profile_says_so(self):
+        # the real Battle.net profile: Game Mode for its games, from the start
+        shutil.copy(HERE.parent / "profiles" / "battle-net.profile", self.profiles)
+        self.space("battle-net", "battle-net")
+        self.assertEqual(self.run_it()["battle-net"]["game"], "launcher")
 
     def test_no_spaces_at_all(self):
         self.assertEqual(self.run_it(), {})

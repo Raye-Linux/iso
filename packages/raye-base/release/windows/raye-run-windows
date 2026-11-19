@@ -164,7 +164,7 @@ needs_update() {
 
 # find a profile whose patterns match the file name; a Start entry runs
 # in a space named after its profile, so it gets the same settings
-profile="" pname="" verbs="" env="" native="" title="" opens="" files=""
+profile="" pname="" verbs="" env="" native="" title="" opens="" files="" game="" launcher=""
 [ -n "$space" ] && [ -f "$profiles/$space.profile" ] && profile=$profiles/$space.profile
 [ -n "$file" ] &&
 for p in "$profiles"/*.profile; do
@@ -195,6 +195,8 @@ if [ -n "$profile" ]; then
     title=$(sed -n 's/^title="\(.*\)"$/\1/p' "$profile")
     opens=$(sed -n 's/^opens="\(.*\)"$/\1/p' "$profile")
     files=$(sed -n 's/^files="\(.*\)"$/\1/p' "$profile")
+    game=$(sed -n 's/^game="\(yes\|launcher\)"$/\1/p' "$profile")
+    launcher=$(sed -n 's/^launcher="\(.*\)"$/\1/p' "$profile")
 fi
 
 # a game its own publisher keeps off this system: say so before anything
@@ -375,6 +377,20 @@ fi
 [ -n "${settle:-}" ] && [ -n "${WINESERVER:-}" ] && "$WINESERVER" -w
 end_notice
 
+# what Game Mode's watcher reads from the program's processes: the space,
+# whether its profile calls it a game (yes) or a game launcher (launcher,
+# with the launcher's own .exe files, which are not games), and its name.
+# Settings can still turn any program on or off.
+mark_game() {
+    n=${name##*\\}
+    RAYE_GAME_SPACE=$slug RAYE_GAME_KIND=$game RAYE_GAME_NAME=${pname:-${n%.*}}
+    RAYE_GAME_IGNORE=$(printf '%s' "$launcher" | tr 'A-Z' 'a-z')
+    export RAYE_GAME_SPACE RAYE_GAME_KIND RAYE_GAME_NAME RAYE_GAME_IGNORE
+    # tells the watcher to look; this pid becomes the program's
+    marks=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/raye-game-mode/windows
+    mkdir -p "$marks" 2>/dev/null && : > "$marks/$$" 2>/dev/null
+}
+
 if [ -n "$uninstall" ]; then
     # "C:\Program Files\X\uninst.exe" /S, or MsiExec.exe /X{...}
     case $uninstall in
@@ -418,6 +434,7 @@ if [ -n "$open" ]; then
     # the program's own "open" command, from what it registered in the
     # space. Wine's start cannot do it: it reads only the machine's
     # classes, and most installers register for the user alone
+    mark_game
     exec python3 -I - "$WINEPREFIX" "$key" "$open" <<'PY'
 import os, re, sys
 prefix, key, what = sys.argv[1:4]
@@ -469,6 +486,7 @@ if [ -n "$target" ]; then
             dir=$(printf '%s' "${target#??}" | sed 's/\\[^\\]*$//; s#\\#/#g')
             [ -d "$WINEPREFIX/drive_c$dir" ] && cd "$WINEPREFIX/drive_c$dir" ;;
     esac
+    mark_game
     # shellcheck disable=SC2086  # a shortcut's arguments, one per word
     exec wine "$target" $targs
 fi
@@ -479,7 +497,7 @@ file=$(realpath "$file") && cd "$(dirname "$file")"
 # shellcheck disable=SC2086  # the setup's switches, one per word
 case "$lname" in
     *.msi) wine msiexec /i "$file" $setup_args ;;
-    *) wine "$file" $setup_args ;;
+    *) mark_game; wine "$file" $setup_args ;;
 esac
 rc=$?
 # an installer may have added programs: give them their Start menu entries.

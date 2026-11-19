@@ -1,0 +1,35 @@
+#!/bin/sh
+# While a game runs and the PC is plugged in (or has no battery), holds the
+# "Best performance" power mode: the firmware's own fan and power limits
+# go up, not only the processor's speed. power-profiles-daemon puts the
+# person's own mode back when the hold ends, and ends it by itself if this
+# process dies. On battery, on a PC without that mode, or when Settings
+# says no, nothing is held.
+#
+# The main process of raye-game-mode.service. --check: return at once
+# when nothing is held (tests).
+set -u
+. "${RAYE_GAME_LIB:-/usr/lib/raye/gaming/game-mode.sh}"
+ppctl=${RAYE_GAME_PPCTL:-powerprofilesctl}
+read_conf
+
+plugged_in() {
+    battery=""
+    for s in "$sys"/class/power_supply/*; do
+        [ -r "$s/type" ] || continue
+        read -r type < "$s/type"
+        case $type in
+            Battery) battery=1 ;;
+            Mains|USB) online=0; read -r online < "$s/online" 2>/dev/null; [ "$online" = 1 ] && return 0 ;;
+        esac
+    done
+    [ -z "$battery" ]
+}
+
+if [ "$enabled" = true ] && [ "$power" = true ] && plugged_in && command -v "$ppctl" >/dev/null &&
+   "$ppctl" list 2>/dev/null | grep -q '^[* ] performance:'; then
+    # it only comes back if the hold was refused; the game goes on anyway
+    "$ppctl" launch --profile performance --reason "Game mode" --appid org.raye.settings -- sleep infinity
+fi
+[ "${1:-}" = --check ] && exit 0
+exec sleep infinity

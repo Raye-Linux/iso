@@ -1,10 +1,17 @@
-// GameMode, running as the player at the machine, starts and stops the
-// game scheduler. Only that unit, only start and stop.
+// The player at the machine: GameMode, running as them, starts and stops
+// the game scheduler (only that unit, only start and stop), and may use
+// its own two helpers, the processor speed and the split-lock switch.
+// Ubuntu keeps those helpers for a "gamemode" group nobody is in, so
+// without this a game never got the full-speed processor.
 polkit.addRule(function (action, subject) {
+    if (!subject.local || !subject.active)
+        return polkit.Result.NOT_HANDLED;
     if (action.id == "org.freedesktop.systemd1.manage-units" &&
         action.lookup("unit") == "raye-game-scheduler.service" &&
-        (action.lookup("verb") == "start" || action.lookup("verb") == "stop") &&
-        subject.local && subject.active)
+        (action.lookup("verb") == "start" || action.lookup("verb") == "stop"))
+        return polkit.Result.YES;
+    if (action.id == "com.feralinteractive.GameMode.governor-helper" ||
+        action.id == "com.feralinteractive.GameMode.procsys-helper")
         return polkit.Result.YES;
     return polkit.Result.NOT_HANDLED;
 });

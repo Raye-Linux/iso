@@ -1,0 +1,37 @@
+#!/bin/sh
+# Game mode begins (the first game GameMode got): the game scheduler, and
+# the compositor's blur and see-through backgrounds paused, as chosen in
+# Settings > Gaming > Game Mode. GameMode itself has already set the
+# processor to full speed.
+#
+# Nothing goes in the person's settings: the effects are unloaded from
+# KWin only, so they come back at the next sign-in whatever happens.
+# What was changed is written to $XDG_RUNTIME_DIR/raye-game-mode for
+# raye-game-end, which puts back exactly that.
+#
+# Run by raye-game-mode.service. Exits 0 either way: a part that cannot
+# be done is skipped, the game still runs.
+set -u
+. "${RAYE_GAME_LIB:-/usr/lib/raye/gaming/game-mode.sh}"
+scx=${RAYE_GAME_SCX:-/usr/bin/scx_lavd}
+read_conf
+mkdir -p "$runtime" || exit 0
+rm -f "$runtime/effects" "$runtime/scheduler"
+# Game Mode off in Settings and still here: someone runs gamemoderun by
+# hand, which gets GameMode's own part only
+[ "$enabled" = true ] || exit 0
+# for Settings: "on now"
+: > "$runtime/active"
+
+if [ "$scheduler" = true ] && [ -d "$sys/kernel/sched_ext" ] && [ -x "$scx" ] &&
+   "$systemctl" --no-ask-password start raye-game-scheduler.service 2>/dev/null; then
+    : > "$runtime/scheduler"
+fi
+
+if [ "$effects" = true ]; then
+    for effect in $pausable; do
+        [ "$(kwin isEffectLoaded s "$effect" 2>/dev/null)" = "b true" ] || continue
+        kwin unloadEffect s "$effect" >/dev/null 2>&1 && echo "$effect" >> "$runtime/effects"
+    done
+fi
+exit 0

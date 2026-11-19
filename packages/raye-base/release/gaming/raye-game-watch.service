@@ -1,0 +1,15 @@
+[Unit]
+Description=Find the games that start and hand them to Game Mode
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+Type=exec
+ExecStart=/usr/libexec/raye-game-watch
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=yes
+MemoryHigh=16M
+
+[Install]
+WantedBy=graphical-session.target

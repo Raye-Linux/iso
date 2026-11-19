@@ -3,6 +3,11 @@ raye-base (1.0~beta2) resolute; urgency=medium
   * Chromebooks: map the top row of keys through keyd and show where to fix
     the sound.
   * FL Studio no longer downloads extra fonts on first start.
+  * Game Mode turns on by itself while a Steam, Store or Windows game
+    runs: full processor speed (it was refused before), the game
+    scheduler, blur and transparency paused, and Best performance power
+    mode while plugged in. Everything comes back when the game ends or
+    crashes.
 
  -- techoraye <190692880+techoraye@users.noreply.github.com>  Thu, 19 Nov 2026 10:00:00 +0000
 

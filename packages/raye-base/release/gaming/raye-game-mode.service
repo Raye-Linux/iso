@@ -1,0 +1,15 @@
+[Unit]
+Description=Game mode on the desktop while a game runs
+Documentation=man:gamemoded(8)
+# started and stopped by GameMode (gamemode.ini); if GameMode goes away
+# in the middle of a game, this stops too and the desktop is put back
+BindsTo=gamemoded.service
+After=gamemoded.service
+
+[Service]
+Type=exec
+ExecStartPre=/usr/libexec/raye-game-start
+ExecStart=/usr/libexec/raye-game-hold
+# runs however the unit ends, a failed start included
+ExecStopPost=/usr/libexec/raye-game-end
+TimeoutStopSec=15

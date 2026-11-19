@@ -1,0 +1,16 @@
+#!/bin/sh
+# Game mode ends: puts back what raye-game-start changed, and only that.
+# Run by raye-game-mode.service when it stops, whatever stopped it: the
+# last game ended or crashed, GameMode itself went away, or the session
+# ends.
+set -u
+. "${RAYE_GAME_LIB:-/usr/lib/raye/gaming/game-mode.sh}"
+if [ -r "$runtime/effects" ]; then
+    while read -r effect; do
+        listed "$pausable" "$effect" && kwin loadEffect s "$effect" >/dev/null 2>&1
+    done < "$runtime/effects"
+fi
+[ -e "$runtime/scheduler" ] &&
+    "$systemctl" --no-ask-password stop raye-game-scheduler.service 2>/dev/null
+rm -f "$runtime/effects" "$runtime/scheduler" "$runtime/active"
+exit 0

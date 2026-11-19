@@ -21,6 +21,7 @@ echo "${FAKE_SETTING-}" > "$FAKE_LOG.extra"
 printf '%s|%s|%s|%s|%s\n' "$0" "${WINEDLLOVERRIDES-}" "${DXVK_ENABLE_NVAPI-}" "$*" "${RAYE_WINDOWS_APP_ID-}" >> "$FAKE_LOG"
 printf 'WINEDEBUG=%s DXVK_LOG_LEVEL=%s\n' "${WINEDEBUG-}" "${DXVK_LOG_LEVEL-}" > "$FAKE_LOG.env"
 pwd > "$FAKE_LOG.pwd"
+printf '%s|%s|%s|%s\n' "${RAYE_GAME_SPACE-}" "${RAYE_GAME_KIND-}" "${RAYE_GAME_NAME-}" "${RAYE_GAME_IGNORE-}" > "$FAKE_LOG.game"
 case "$1" in
 wineboot) mkdir -p "$WINEPREFIX/drive_c" ;;
 esac
@@ -57,7 +58,8 @@ class RunWindows(unittest.TestCase):
                     "RAYE_WINDOWS_CONF": str(self.tmp / "etc-windows.conf"),
                     "RAYE_WINDOWS_PROFILES_PATH": str(self.tmp / "profiles"),
                     "RAYE_WINDOWS_DEFAULT_PROFILE": str(HERE.parent / "default.profile"),
-                    "RAYE_WINDOWS_BIN": str(self.tmp / "private")}
+                    "RAYE_WINDOWS_BIN": str(self.tmp / "private"),
+                    "XDG_RUNTIME_DIR": str(self.tmp / "run")}
         (self.tmp / "profiles").mkdir()
 
     @staticmethod
@@ -288,6 +290,42 @@ class RunWindows(unittest.TestCase):
         self.assertEqual(self.extra.read_text(), "1\n")
         # the question about another version is for downloads, not Start entries
         self.assertFalse((self.tmp / "asked").exists())
+
+    def game_marks(self):
+        return (self.tmp / "calls.log.game").read_text().rstrip("\n").split("|")
+
+    def test_a_game_tells_game_mode_what_it_is(self):
+        self.profile("quake", 'name="Quake"\nmatch="quake*"\ngame="yes"\n')
+        self.make_space("quake")
+        self.run_it("--space", "quake", "--run", r"C:\Games\quake.exe")
+        self.assertEqual(self.game_marks(), ["quake", "yes", "Quake", ""])
+        # and the watcher is told to look
+        self.assertEqual(len(list((self.tmp / "run" / "raye-game-mode" / "windows").iterdir())), 1)
+
+    def test_a_launcher_names_its_own_programs_for_game_mode(self):
+        self.profile("hub", 'name="Hub"\nmatch="hub*"\ngame="launcher"\n'
+                            'launcher="Hub.exe;Hub Helper.exe"\n')
+        self.make_space("hub")
+        self.run_it("--space", "hub", "--run", r"C:\Hub\Hub.exe")
+        self.assertEqual(self.game_marks(), ["hub", "launcher", "Hub", "hub.exe;hub helper.exe"])
+
+    def test_any_program_can_be_marked_later_in_settings(self):
+        # no profile: the space is named, Game Mode decides from Settings
+        self.make_space("tool")
+        self.run_it("--space", "tool", "--run", r"C:\Tools\Tool.exe")
+        self.assertEqual(self.game_marks(), ["tool", "", "Tool", ""])
+
+    def test_only_yes_or_launcher_make_a_game(self):
+        self.profile("odd", 'name="Odd"\nmatch="odd*"\ngame="maybe"\n')
+        self.make_space("odd")
+        self.run_it("--space", "odd", "--run", r"C:\odd.exe")
+        self.assertEqual(self.game_marks()[1], "")
+
+    def test_a_windows_installer_package_is_never_a_game(self):
+        msi = self.tmp / "tool.msi"
+        msi.write_bytes(b"x")
+        self.run_it(str(msi))
+        self.assertEqual(self.game_marks(), ["", "", "", ""])
 
     def test_plugin_installer_goes_into_its_hosts_space(self):
         # a VST installer double-clicked on its own would get a space of its

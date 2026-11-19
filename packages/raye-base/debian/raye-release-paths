@@ -194,9 +194,13 @@ raye-windows-apps  release/windows/raye-windows-components.timer    usr/lib/syst
 # Game mode: scheduler while a game runs, quiet updates (KP-6).
 raye-gaming  release/gaming/gamemode.ini                        etc/gamemode.ini
 raye-gaming  release/gaming/raye-game-scheduler.service         usr/lib/systemd/system/raye-game-scheduler.service  no-start
-raye-gaming  ?release/gaming/raye-game-scheduler-guard.service  usr/lib/systemd/user/raye-game-scheduler-guard.service
-raye-gaming  ?release/gaming/raye-game-start                    usr/libexec/raye-game-start
-raye-gaming  ?release/gaming/raye-game-end                      usr/libexec/raye-game-end
+raye-gaming  release/gaming/raye-game-mode.service             usr/lib/systemd/user/raye-game-mode.service
+raye-gaming  release/gaming/raye-game-watch.service            usr/lib/systemd/user/raye-game-watch.service
+raye-gaming  release/gaming/raye-game-start                    usr/libexec/raye-game-start
+raye-gaming  release/gaming/raye-game-end                      usr/libexec/raye-game-end
+raye-gaming  release/gaming/raye-game-hold                     usr/libexec/raye-game-hold
+raye-gaming  release/gaming/raye-game-watch                    usr/libexec/raye-game-watch
+raye-gaming  release/gaming/game-mode.sh                       usr/lib/raye/gaming/game-mode.sh
 raye-gaming  release/gaming/50-raye-game-scheduler.rules        usr/share/polkit-1/rules.d/50-raye-game-scheduler.rules
 
 # ---------------------------------------------------------------- desktop

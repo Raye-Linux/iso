@@ -1,0 +1,47 @@
+#!/bin/sh
+# The first start of a ready-made Raye virtual machine.
+#
+# The image has no account at all. Until Raye Setup made one, SDDM signs in
+# raye-setup, a system account without a password, into the setup session
+# (raye-setup-session, the same as on the USB stick), and Setup asks the
+# questions of a new PC.
+#
+#   raye-first-start done      Setup's last job: the account exists
+#   raye-first-start cleanup   next start, before the sign-in screen: take
+#                              the setup account and Setup itself away
+#
+# RAYE_FIRST_START_ROOT stands for / in the tests.
+set -u
+
+root=${RAYE_FIRST_START_ROOT:-}
+dir=$root/var/lib/raye-first-start
+autologin=$root/etc/sddm.conf.d/zz-raye-first-start.conf
+sudoers=$root/etc/sudoers.d/raye-first-start
+wrapper=$root/usr/local/bin/calamares
+unit=$root/etc/systemd/system/raye-first-start.service
+packages="calamares-settings-raye calamares calamares-data libcalamares3.3 libcalamaresui3.3"
+
+case ${1:-} in
+done)
+    touch "$dir/done"
+    # signing in again as raye-setup has no point now, even if the
+    # cleanup never runs
+    rm -f "$autologin"
+    ;;
+cleanup)
+    [ -e "$dir/done" ] || exit 0
+    rm -f "$autologin" "$sudoers" "$wrapper"
+    if [ -z "$root" ]; then
+        userdel --force --remove raye-setup 2>/dev/null || true
+        DEBIAN_FRONTEND=noninteractive apt-get -y -q purge $packages ||
+            echo "raye-first-start: could not remove Setup, it stays installed" >&2
+        systemctl disable raye-first-start.service 2>/dev/null || true
+    fi
+    rm -f "$unit"
+    rm -rf "$dir"
+    ;;
+*)
+    echo "usage: raye-first-start done|cleanup" >&2
+    exit 2
+    ;;
+esac

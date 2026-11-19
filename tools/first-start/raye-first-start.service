@@ -1,0 +1,13 @@
+[Unit]
+Description=Finish the first start of Raye
+ConditionPathExists=/var/lib/raye-first-start/done
+After=local-fs.target
+Before=display-manager.service
+
+[Service]
+Type=oneshot
+ExecStart=/var/lib/raye-first-start/raye-first-start cleanup
+TimeoutStartSec=5min
+
+[Install]
+WantedBy=multi-user.target

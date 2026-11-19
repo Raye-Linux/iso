@@ -1,0 +1,469 @@
+#!/usr/bin/python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Ready-made virtual machines of Raye, from a built ISO.
+
+    vm-images [--iso FILE] [--out DIR] [--formats qcow2,virtualbox,vmware]
+              [--size 64G] [--work DIR] [--keep-raw]
+    vm-images check FILE.qcow2|FILE.raw [--work DIR]
+    vm-images --dry-run ...            say what would be done
+
+Writes into DIR, named after the ISO:
+    <name>.qcow2              QEMU, Proxmox, GNOME Boxes
+    <name>-virtualbox.ova     VirtualBox: import the appliance
+    <name>-vmware.ova         VMware Workstation, Fusion, ESXi
+    <name>-vm.sha256          their checksums
+
+The system is laid down the way Raye Setup does it: GPT, EFI, /boot on
+ext4, btrfs with @ @home @var_log @cache, the squashfs of the ISO, GRUB for
+UEFI. There is no account: at the first start Raye Setup asks the
+questions of a new PC (language, keyboard, network, PC name, account,
+privacy), then the machine restarts to the sign-in screen.
+
+Run as root. It only writes to a file under --work and to loop devices it
+attaches to that file itself, and it detaches everything it attached.
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import os
+import pathlib
+import shutil
+import subprocess
+import sys
+import tarfile
+import time
+
+sys.dont_write_bytecode = True  # no __pycache__ in the repo
+HERE = pathlib.Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+import raye_vmimage as vm  # noqa: E402
+
+FIRST_START = HERE / "first-start"
+CHROOT_ENV = ["/usr/bin/env", "-i", "HOME=/root", "LANG=C.UTF-8", "TERM=dumb",
+              "DEBIAN_FRONTEND=noninteractive", "PATH=/usr/sbin:/usr/bin:/sbin:/bin"]
+TOOLS = ["losetup", "sfdisk", "partx", "blkid", "mkfs.vfat", "mkfs.ext4", "mkfs.btrfs",
+         "btrfs", "unsquashfs", "qemu-img", "mount", "umount", "fstrim", "chroot"]
+
+
+def say(text):
+    print("vm-images: " + text, flush=True)
+
+
+class Failed(RuntimeError):
+    pass
+
+
+class Machine:
+    """Loop devices and mounts this run made, undone in reverse."""
+
+    def __init__(self, dry_run=False):
+        self.dry_run = dry_run
+        self.loops = []
+        self.mounted = []
+
+    def run(self, argv, feed=None, capture=False, tolerate=False):
+        if self.dry_run:
+            say("would run: " + " ".join(argv))
+            return ""
+        r = subprocess.run(argv, input=feed, text=True,
+                           stdout=subprocess.PIPE if capture else None)
+        if r.returncode and not tolerate:
+            raise Failed("%s: exit %d" % (" ".join(argv[:4]), r.returncode))
+        return (r.stdout or "") if capture else ""
+
+    def attach(self, path, readonly=False):
+        path = str(pathlib.Path(path).resolve())
+        if not pathlib.Path(path).is_file() and not self.dry_run:
+            raise Failed("%s is not a file: vm-images only attaches its own files" % path)
+        argv = ["losetup", "--find", "--show"] + (["--read-only"] if readonly else ["--partscan"]) + [path]
+        if self.dry_run:
+            self.run(argv)
+            return "/dev/loopX"
+        dev = self.run(argv, capture=True).strip()
+        self.loops.append(dev)
+        back = self.run(["losetup", "--list", "--noheadings", "-O", "BACK-FILE", dev], capture=True).strip()
+        if os.path.realpath(back) != path:
+            raise Failed("%s is attached to %r, not to %s" % (dev, back, path))
+        return dev
+
+    def mount(self, source, where, fstype=None, options=None, bind=False):
+        if not self.dry_run:
+            os.makedirs(where, exist_ok=True)
+        argv = ["mount"]
+        if bind:
+            argv.append("--bind")
+        if fstype:
+            argv += ["-t", fstype]
+        if options:
+            argv += ["-o", options]
+        self.run(argv + [source, where])
+        if not self.dry_run:
+            self.mounted.append(where)
+
+    def unmount(self, where):
+        self.run(["umount", where])
+        if not self.dry_run:
+            self.mounted.remove(where)
+
+    def release(self):
+        for where in reversed(list(self.mounted)):
+            if subprocess.run(["umount", where]).returncode:
+                subprocess.run(["umount", "--lazy", where])
+            self.mounted.remove(where)
+        for dev in reversed(self.loops):
+            subprocess.run(["losetup", "--detach", dev])
+        self.loops = []
+
+
+def part_nodes(m, dev, count):
+    if m.dry_run:
+        return [dev + "p%d" % i for i in range(1, count + 1)]
+    nodes = [dev + "p%d" % i for i in range(1, count + 1)]
+    for _ in range(30):
+        if all(os.path.exists(n) for n in nodes):
+            return nodes
+        m.run(["partx", "--update", dev], tolerate=True)
+        time.sleep(1)
+    raise Failed("the partitions of %s did not appear" % dev)
+
+
+def blkid(m, node, tag="UUID"):
+    if m.dry_run:
+        return "0000-0000"
+    return m.run(["blkid", "--cache-file", "/dev/null", "-o", "value", "-s", tag, node], capture=True).strip()
+
+
+def chroot(m, root, *argv, tolerate=False):
+    return m.run(["chroot", root] + CHROOT_ENV + list(argv), tolerate=tolerate)
+
+
+def write(path, text, mode=0o644):
+    path = pathlib.Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text)
+    os.chmod(path, mode)
+
+
+# ------------------------------------------------------------------ build
+
+def lay_down(m, args, n, work):
+    iso_dir, top, root = work / "iso", work / "top", work / "root"
+    raw = work / n["raw"]
+    say("reading %s" % args.iso)
+    iso_loop = m.attach(args.iso, readonly=True)
+    m.mount(iso_loop, str(iso_dir), "iso9660", "ro")
+    squashfs = iso_dir / "casper" / "filesystem.squashfs"
+    info = (iso_dir / ".disk" / "info").read_text() if (iso_dir / ".disk" / "info").exists() else ""
+    product, version = vm.title_of(info)
+    if not m.dry_run and not squashfs.is_file():
+        raise Failed("%s has no casper/filesystem.squashfs" % args.iso)
+
+    say("making a %d GiB disk" % (args.size // vm.GIB))
+    if not m.dry_run:
+        raw.unlink(missing_ok=True)
+        with open(raw, "wb") as f:
+            f.truncate(args.size)
+    disk = m.attach(raw)
+    plan = vm.partition_plan(args.size)
+    m.run(["sfdisk", "--quiet", "--wipe", "always", disk], feed=vm.sfdisk_script(plan))
+    nodes = dict(zip([p["role"] for p in plan], part_nodes(m, disk, len(plan))))
+    for role in ("esp", "boot", "root"):
+        m.run(vm.mkfs_argv(role, nodes[role]))
+    uuids = {role: blkid(m, nodes[role]) for role in nodes}
+
+    m.mount(nodes["root"], str(top), "btrfs", "subvolid=5")
+    for subvol, _ in vm.SUBVOLUMES:
+        m.run(["btrfs", "-q", "subvolume", "create", str(top / subvol)])
+    m.unmount(str(top))
+    plan_mounts = vm.mounts(nodes["root"], nodes["boot"], nodes["esp"], str(root))
+    for source, where, fstype, options in plan_mounts[:-1]:
+        m.mount(source, where, fstype, options)
+
+    say("copying the system (a few minutes)")
+    m.run(["unsquashfs", "-f", "-q", "-no-progress", "-processors", "4", "-d", str(root), str(squashfs)])
+    m.mount(*plan_mounts[-1][:2], plan_mounts[-1][2], plan_mounts[-1][3])
+    return {"root": root, "uuids": uuids, "product": product, "version": version, "iso_dir": iso_dir}
+
+
+def into_chroot(m, root):
+    r = str(root)
+    m.mount("proc", r + "/proc", "proc")
+    m.mount("sysfs", r + "/sys", "sysfs")
+    m.mount("/dev", r + "/dev", bind=True)
+    m.mount("devpts", r + "/dev/pts", "devpts", "gid=5,mode=620,ptmxmode=666")
+    m.mount("tmpfs", r + "/run", "tmpfs", "mode=0755")
+    if m.dry_run:
+        return None
+    resolv = root / "etc" / "resolv.conf"
+    saved = os.readlink(resolv) if resolv.is_symlink() else None
+    if resolv.is_symlink() or resolv.exists():
+        resolv.unlink()
+    shutil.copyfile("/etc/resolv.conf", resolv)
+    write(root / "usr/sbin/policy-rc.d", "#!/bin/sh\nexit 101\n", 0o755)
+    return saved
+
+
+def out_of_chroot(m, root, saved_resolv):
+    if not m.dry_run:
+        (root / "usr/sbin/policy-rc.d").unlink(missing_ok=True)
+        resolv = root / "etc" / "resolv.conf"
+        resolv.unlink(missing_ok=True)
+        if saved_resolv:
+            os.symlink(saved_resolv, resolv)
+    for where in ("/run", "/dev/pts", "/dev", "/sys", "/proc"):
+        m.unmount(str(root) + where)
+
+
+def first_start(m, root):
+    """The setup account, Setup's first-start settings and the cleanup."""
+    if m.dry_run:
+        say("would set up the first start in " + vm.FIRST_START)
+        return
+    base = root / vm.FIRST_START.lstrip("/")
+    xdg = base / "xdg" / "calamares"
+    (xdg / "modules").mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(FIRST_START / "settings.conf", xdg / "settings.conf")
+    for conf in (FIRST_START / "modules").glob("*.conf"):
+        shutil.copyfile(conf, xdg / "modules" / conf.name)
+    shutil.copytree(FIRST_START / "modules" / "rayefirststart", base / "modules" / "rayefirststart",
+                    dirs_exist_ok=True, ignore=shutil.ignore_patterns("__pycache__"))
+    shutil.copyfile(FIRST_START / "raye-first-start", base / "raye-first-start")
+    os.chmod(base / "raye-first-start", 0o755)
+
+    source = root / "etc/calamares/branding/raye"
+    target = xdg / "branding" / "raye-first-start"
+    shutil.copytree(source, target, dirs_exist_ok=True)
+    strings = target / "strings.js"
+    strings.write_text(vm.apply_edits(strings.read_text(), vm.BRANDING_EDITS))
+    desc = target / "branding.desc"
+    desc.write_text(vm.first_start_branding_desc(desc.read_text()))
+
+    shutil.copyfile(FIRST_START / "sddm.conf", root / "etc/sddm.conf.d/zz-raye-first-start.conf")
+    write(root / "etc/sudoers.d/raye-first-start", (FIRST_START / "sudoers").read_text(), 0o440)
+    write(root / "usr/local/bin/calamares", (FIRST_START / "calamares").read_text(), 0o755)
+    unit = root / "etc/systemd/system/raye-first-start.service"
+    shutil.copyfile(FIRST_START / "raye-first-start.service", unit)
+    wants = root / "etc/systemd/system/multi-user.target.wants"
+    wants.mkdir(parents=True, exist_ok=True)
+    link = wants / unit.name
+    link.unlink(missing_ok=True)
+    os.symlink("/etc/systemd/system/" + unit.name, link)
+
+    chroot(m, str(root), "useradd", "--system", "--create-home", "--home-dir",
+           vm.FIRST_START + "/home", "--shell", "/bin/bash", "--comment", "Raye Setup", vm.SETUP_USER)
+    chroot(m, str(root), "passwd", "--lock", vm.SETUP_USER)
+    chroot(m, str(root), "visudo", "--check", "--quiet", "--file", "/etc/sudoers.d/raye-first-start")
+
+
+def configure(m, built):
+    root = built["root"]
+    r = str(root)
+    saved = into_chroot(m, root)
+    try:
+        say("removing what only the USB stick needs")
+        chroot(m, r, "apt-get", "-y", "-q", "purge", *vm.PURGE_AT_BUILD)
+        say("adding the guest tools")
+        chroot(m, r, "apt-get", "-q", "update", tolerate=True)
+        chroot(m, r, "apt-get", "-y", "-q", "install", "--no-install-recommends", *vm.GUEST_TOOLS)
+        chroot(m, r, "apt-get", "clean")
+
+        if not m.dry_run:
+            u = built["uuids"]
+            write(root / "etc/fstab", vm.fstab(u["root"], u["boot"], u["esp"]))
+            (root / "etc/machine-id").write_text("")
+            dbus = root / "var/lib/dbus/machine-id"
+            dbus.parent.mkdir(parents=True, exist_ok=True)
+            dbus.unlink(missing_ok=True)
+            os.symlink("/etc/machine-id", dbus)
+            (root / "var/lib/systemd/random-seed").unlink(missing_ok=True)
+            grub = root / "etc/default/grub"
+            text = grub.read_text()
+            if "GRUB_ENABLE_CRYPTODISK" not in text:
+                grub.write_text(text.rstrip("\n") + "\nGRUB_ENABLE_CRYPTODISK=true\n")
+        first_start(m, root)
+
+        say("boot files")
+        chroot(m, r, "update-initramfs", "-u", "-k", "all")
+        for argv in vm.grub_install_argv():
+            chroot(m, r, *argv)
+        # os-prober would list the disks of the machine building the image
+        prober = root / "etc/grub.d/30_os-prober"
+        mode = None if m.dry_run or not prober.exists() else prober.stat().st_mode
+        if mode is not None:
+            os.chmod(prober, mode & ~0o111)
+        try:
+            chroot(m, r, "update-grub")
+        finally:
+            if mode is not None:
+                os.chmod(prober, mode)
+        chroot(m, r, "/usr/libexec/raye-grub-titles", tolerate=True)
+        if not m.dry_run:
+            (root / "boot/efi/EFI/BOOT/fbx64.efi").unlink(missing_ok=True)
+            for lists in (root / "var/lib/apt/lists").glob("*"):
+                if lists.is_file() and lists.name != "lock":
+                    lists.unlink()
+    finally:
+        out_of_chroot(m, root, saved)
+
+
+def finish_disk(m, built, work):
+    root = built["root"]
+    if not m.dry_run:
+        problems = vm.check_tree(root, built["uuids"])
+        if problems:
+            raise Failed("the image is not right:\n  " + "\n  ".join(problems))
+    for where in reversed(list(m.mounted)):
+        if where.startswith(str(root)):
+            m.run(["fstrim", where], tolerate=True)
+    m.release()
+
+
+def sha256(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
+def package(m, args, n, work, built):
+    raw, out = str(work / n["raw"]), pathlib.Path(args.out)
+    if not m.dry_run:
+        out.mkdir(parents=True, exist_ok=True)
+    made = []
+    if "qcow2" in args.formats:
+        say("qcow2")
+        m.run(vm.convert_argv("qcow2", raw, str(out / n["qcow2"])))
+        made.append(out / n["qcow2"])
+    ovas = [f for f in ("virtualbox", "vmware") if f in args.formats]
+    if ovas:
+        say("vmdk")
+        vmdk = work / n["vmdk"]
+        m.run(vm.convert_argv("vmdk", raw, str(vmdk)))
+        size = 0 if m.dry_run else vmdk.stat().st_size
+        digest = "0" * 64 if m.dry_run else sha256(vmdk)
+        for flavour in ovas:
+            say(flavour)
+            text = vm.ovf(flavour, n["stem"], built["product"],
+                          built["version"] or n["stem"], args.size, n["vmdk"], size)
+            mf = vm.manifest({n["ovf"]: hashlib.sha256(text.encode()).hexdigest(), n["vmdk"]: digest})
+            if not m.dry_run:
+                (work / n["ovf"]).write_text(text)
+                (work / n["mf"]).write_text(mf)
+                with tarfile.open(out / n[flavour], "w", format=tarfile.USTAR_FORMAT) as tar:
+                    for member in vm.ova_members(n):
+                        info = tar.gettarinfo(str(work / member), arcname=member)
+                        info.uid = info.gid = 0
+                        info.uname = info.gname = "root"
+                        with open(work / member, "rb") as f:
+                            tar.addfile(info, f)
+            made.append(out / n[flavour])
+        if not m.dry_run:
+            for leftover in (vmdk, work / n["ovf"], work / n["mf"]):
+                leftover.unlink(missing_ok=True)
+    if m.dry_run:
+        return
+    sums = "".join("%s  %s\n" % (sha256(p), p.name) for p in made)
+    (out / n["sums"]).write_text(sums)
+    for p in made:
+        say("%s  %.2f GiB" % (p, p.stat().st_size / vm.GIB))
+    if not args.keep_raw:
+        pathlib.Path(raw).unlink()
+
+
+def build(args):
+    n = vm.names(args.iso, args.name)
+    work = pathlib.Path(args.work).resolve() / n["stem"]
+    if not args.dry_run:
+        work.mkdir(parents=True, exist_ok=True)
+    m = Machine(args.dry_run)
+    try:
+        built = lay_down(m, args, n, work)
+        configure(m, built)
+        finish_disk(m, built, work)
+        package(m, args, n, work, built)
+    finally:
+        m.release()
+    if not args.dry_run and not args.keep_raw:
+        # only the empty mount points are left
+        for sub in ("root", "top", "iso"):
+            if (work / sub).is_dir() and not os.path.ismount(work / sub):
+                (work / sub).rmdir()
+        work.rmdir()
+
+
+# ------------------------------------------------------------------ check
+
+def check(args):
+    """Open an image read-only and look at the system in it."""
+    image = pathlib.Path(args.image).resolve()
+    work = pathlib.Path(args.work).resolve() / ("check-" + image.stem)
+    work.mkdir(parents=True, exist_ok=True)
+    m = Machine(args.dry_run)
+    raw = image
+    try:
+        if image.suffix != ".raw":
+            raw = work / (image.stem + ".raw")
+            m.run(["qemu-img", "convert", "-O", "raw", str(image), str(raw)])
+            m.run(["qemu-img", "compare", "-q", str(image), str(raw)])
+        dev = m.attach(raw, readonly=True)
+        if not m.dry_run:
+            m.run(["partx", "--add", dev], tolerate=True)
+        esp, boot, root_node = part_nodes(m, dev, 3)
+        root = work / "root"
+        uuids = {"root": blkid(m, root_node), "boot": blkid(m, boot), "esp": blkid(m, esp)}
+        for source, where, fstype, options in vm.mounts(root_node, boot, esp, str(root)):
+            m.mount(source, where, fstype, "ro," + options)
+        problems = [] if m.dry_run else vm.check_tree(root, uuids)
+        for p in problems:
+            say("problem: " + p)
+        if not problems:
+            say("%s looks right" % image.name)
+        return 1 if problems else 0
+    finally:
+        m.release()
+        if raw != image and raw.exists():
+            raw.unlink()
+        for empty in (work / "root", work):
+            if empty.is_dir() and not os.path.ismount(empty) and not any(empty.iterdir()):
+                empty.rmdir()
+
+
+def main(argv=None):
+    argv = list(sys.argv[1:] if argv is None else argv)
+    p = argparse.ArgumentParser(prog="vm-images")
+    p.add_argument("--work", default="/var/tmp/raye/vm-work")
+    p.add_argument("--dry-run", action="store_true")
+    if argv[:1] == ["check"]:
+        p.add_argument("image")
+        args = p.parse_args(argv[1:])
+        action = check
+    else:
+        p.add_argument("--iso", default="/var/tmp/raye/isos/latest.iso")
+        p.add_argument("--out", default="/var/tmp/raye/vm-images")
+        p.add_argument("--name", help="file names, raye-<release>-amd64 for example")
+        p.add_argument("--formats", default=",".join(vm.FORMATS))
+        p.add_argument("--size", default="64G")
+        p.add_argument("--keep-raw", action="store_true")
+        args = p.parse_args(argv)
+        args.size = vm.parse_size(args.size)
+        args.formats = [f for f in args.formats.split(",") if f]
+        bad = [f for f in args.formats if f not in vm.FORMATS]
+        if bad:
+            p.error("unknown format: " + ", ".join(bad))
+        action = build
+    if os.geteuid() != 0 and not args.dry_run:
+        p.error("run as root")
+    missing = [t for t in TOOLS if not shutil.which(t)]
+    if missing and not args.dry_run:
+        p.error("missing: " + " ".join(missing))
+    try:
+        return action(args) or 0
+    except (Failed, vm.LayoutError, vm.BrandingChanged) as e:
+        print("vm-images: " + str(e), file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

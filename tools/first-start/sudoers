@@ -1,0 +1,4 @@
+# The setup account of the first start, the commands raye-setup-run runs.
+# Removed with the account once Setup is done.
+Defaults:raye-setup !lecture
+raye-setup ALL=(root) NOPASSWD:SETENV: /usr/local/bin/calamares, /usr/libexec/raye-preflight, /usr/libexec/raye-disks, /usr/libexec/raye-setup-private, /usr/bin/install, /usr/bin/systemctl --no-wall reboot, /usr/bin/systemctl --no-wall poweroff

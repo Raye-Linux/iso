@@ -1,0 +1,7 @@
+#!/bin/sh
+# Only there during the first start of a ready-made machine: sudo finds it
+# before /usr/bin, so raye-setup-run starts the first-start Setup.
+xdg=/var/lib/raye-first-start/xdg
+export XDG_CONFIG_DIRS=$xdg:/etc/xdg
+export XDG_DATA_DIRS=$xdg:/usr/local/share:/usr/share
+exec /usr/bin/calamares -X "$@"

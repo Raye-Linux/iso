@@ -1,0 +1,7 @@
+# Tells the other jobs where the system is: on this disk, at /. A real
+# install gets that from the mount job.
+---
+type:       "job"
+name:       "rayefirststart"
+interface:  "python"
+script:     "main.py"

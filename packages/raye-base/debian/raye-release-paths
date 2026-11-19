@@ -160,6 +160,21 @@ raye-system  release/encryption/initramfs-hook           usr/share/initramfs-too
 raye-system  release/encryption/initramfs-local-top      usr/share/initramfs-tools/scripts/local-top/raye-encryption
 raye-system  release/encryption/org.raye.encryption.policy  usr/share/polkit-1/actions/org.raye.encryption.policy
 
+# The firewall on by default, with private and public networks; what the
+# network may ask of the kernel; a private address per Wi-Fi network.
+raye-system  release/firewall/raye-network-profile     usr/libexec/raye-network-profile
+raye-system  release/firewall/raye-firewall-setup      usr/libexec/raye-firewall-setup
+raye-system  release/firewall/before.init              usr/share/raye/firewall/before.init
+raye-system  release/firewall/50-raye-network-profile  usr/lib/NetworkManager/dispatcher.d/50-raye-network-profile
+raye-system  release/network/90-raye-network.conf       usr/lib/sysctl.d/90-raye-network.conf
+raye-system  release/network/60-raye-wifi-privacy.conf  usr/lib/NetworkManager/conf.d/60-raye-wifi-privacy.conf
+raye-system  release/network/raye-wifi-keep-address    usr/libexec/raye-wifi-keep-address
+# Thunderbolt and USB4: a new device works at once while the screen is
+# unlocked, and waits while it is locked.
+raye-system  release/thunderbolt/raye-thunderbolt          usr/libexec/raye-thunderbolt
+raye-system  release/thunderbolt/raye-thunderbolt@.service usr/lib/systemd/system/raye-thunderbolt@.service  no-start
+raye-system  release/thunderbolt/61-raye-thunderbolt.rules usr/lib/udev/rules.d/61-raye-thunderbolt.rules
+
 # ---------------------------------------------------------------- kernel
 raye-kernel  release/kernel/raye-kernel-setup           usr/libexec/raye-kernel-setup
 raye-kernel  release/kernel/raye-kernel-finish.service  usr/lib/systemd/system/raye-kernel-finish.service
@@ -278,3 +293,15 @@ raye-desktop  release/pam/kde-smartcard  etc/pam.d/kde-smartcard
 # a policy makes Firefox say the browser is managed by an organization.
 # Measured: this build reads /etc/firefox/defaults/pref, not /etc/firefox/syspref.js.
 raye-desktop  release/firefox/raye-defaults.js  etc/firefox/defaults/pref/raye-defaults.js
+
+# Raye Synth: General MIDI that is always there, running only while
+# something plays (Windows programs start it when they open it).
+raye-desktop  release/midi/raye-synth          usr/libexec/raye-synth
+raye-desktop  release/midi/raye-synth.service  usr/lib/systemd/user/raye-synth.service
+
+# Print to PDF: a printer that asks where to save the PDF.
+raye-desktop  release/print/raye-pdf                    usr/lib/cups/backend/raye-pdf
+raye-desktop  release/print/raye-pdf-save               usr/libexec/raye-pdf-save
+raye-desktop  release/print/raye-print-to-pdf           usr/libexec/raye-print-to-pdf
+raye-desktop  release/print/raye-print-to-pdf.service   usr/lib/systemd/system/raye-print-to-pdf.service
+raye-desktop  release/print/print-to-pdf.ppd            usr/share/raye/print-to-pdf.ppd

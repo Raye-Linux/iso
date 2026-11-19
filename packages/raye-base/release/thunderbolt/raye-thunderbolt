@@ -1,0 +1,46 @@
+#!/bin/sh
+# A Thunderbolt or USB4 device plugged in: let it work, without asking,
+# when someone is signed in and the screen is not locked. Never on the
+# sign-in or lock screen: then it waits, and works as soon as the screen
+# is unlocked. Devices met before are let in by boltd itself (policy
+# "auto", as enrolled here).
+#
+#   raye-thunderbolt <device>     e.g. 0-1, from udev
+set -u
+
+sys=${RAYE_SYSFS:-/sys}
+dev=$sys/bus/thunderbolt/devices/${1:-}
+pause=${RAYE_TB_PAUSE:-2}
+
+case ${1:-} in
+"" | */* | .*) exit 2 ;;
+esac
+
+authorized() {
+    [ "$(cat "$dev/authorized" 2>/dev/null)" != 0 ]
+}
+
+# an active local session of a person, not locked
+unlocked() {
+    loginctl list-sessions --no-legend 2>/dev/null | while read -r id _; do
+        set -- $(loginctl show-session "$id" -p Active -p LockedHint -p Remote -p Class --value 2>/dev/null)
+        if [ "${1:-}" = yes ] && [ "${2:-}" = no ] && [ "${3:-}" = no ] && [ "${4:-}" = user ]; then
+            echo yes
+            break
+        fi
+    done | grep -q yes
+}
+
+while [ -e "$dev" ] && ! authorized; do
+    if unlocked; then
+        uid=$(cat "$dev/unique_id" 2>/dev/null)
+        if [ -n "$uid" ] && command -v boltctl >/dev/null 2>&1; then
+            boltctl enroll --policy auto "$uid" >/dev/null 2>&1 && exit 0
+        fi
+        # no boltd (or it said no): authorize for this time only
+        echo 1 > "$dev/authorized" 2>/dev/null
+        exit 0
+    fi
+    sleep "$pause"
+done
+exit 0

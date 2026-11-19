@@ -29,6 +29,15 @@ raye-base (1.0~beta2) resolute; urgency=medium
     added to a group.
   * Installed Windows programs are in a Windows programs folder in your
     home, and a program opened from there starts in its own place.
+  * MIDI music plays with nothing plugged in: Raye Synth is always there
+    for Windows programs and MIDI apps, and only runs while something
+    plays. A Print to PDF printer is there from the start; it asks where
+    to save the PDF, or puts it in Documents.
+  * Firewall on by default, with private and public networks; a private
+    Wi-Fi address per network; Thunderbolt devices work once the screen is
+    unlocked; safer network defaults; two boot services sandboxed.
+  * OpenVPN files (.ovpn) can be added in Settings > VPN, like WireGuard
+    ones.
 
  -- techoraye <190692880+techoraye@users.noreply.github.com>  Thu, 19 Nov 2026 10:00:00 +0000
 

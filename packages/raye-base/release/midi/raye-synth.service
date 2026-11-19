@@ -1,0 +1,8 @@
+[Unit]
+Description=Raye Synth, the built-in MIDI synthesizer
+Documentation=man:fluidsynth(1)
+After=pipewire.service
+
+# Never enabled: started when a program opens it, it stops once idle.
+[Service]
+ExecStart=/usr/libexec/raye-synth run

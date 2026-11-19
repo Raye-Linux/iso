@@ -5,6 +5,27 @@ ConditionPathIsDirectory=/sys/firmware/efi
 [Service]
 Type=oneshot
 ExecStart=/usr/libexec/raye-dualboot
+# reads the firmware entries and the disks, writes one menu entry
+ReadWritePaths=-/usr/local/share
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateNetwork=yes
+ProtectHome=yes
+ProtectSystem=strict
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+CapabilityBoundingSet=CAP_DAC_OVERRIDE CAP_FOWNER CAP_CHOWN
 
 [Install]
 WantedBy=multi-user.target

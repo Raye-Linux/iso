@@ -1,0 +1,84 @@
+#!/bin/sh
+# The firewall, Raye's way. Run by raye-system's postinst.
+#
+# Puts Raye's hook in ufw (private and public networks), then turns the
+# firewall on once: on a new install, and on an older one unless someone
+# turned it off. Settings leaves a mark when the firewall is turned off
+# there; before that mark existed, a ufw.conf written well after ufw was
+# installed says a person chose. Nothing is done again after that once:
+# turning it off later stays off.
+set -u
+
+root=${RAYE_ROOT:-}
+conf=$root/etc/ufw/ufw.conf
+hook=$root/etc/ufw/before.init
+ours=$root/usr/share/raye/firewall/before.init
+stock=$root/usr/share/ufw/before.init
+done_mark=$root/var/lib/raye/firewall-default
+user_off=$root/var/lib/raye/firewall-off
+installed=$root/var/lib/dpkg/info/ufw.list
+profile=$root/usr/libexec/raye-network-profile
+
+[ -e "$conf" ] || exit 0
+
+# a running system, not the image being built or a chroot
+live() {
+    [ "${RAYE_FIREWALL_LIVE:-}" = 1 ] && return 0
+    [ -z "$root" ] && [ -d /run/systemd/system ] && ! systemd-detect-virt -q --chroot 2>/dev/null &&
+        command -v ufw >/dev/null 2>&1
+}
+
+enabled() {
+    sed -n 's/^[[:space:]]*ENABLED[[:space:]]*=[[:space:]]*["'\'']\{0,1\}\([A-Za-z]*\).*/\1/p' "$conf" |
+        tail -n 1 | grep -qix yes
+}
+
+set_conf() {
+    key=$1
+    value=$2
+    if grep -q "^[[:space:]]*$key[[:space:]]*=" "$conf"; then
+        sed -i "s/^[[:space:]]*$key[[:space:]]*=.*/$key=$value/" "$conf"
+    else
+        echo "$key=$value" >> "$conf"
+    fi
+}
+
+# the hook: ours in place of the stock one, never over one a person wrote
+if [ -e "$ours" ]; then
+    if [ ! -e "$hook" ] || cmp -s "$hook" "$stock" || cmp -s "$hook" "$ours"; then
+        cp "$ours" "$hook.raye-new" && chmod 755 "$hook.raye-new" && mv "$hook.raye-new" "$hook"
+    else
+        echo "raye-firewall-setup: $hook was changed by hand, left as it is" >&2
+    fi
+fi
+
+# chosen off: ufw.conf rewritten more than an hour after ufw came
+chosen_off() {
+    [ -e "$user_off" ] && return 0
+    [ -e "$installed" ] || return 1
+    written=$(stat -c %Y "$conf" 2>/dev/null) || return 1
+    since=$(stat -c %Y "$installed" 2>/dev/null) || return 1
+    [ "$written" -gt $((since + 3600)) ]
+}
+
+if [ ! -e "$done_mark" ]; then
+    if enabled; then
+        :
+    elif chosen_off; then
+        echo "raye-firewall-setup: the firewall was turned off on this PC, left off" >&2
+    elif live; then
+        # --force: ufw would ask on the terminal about SSH connections
+        ufw --force enable >/dev/null && ufw logging off >/dev/null || true
+    else
+        set_conf ENABLED yes
+        set_conf LOGLEVEL off
+    fi
+    mkdir -p "${done_mark%/*}" && : > "$done_mark"
+fi
+
+# a firewall that was already running gets the networks' rules now
+# (start is safe to run twice)
+if live && enabled && [ -x "$profile" ]; then
+    "$profile" start || true
+fi
+exit 0

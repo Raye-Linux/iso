@@ -554,6 +554,19 @@ def test_system_postinst_starts_the_upgrade_guard_on_demand_once(tmp_path):
     assert not any(l.startswith("deb-systemd-helper") for l in log)
 
 
+def test_system_postinst_sets_up_the_firewall(tmp_path):
+    root = tmp_path / "root"
+    write(root / "usr/libexec/raye-firewall-setup", '#!/bin/sh\necho "setup root=$RAYE_ROOT" >> "$LOG"\n', mode=0o755)
+    script, bin_dir = maintscript(tmp_path, "raye-system.postinst",
+                                  {"RAYE_DIVERT": "", "RAYE_WINDOWS_ENTRY": ""})
+    fake(bin_dir, "dpkg-divert")
+    fake(bin_dir, "chmod")
+    fake(bin_dir, "deb-systemd-helper")
+    proc, log = run(script, bin_dir, tmp_path, "configure", "")
+    assert proc.returncode == 0, proc.stderr
+    assert f"setup root={root}" in log
+
+
 def test_system_postinst_leaves_the_guard_alone_without_the_helper(tmp_path):
     script, bin_dir = maintscript(tmp_path, "raye-system.postinst",
                                   {"RAYE_DIVERT": "", "RAYE_WINDOWS_ENTRY": ""})
@@ -591,31 +604,35 @@ def test_desktop_postinst_sets_the_app_defaults(tmp_path):
     assert not any(l.startswith("ufw allow") for l in log)
 
 
-def test_desktop_postinst_opens_the_phone_ports_only_with_an_active_firewall(tmp_path):
+def test_desktop_postinst_closes_the_profiles_opened_to_every_network_once(tmp_path):
+    # private networks reach the phone and discovery ports; a rule open to
+    # any network would reach them from a public one too
     write(tmp_path / "root/etc/ufw/applications.d/raye-phone", "[raye-phone]\n")
-    script, bin_dir = maintscript(tmp_path, "raye-desktop.postinst", {"RAYE_DIVERT": ""})
-    fake(bin_dir, "dpkg-divert")
-    fake(bin_dir, "flatpak")
-    fake(bin_dir, "ufw", '[ "$1" = status ] && echo "Status: active"\ntrue')
-    fake(bin_dir, "deb-systemd-helper")
-    proc, log = run(script, bin_dir, tmp_path, "configure", "")
-    assert proc.returncode == 0, proc.stderr
-    assert "ufw app update raye-phone" in log and "ufw allow raye-phone" in log
-    # the profile is not there: nothing is opened for it
-    assert not any("raye-network-discovery" in l for l in log)
-
-
-def test_desktop_postinst_opens_network_discovery_with_an_active_firewall(tmp_path):
     write(tmp_path / "root/etc/ufw/applications.d/raye-network-discovery", "[raye-network-discovery]\n")
     script, bin_dir = maintscript(tmp_path, "raye-desktop.postinst", {"RAYE_DIVERT": ""})
     fake(bin_dir, "dpkg-divert")
     fake(bin_dir, "flatpak")
     fake(bin_dir, "ufw", '[ "$1" = status ] && echo "Status: active"\ntrue')
     fake(bin_dir, "deb-systemd-helper")
+    proc, log = run(script, bin_dir, tmp_path, "configure", "0.5.20")
+    assert proc.returncode == 0, proc.stderr
+    assert "ufw delete allow raye-phone" in log
+    assert "ufw delete allow raye-network-discovery" in log
+    assert not any(l.startswith("ufw allow") for l in log)
+    proc, log = run(script, bin_dir, tmp_path, "configure", "1.0~beta2")
+    assert not any(l.startswith("ufw") and "status" not in l for l in log)
+
+
+def test_desktop_postinst_leaves_an_inactive_firewall_alone(tmp_path):
+    write(tmp_path / "root/etc/ufw/applications.d/raye-phone", "[raye-phone]\n")
+    script, bin_dir = maintscript(tmp_path, "raye-desktop.postinst", {"RAYE_DIVERT": ""})
+    fake(bin_dir, "dpkg-divert")
+    fake(bin_dir, "flatpak")
+    fake(bin_dir, "ufw", 'echo "Status: inactive"')
+    fake(bin_dir, "deb-systemd-helper")
     proc, log = run(script, bin_dir, tmp_path, "configure", "")
     assert proc.returncode == 0, proc.stderr
-    assert "ufw allow raye-network-discovery" in log
-    assert not any("raye-phone" in l for l in log)
+    assert not any(l.startswith("ufw delete") or l.startswith("ufw allow") for l in log)
 
 
 def test_network_discovery_profile_opens_only_udp_replies():
@@ -639,7 +656,7 @@ def test_desktop_postinst_starts_printing_on_demand_once(tmp_path):
     fake(bin_dir, "deb-systemd-helper")
     proc, log = run(script, bin_dir, tmp_path, "configure", "")
     assert proc.returncode == 0, proc.stderr
-    helper = [l for l in log if l.startswith("deb-systemd-helper")]
+    helper = [l for l in log if l.startswith("deb-systemd-helper") and "cups" in l]
     # disabling the service follows its Also= and takes the socket and
     # the path unit with it: they are enabled again after
     assert helper == ["deb-systemd-helper disable cups.service",
@@ -649,6 +666,19 @@ def test_desktop_postinst_starts_printing_on_demand_once(tmp_path):
     proc, log = run(script, bin_dir, tmp_path, "configure", "0.1")
     assert proc.returncode == 0, proc.stderr
     assert not any(l.startswith("deb-systemd-helper") for l in log)
+
+
+def test_desktop_postinst_keeps_the_stock_synth_from_sign_in(tmp_path):
+    script, bin_dir = maintscript(tmp_path, "raye-desktop.postinst", {"RAYE_DIVERT": ""})
+    fake(bin_dir, "dpkg-divert")
+    fake(bin_dir, "deb-systemd-helper")
+    proc, log = run(script, bin_dir, tmp_path, "configure", "")
+    assert proc.returncode == 0, proc.stderr
+    assert "deb-systemd-helper --user disable fluidsynth.service" in log
+    assert (tmp_path / "root/var/lib/raye-desktop/fluidsynth-off").exists()
+    # once only: someone who turns it back on keeps it
+    proc, log = run(script, bin_dir, tmp_path, "configure", "0.1")
+    assert not any("fluidsynth" in l for l in log)
 
 
 def test_desktop_postinst_leaves_printing_alone_without_the_helper(tmp_path):

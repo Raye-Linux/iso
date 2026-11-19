@@ -1,0 +1,46 @@
+#!/bin/sh
+# Adds the "Print to PDF" printer, once per machine: removing it later is
+# the person's choice and it does not come back. It is never made the
+# default printer and never shared; on its own it wakes no print server.
+set -u
+
+DONE=${RAYE_PDF_DONE:-/var/lib/raye-desktop/print-to-pdf}
+PPD=${RAYE_PDF_PPD:-/usr/share/raye/print-to-pdf.ppd}
+LOCALE=${RAYE_LOCALE_FILE:-/etc/default/locale}
+PAPER=${RAYE_PAPERSIZE_FILE:-/etc/papersize}
+
+[ -e "$DONE" ] && exit 0
+
+lang=${LANG:-}
+if [ -f "$LOCALE" ]; then
+    l=$(sed -n 's/^LANG=["]*\([^"]*\)["]*$/\1/p' "$LOCALE" | tail -n 1)
+    [ -n "$l" ] && lang=$l
+fi
+# The queue name is what Windows programs show, so it reads as words: the
+# spaces are no-break spaces, the only kind a queue name may hold.
+nbsp=$(printf '\302\240')
+case $lang in
+    fr*) name="Imprimer${nbsp}en${nbsp}PDF"; info="Imprimer en PDF" ;;
+    *) name="Print${nbsp}to${nbsp}PDF"; info="Print to PDF" ;;
+esac
+
+# letter on this continent, A4 elsewhere, unless the system says otherwise
+size=
+[ -f "$PAPER" ] && size=$(sed -n '/^[^#]/{s/[[:space:]]//g;p;q}' "$PAPER")
+if [ -z "$size" ]; then
+    case $lang in
+        *_US*|*_CA*|*_MX*|*_PH*|*_CL*|*_CO*|*_VE*|*_GT*|*_PR*) size=letter ;;
+        *) size=a4 ;;
+    esac
+fi
+case $size in
+    letter|Letter) size=Letter ;; legal|Legal) size=Legal ;; a3|A3) size=A3 ;;
+    a5|A5) size=A5 ;; *) size=A4 ;;
+esac
+
+if ! LC_ALL=C lpstat -v 2>/dev/null | grep -q ' raye-pdf:/'; then
+    lpadmin -p "$name" -E -v raye-pdf:/ -P "$PPD" -D "$info" -L "" \
+        -o printer-is-shared=false -o PageSize="$size" || exit 1
+fi
+mkdir -p "${DONE%/*}"
+: > "$DONE"

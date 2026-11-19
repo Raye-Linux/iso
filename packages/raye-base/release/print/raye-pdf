@@ -1,0 +1,99 @@
+#!/usr/bin/python3 -I
+"""CUPS backend of the "Print to PDF" printer.
+
+CUPS has already turned the job into a PDF (see print-to-pdf.ppd). This
+hands it to raye-pdf-save, run as the person who printed it: a save dialog
+asks where it goes, or it lands in their Documents folder.
+
+The backend runs as root (mode 0700, like every backend that writes into
+homes) only to become that person; it reads the job and nothing else.
+"""
+import os
+import pwd
+import subprocess
+import sys
+
+# a test print server points this elsewhere (cupsd.conf SetEnv, root only)
+SAVE = os.environ.get("RAYE_PDF_SAVE", "/usr/libexec/raye-pdf-save")
+RUNTIME = "/run/user"
+# what CUPS reads from a backend: 0 done, 1 failed, 4 stop the queue
+OK, FAILED = 0, 1
+DISCOVERY = 'direct raye-pdf:/ "Raye Print to PDF" "Print to PDF" "MFG:Raye;MDL:Print to PDF;CLS:PRINTER;CMD:PDF;"'
+
+
+def log(level, text):
+    print("%s: %s" % (level, text), file=sys.stderr, flush=True)
+
+
+def account(name):
+    """The account a job goes to, or None. Never one without a home."""
+    try:
+        entry = pwd.getpwnam(name)
+    except KeyError:
+        return None
+    if entry.pw_uid != 0 and entry.pw_uid < 1000:
+        return None
+    if not os.path.isdir(entry.pw_dir):
+        return None
+    return entry
+
+
+def user_env(entry, runtime):
+    env = {
+        "HOME": entry.pw_dir,
+        "USER": entry.pw_name,
+        "LOGNAME": entry.pw_name,
+        "PATH": "/usr/local/bin:/usr/bin:/bin",
+    }
+    if runtime:
+        env["XDG_RUNTIME_DIR"] = runtime
+        env["DBUS_SESSION_BUS_ADDRESS"] = "unix:path=%s/bus" % runtime
+    return env
+
+
+def as_user(entry):
+    """Command prefix that drops to the account, its groups included."""
+    return ["setpriv", "--reuid=%d" % entry.pw_uid, "--regid=%d" % entry.pw_gid, "--init-groups", "--"]
+
+
+def session_of(entry, runtime_root=RUNTIME):
+    """The account's runtime folder when it has a session bus, else None."""
+    runtime = os.path.join(runtime_root, str(entry.pw_uid))
+    if os.path.exists(os.path.join(runtime, "bus")):
+        return runtime
+    return None
+
+
+def handoff(entry, source, title, job, run=subprocess.run, runtime_root=RUNTIME):
+    """Gives the PDF to raye-pdf-save, run as the account. Root never
+    writes into a folder of the account's."""
+    runtime = session_of(entry, runtime_root)
+    cmd = as_user(entry) + [SAVE, "--receive", job, title]
+    return run(cmd, env=user_env(entry, runtime), stdin=source).returncode == 0
+
+
+def main(argv):
+    if len(argv) == 1:
+        print(DISCOVERY)
+        return OK
+    if len(argv) not in (6, 7):
+        log("ERROR", "usage: raye-pdf job user title copies options [file]")
+        return FAILED
+    job, user, title = argv[1], argv[2], argv[3]
+    entry = account(user)
+    if entry is None:
+        log("ERROR", "no account to save the PDF for: %s" % user)
+        return FAILED
+    if len(argv) == 7:
+        with open(argv[6], "rb") as source:
+            done = handoff(entry, source, title, job)
+    else:
+        done = handoff(entry, sys.stdin, title, job)
+    if not done:
+        log("ERROR", "could not save the PDF")
+        return FAILED
+    return OK
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

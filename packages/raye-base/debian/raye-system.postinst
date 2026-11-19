@@ -109,6 +109,23 @@ if [ "$1" = configure ]; then
     fi
 fi
 
+if [ "$1" = configure ]; then
+    # the firewall on, once, with private and public networks
+    if [ -x "$DPKG_ROOT/usr/libexec/raye-firewall-setup" ]; then
+        RAYE_ROOT="$DPKG_ROOT" "$DPKG_ROOT/usr/libexec/raye-firewall-setup" || true
+    fi
+    # Wi-Fi networks saved before the private address keep the one they
+    # know. Once, on an upgrade of a running system.
+    kept=/var/lib/raye-system/wifi-address-kept
+    if [ -n "${2:-}" ] && [ -z "$DPKG_ROOT" ] && [ ! -e "$kept" ]; then
+        /usr/libexec/raye-wifi-keep-address >/dev/null 2>&1 || true
+        mkdir -p "${kept%/*}" && : > "$kept"
+    fi
+    if [ -z "$DPKG_ROOT" ] && [ -d /run/systemd/system ]; then
+        sysctl -q -p /usr/lib/sysctl.d/90-raye-network.conf >/dev/null 2>&1 || true
+    fi
+fi
+
 # a PC that got the NVIDIA driver before the NVIDIA Control Panel was asked
 # for: raye-drivers installs the panel at the next start
 if [ "$1" = configure ] &&

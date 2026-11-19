@@ -1,0 +1,27 @@
+[Unit]
+Description=Let in a new Thunderbolt device while the screen is unlocked
+After=bolt.service systemd-logind.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/raye-thunderbolt %i
+TimeoutStartSec=infinity
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateNetwork=yes
+ProtectHome=yes
+ProtectSystem=strict
+ProtectKernelModules=yes
+ProtectKernelTunables=no
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+ProtectKernelLogs=yes
+ProtectClock=yes
+ProtectHostname=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+CapabilityBoundingSet=CAP_DAC_OVERRIDE

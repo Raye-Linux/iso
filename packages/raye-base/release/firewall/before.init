@@ -1,0 +1,16 @@
+#!/bin/sh
+# Called by ufw-init (see man ufw-framework). Raye puts the rules of
+# private and public networks in front of ufw's own while the firewall
+# runs, and takes them away when it stops.
+profile=/usr/libexec/raye-network-profile
+
+case "${1:-}" in
+start)
+    [ -x "$profile" ] && "$profile" start
+    ;;
+stop | flush-all)
+    [ -x "$profile" ] && "$profile" stop
+    ;;
+esac
+# a problem here must not keep the firewall itself from starting
+exit 0

@@ -1,0 +1,105 @@
+#!/bin/sh
+# Raye Synth, the MIDI synthesizer that is always there, like the one Windows
+# ships: programs that play MIDI with nothing plugged in still make sound.
+# It runs only while something plays. Windows programs start it when they
+# open it; it stops once nothing has played and nobody has held it open
+# for two minutes.
+#
+#   raye-synth start    start it if needed, return once its port is there
+#   raye-synth run      what raye-synth.service runs
+#   raye-synth status   "<events received> <connections>", empty when down
+set -u
+
+NAME="Raye Synth"
+CLIENTS=${RAYE_SEQ_CLIENTS:-/proc/asound/seq/clients}
+IDLE=${RAYE_SYNTH_IDLE:-120}
+CHECK=${RAYE_SYNTH_CHECK:-15}
+# a bigger General MIDI font installed later takes over through the alternative
+FONTS=${RAYE_SYNTH_FONTS:-/usr/share/sounds/sf3/default-GM.sf3 /usr/share/sounds/sf2/default-GM.sf2 /usr/share/sounds/sf2/TimGM6mb.sf2}
+
+# Reads the kernel's list of sequencer clients: the input pool of a user
+# client counts every event delivered to it.
+status() {
+    [ -r "$CLIENTS" ] || return 0
+    awk -v name="$NAME" '
+        /^Client +[0-9]+ : / {
+            inside = index($0, ": \"" name "\" [") > 0
+            if (inside) found = 1
+            pool = ""
+            next
+        }
+        !inside { next }
+        /^  Input pool :/ { pool = "in"; next }
+        /^  Output pool :/ { pool = "out"; next }
+        /Connected From:/ { sub(/.*Connected From: */, ""); conns += split($0, a, ",") }
+        pool == "in" && /Alloc success/ { sub(/.*: */, ""); events += $0 }
+        END { if (found) printf "%d %d\n", events, conns }
+    ' "$CLIENTS"
+}
+
+start() {
+    [ -n "$(status)" ] && return 0
+    if ! systemctl --user start --no-block raye-synth.service 2>/dev/null; then
+        # no session manager, e.g. a program run on an invisible screen
+        setsid "$0" run </dev/null >/dev/null 2>&1 &
+    fi
+    n=0
+    while [ "$n" -lt 30 ]; do
+        [ -n "$(status)" ] && return 0
+        sleep 0.1
+        n=$((n + 1))
+    done
+    echo "raye-synth: the synthesizer did not start" >&2
+    return 1
+}
+
+run() {
+    font=
+    for f in $FONTS; do
+        if [ -r "$f" ]; then font=$f; break; fi
+    done
+    if [ -z "$font" ]; then
+        echo "raye-synth: no General MIDI sound font installed" >&2
+        exit 1
+    fi
+    command -v fluidsynth >/dev/null || { echo "raye-synth: fluidsynth is missing" >&2; exit 1; }
+
+    fifo=$(mktemp -u "${XDG_RUNTIME_DIR:-/tmp}/raye-synth.XXXXXX")
+    mkfifo -m 600 "$fifo" || exit 1
+    # fluidsynth reads commands on its input and quits at its end: this
+    # script holds the other end, so closing it stops the synth cleanly.
+    PIPEWIRE_PROPS='{ application.name = "Raye Synth" node.description = "Raye Synth" media.name = "MIDI" }' \
+        fluidsynth -q -a pipewire -m alsa_seq -r 48000 -z 256 -g 0.5 \
+        -o midi.portname="$NAME" -o midi.autoconnect=0 -o synth.cpu-cores=1 \
+        "$font" <"$fifo" >/dev/null &
+    pid=$!
+    exec 3>"$fifo"
+    rm -f "$fifo"
+    trap 'exec 3>&-; wait "$pid"; exit 0' TERM INT HUP
+
+    last= quiet=0
+    while kill -0 "$pid" 2>/dev/null; do
+        sleep "$CHECK" &
+        wait $!
+        now=$(status)
+        # a synth whose port never showed counts as idle too
+        [ -n "$now" ] || now="none 0"
+        set -- $now
+        if [ "$2" -gt 0 ] || [ "$now" != "$last" ]; then
+            quiet=0
+        else
+            quiet=$((quiet + CHECK))
+        fi
+        last=$now
+        [ "$quiet" -ge "$IDLE" ] && break
+    done
+    exec 3>&-
+    wait "$pid"
+}
+
+case ${1:-} in
+    start) start ;;
+    run) run ;;
+    status) status ;;
+    *) echo "usage: raye-synth start|run|status" >&2; exit 2 ;;
+esac

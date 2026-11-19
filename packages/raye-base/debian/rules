@@ -38,11 +38,22 @@ ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
 	python3 -B -m unittest discover -s release/crash/tests
 	python3 -B -m unittest discover -s release/windows/tests
 	python3 -B -m unittest discover -s release/chromebook/tests
+	python3 -B -m unittest discover -s release/midi/tests
+	python3 -B -m unittest discover -s release/print/tests
+	python3 -B -m unittest discover -s release/firewall/tests
+	python3 -B -m unittest discover -s release/network/tests
+	python3 -B -m unittest discover -s release/thunderbolt/tests
 endif
 
 override_dh_install:
 	dh_install
 	$(RELEASE) install
+
+# A CUPS backend that writes into homes runs as root only when no one else
+# may run it.
+override_dh_fixperms:
+	dh_fixperms
+	chmod 0700 debian/raye-desktop/usr/lib/cups/backend/raye-pdf
 
 # System units of the list marked no-start are enabled, never started or
 # restarted by the package; the others keep debhelper's defaults. Each

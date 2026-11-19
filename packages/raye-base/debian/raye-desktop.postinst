@@ -4,11 +4,15 @@ set -e
 # filled in at build time, see raye-desktop.preinst
 DIVERT="#RAYE_DIVERT#"
 
-# Firewall profiles opened when the firewall is on: phone pairing, and the
-# replies of PCs and NAS found on the network.
+# Firewall profiles an older Raye opened to every network: phone pairing,
+# and the replies of PCs and NAS found on the network.
 PROFILES="raye-phone raye-network-discovery"
+# set once those rules were taken back (private networks now reach them)
+PROFILES_PRIVATE=/var/lib/raye-desktop/firewall-profiles-private
 # set once printing has been made to start on demand
 CUPS_ON_DEMAND=/var/lib/raye-desktop/cups-on-demand
+# set once fluidsynth's own unit has been turned off
+SYNTH_OFF=/var/lib/raye-desktop/fluidsynth-off
 
 if [ "$1" = configure ]; then
     # A file this version no longer replaces gets its stock one back.
@@ -27,16 +31,18 @@ if [ "$1" = configure ]; then
         flatpak override --system --env=ELECTRON_OZONE_PLATFORM_HINT=auto || true
     fi
 
-    # Pairing with a phone and finding shared folders need their ports
-    # when the firewall is on. Left alone when the firewall is off:
-    # turning it on later is the firewall page's business.
-    if command -v ufw >/dev/null 2>&1 &&
+    # Pairing with a phone and finding shared folders work on private
+    # networks through raye-network-profile. The rules an older Raye added
+    # opened them on public networks too: taken back once, so one a person
+    # adds again in the firewall's window stays.
+    if [ ! -e "$DPKG_ROOT$PROFILES_PRIVATE" ] && command -v ufw >/dev/null 2>&1 &&
             LC_ALL=C ufw status 2>/dev/null | grep -q '^Status: active'; then
         for profile in $PROFILES; do
             [ -e "$DPKG_ROOT/etc/ufw/applications.d/$profile" ] || continue
-            ufw app update "$profile" >/dev/null 2>&1 || true
-            ufw allow "$profile" >/dev/null 2>&1 || true
+            ufw delete allow "$profile" >/dev/null 2>&1 || true
         done
+        mkdir -p "$DPKG_ROOT${PROFILES_PRIVATE%/*}"
+        : > "$DPKG_ROOT$PROFILES_PRIVATE"
     fi
 
     # No print server at boot: cups.socket starts it when a program
@@ -49,6 +55,15 @@ if [ "$1" = configure ]; then
         deb-systemd-helper enable cups.socket cups.path >/dev/null || true
         mkdir -p "$DPKG_ROOT${CUPS_ON_DEMAND%/*}"
         : > "$DPKG_ROOT$CUPS_ON_DEMAND"
+    fi
+
+    # fluidsynth's own unit would run a synth in every account from
+    # sign-in; Raye Synth starts only when something plays. Done once:
+    # fluidsynth's upgrades keep it off, and someone who wants it keeps it.
+    if [ ! -e "$DPKG_ROOT$SYNTH_OFF" ] && command -v deb-systemd-helper >/dev/null 2>&1; then
+        deb-systemd-helper --user disable fluidsynth.service >/dev/null || true
+        mkdir -p "$DPKG_ROOT${SYNTH_OFF%/*}"
+        : > "$DPKG_ROOT$SYNTH_OFF"
     fi
 fi
 

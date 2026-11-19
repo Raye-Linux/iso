@@ -1,0 +1,12 @@
+[Unit]
+Description=Add the Print to PDF printer
+ConditionPathExists=!/var/lib/raye-desktop/print-to-pdf
+After=cups.socket
+Wants=cups.socket
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/raye-print-to-pdf
+
+[Install]
+WantedBy=multi-user.target

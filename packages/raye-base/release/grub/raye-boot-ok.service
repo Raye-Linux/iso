@@ -16,6 +16,27 @@ Type=oneshot
 ExecStart=/usr/bin/grub-editenv /boot/grub/grubenv unset recordfail
 # an update start is not a graphics failure (09_raye_graphics)
 ExecStart=/usr/bin/grub-editenv /boot/grub/grubenv set raye_gfx_fails=0
+# writes the boot menu's little state file, nothing else
+ReadWritePaths=-/boot/grub
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateNetwork=yes
+ProtectHome=yes
+ProtectSystem=strict
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+CapabilityBoundingSet=CAP_DAC_OVERRIDE CAP_FOWNER CAP_CHOWN
 
 [Install]
 WantedBy=system-update.target

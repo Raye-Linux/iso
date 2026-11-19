@@ -1,0 +1,203 @@
+#!/bin/sh
+# Private and public networks, on top of the firewall (ufw).
+#
+# The firewall blocks what other computers start towards this PC. On a
+# private network (home, the default) the PCs, phones, consoles and NAS
+# of that network may reach it: sharing, phone pairing, LAN games, Steam
+# streaming, a dev server opened to the phone. On a public network
+# (open Wi-Fi, mobile data, or a network marked so in Settings) the PC
+# stays quiet: no reply to ping, no name announced, nothing shared.
+#
+# The choice is NetworkManager's connection.zone: "public" (or block,
+# drop, external) is public, "home" (or trusted, work, internal) is
+# private. Without one, open Wi-Fi and mobile data are public and the
+# rest private.
+#
+#   raye-network-profile start    ufw starts (before.init): rules, then
+#                                 the jumps that make them count
+#   raye-network-profile stop     ufw stops: jumps and rules go
+#   raye-network-profile apply    a network came, left or changed
+#   raye-network-profile show     the rules apply would load, on stdout
+#
+# The rules live in three chains placed first in INPUT, OUTPUT and
+# FORWARD, so ufw's own rules and the user's stay as they are. Packets of
+# a connection already open leave the input chain at its first rule.
+set -u
+
+IN=raye-profile-in
+OUT=raye-profile-out
+FWD=raye-profile-fwd
+# virtual machines, containers and Android apps behind the PC's own
+# bridges: they reach the PC and go out through it
+BRIDGES="virbr+ lxcbr+ lxdbr+ incusbr+ waydroid+"
+# NetBIOS, SSDP, WS-Discovery, mDNS, LLMNR: what makes a PC visible
+QUIET_IN=137,138,1900,3702,5353,5355
+QUIET_OUT=137,138,3702,5353,5355
+# what was loaded last
+STATE=${RAYE_NP_STATE:-/run/raye/network-profile.sum}
+
+nm() {
+    timeout 5 "${RAYE_NMCLI:-nmcli}" "$@" 2>/dev/null
+}
+
+# profile ZONE TYPE KEY_MGMT -> private | public
+profile() {
+    case $1 in
+    public | block | drop | external) echo public; return ;;
+    home | trusted | work | internal) echo private; return ;;
+    esac
+    case $2 in
+    gsm | cdma) echo public; return ;;
+    802-11-wireless)
+        case $3 in
+        "" | none | owe) echo public; return ;;
+        esac ;;
+    esac
+    echo private
+}
+
+# Interface names go into the rules as they are: keep the ones the
+# kernel itself allows, nothing that could be read as an option.
+good_device() {
+    case $1 in
+    "" | -* | *[!A-Za-z0-9_.:@-]*) return 1 ;;
+    esac
+    [ ${#1} -le 15 ]
+}
+
+good_network() {
+    case $1 in
+    "" | *[!0-9A-Fa-f.:/]*) return 1 ;;
+    */*) return 0 ;;
+    esac
+    return 1
+}
+
+# DEVICE PROFILE, one line per active link
+links() {
+    nm -t -f UUID,TYPE,DEVICE connection show --active | while IFS=: read -r uuid type device; do
+        good_device "$device" || continue
+        # a VPN plugin names the link it rides on, which has its own line
+        case $type in
+        loopback | bridge | vpn) continue ;;
+        esac
+        zone=
+        key=
+        # a setting the connection does not have is simply not printed
+        while IFS= read -r line; do
+            case $line in
+            connection.zone:*) zone=${line#*:} ;;
+            802-11-wireless-security.key-mgmt:*) key=${line#*:} ;;
+            esac
+        done <<FIELDS
+$(nm -t -f connection.zone,802-11-wireless-security.key-mgmt connection show uuid "$uuid")
+FIELDS
+        echo "$device $(profile "$zone" "$type" "$key")"
+    done
+}
+
+# the networks a private link reaches directly, from its addresses
+networks() {
+    nm -t -f "IP$2.ADDRESS" device show "$1" | while IFS= read -r line; do
+        net=${line#*:}
+        good_network "$net" && echo "$net"
+    done
+}
+
+# rules 4|6 [LINKS]: the iptables-restore text of one family
+rules() {
+    family=$1
+    links=$2
+    if [ "$family" = 6 ]; then
+        ping="-p ipv6-icmp --icmpv6-type echo-request"
+    else
+        ping="-p icmp --icmp-type echo-request"
+    fi
+    printf '*filter\n:%s - [0:0]\n:%s - [0:0]\n:%s - [0:0]\n' "$IN" "$OUT" "$FWD"
+    printf -- '-A %s -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN\n' "$IN"
+    for bridge in $BRIDGES; do
+        printf -- '-A %s -i %s -j ACCEPT\n' "$IN" "$bridge"
+        printf -- '-A %s -i %s -j ACCEPT\n' "$FWD" "$bridge"
+        printf -- '-A %s -o %s -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT\n' "$FWD" "$bridge"
+    done
+    # public first: a link listed twice stays quiet
+    printf '%s\n' "$links" | while read -r device kind; do
+        [ "$kind" = public ] || continue
+        printf -- '-A %s -i %s %s -j DROP\n' "$IN" "$device" "$ping"
+        printf -- '-A %s -i %s -p udp -m multiport --dports %s -j DROP\n' "$IN" "$device" "$QUIET_IN"
+        printf -- '-A %s -o %s -p udp -m multiport --dports %s -j DROP\n' "$OUT" "$device" "$QUIET_OUT"
+    done
+    printf '%s\n' "$links" | while read -r device kind; do
+        [ "$kind" = private ] || continue
+        networks "$device" "$family" | sort -u | while read -r net; do
+            printf -- '-A %s -i %s -s %s -j ACCEPT\n' "$IN" "$device" "$net"
+        done
+    done
+    printf 'COMMIT\n'
+}
+
+# At boot ufw starts before D-Bus: asking nmcli then could hold the boot
+# up to its timeout, and NetworkManager has no link up yet anyway.
+nm_running() {
+    [ "${RAYE_NM_RUNNING:-}" = 1 ] || systemctl is-active -q NetworkManager.service 2>/dev/null
+}
+
+# A lease renewed with the same address loads nothing again.
+load() {
+    links=
+    if [ "${1:-}" = changed ] || nm_running; then
+        links=$(links)
+    fi
+    v4=$(rules 4 "$links")
+    v6=$(rules 6 "$links")
+    sum=$(printf '%s\n%s\n' "$v4" "$v6" | md5sum)
+    if [ "${1:-}" = changed ] && [ "$sum" = "$(cat "$STATE" 2>/dev/null)" ]; then
+        return
+    fi
+    printf '%s\n' "$v4" | iptables-restore -n || status=1
+    if ip6tables -n -L INPUT >/dev/null 2>&1; then
+        printf '%s\n' "$v6" | ip6tables-restore -n || status=1
+    fi
+    if [ $status -eq 0 ]; then
+        mkdir -p "${STATE%/*}" && echo "$sum" > "$STATE"
+    else
+        rm -f "$STATE"
+    fi
+}
+
+jumps() {
+    action=$1
+    for exe in iptables ip6tables; do
+        $exe -n -L INPUT >/dev/null 2>&1 || continue
+        for pair in "INPUT $IN" "OUTPUT $OUT" "FORWARD $FWD"; do
+            set -- $pair
+            if [ "$action" = add ]; then
+                $exe -C "$1" -j "$2" 2>/dev/null || $exe -I "$1" 1 -j "$2" || status=1
+            else
+                while $exe -D "$1" -j "$2" 2>/dev/null; do :; done
+                $exe -F "$2" 2>/dev/null
+                $exe -X "$2" 2>/dev/null
+            fi
+        done
+    done
+}
+
+status=0
+case ${1:-} in
+start) load; jumps add ;;
+stop) jumps remove; rm -f "$STATE" ;;
+apply)
+    # nothing to do while the firewall is off: start loads it all
+    if iptables -n -L "$IN" >/dev/null 2>&1; then
+        load changed
+    fi ;;
+show)
+    links=$(links)
+    rules 4 "$links"
+    rules 6 "$links" ;;
+profile) profile "${2:-}" "${3:-}" "${4:-}" ;;
+*)
+    echo "usage: raye-network-profile start|stop|apply|show" >&2
+    exit 2 ;;
+esac
+exit $status

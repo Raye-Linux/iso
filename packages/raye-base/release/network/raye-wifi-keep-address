@@ -1,0 +1,24 @@
+#!/bin/sh
+# Wi-Fi networks saved before the private Wi-Fi address came keep the
+# address they know this PC by: a router's reserved IP, its port
+# forwards for a game server or a MAC filter would break otherwise.
+# Only networks that never chose: one set to random or to a fixed
+# address is left as it is. Run once, on upgrade, by raye-system.
+set -u
+nm() {
+    timeout 10 "${RAYE_NMCLI:-nmcli}" "$@"
+}
+
+list=$(nm -t -f UUID,TYPE connection show) || exit 1
+status=0
+printf '%s\n' "$list" | while IFS=: read -r uuid type; do
+    [ "$type" = 802-11-wireless ] || continue
+    fields=$(nm -t -f 802-11-wireless.mode,802-11-wireless.cloned-mac-address connection show uuid "$uuid") || continue
+    mode=$(printf '%s\n' "$fields" | sed -n 's/^802-11-wireless.mode://p')
+    mac=$(printf '%s\n' "$fields" | sed -n 's/^802-11-wireless.cloned-mac-address://p')
+    # the PC's own hotspot is not a network that knows it
+    [ "$mode" = ap ] && continue
+    [ -z "$mac" ] || continue
+    nm connection modify uuid "$uuid" 802-11-wireless.cloned-mac-address permanent || exit 1
+done || status=1
+exit $status

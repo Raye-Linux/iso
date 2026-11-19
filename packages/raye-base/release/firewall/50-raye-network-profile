@@ -1,0 +1,8 @@
+#!/bin/sh
+# NetworkManager: a network came, left or got a new address. The rules
+# of private and public networks follow it.
+case ${2:-} in
+up | down | reapply | dhcp4-change | dhcp6-change)
+    exec /usr/libexec/raye-network-profile apply ;;
+esac
+exit 0

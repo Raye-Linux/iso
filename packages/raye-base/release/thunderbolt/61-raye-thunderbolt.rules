@@ -1,0 +1,3 @@
+# a device the kernel holds back until something lets it in
+ACTION=="add", SUBSYSTEM=="thunderbolt", ENV{DEVTYPE}=="thunderbolt_device", ATTR{authorized}=="0", \
+  TAG+="systemd", ENV{SYSTEMD_WANTS}+="raye-thunderbolt@%k.service"

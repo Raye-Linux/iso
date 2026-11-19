@@ -1,0 +1,173 @@
+#!/usr/bin/python3 -I
+"""The user's side of "Print to PDF": asks where the PDF goes, the way
+Windows' own PDF printer does, or puts it in Documents and says so.
+
+    raye-pdf-save --receive JOB TITLE   PDF on standard input (from the backend)
+    raye-pdf-save FILE TITLE            ask where FILE goes (in the session)
+    raye-pdf-save --documents FILE TITLE
+"""
+import os
+import re
+import shutil
+import subprocess
+import sys
+
+SELF = "/usr/libexec/raye-pdf-save"
+WORDS = {
+    "en": {
+        "printer": "Print to PDF",
+        "dialog": "Save as PDF",
+        "filter": "PDF documents",
+        "saved": "Saved to Documents",
+        "untitled": "Document",
+    },
+    "fr": {
+        "printer": "Imprimer en PDF",
+        "dialog": "Enregistrer en PDF",
+        "filter": "Documents PDF",
+        "saved": "Enregistré dans Documents",
+        "untitled": "Document",
+    },
+}
+# extensions programs leave in the title of what they print
+DOC_EXT = re.compile(r"\.(txt|text|log|rtf|docx?|odt|xlsx?|ods|pptx?|odp|html?|xml|csv|md|png|jpe?g|gif|bmp|tiff?|pdf)$", re.I)
+WINDOWS_APP = re.compile(r"\s+-\s+(Notepad|WordPad|Paint|Bloc-notes)$", re.I)
+
+
+def language(env):
+    for key in ("LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"):
+        value = env.get(key, "")
+        if value:
+            return "fr" if value.startswith("fr") else "en"
+    return "en"
+
+
+def file_name(title, words):
+    """A file name for what was printed, from the job title."""
+    name = (title or "").strip()
+    name = WINDOWS_APP.sub("", name)
+    if name.lower().startswith(("http://", "https://", "file://")):
+        name = name.rstrip("/").rsplit("/", 1)[-1]
+    name = name.replace("\\", "/").rsplit("/", 1)[-1]
+    name = DOC_EXT.sub("", name)
+    name = re.sub(r"[\x00-\x1f\x7f:*?\"<>|]", "", name).strip(" .")
+    if not name or name.lower() in ("untitled", "sans titre", "(stdin)", "smbprn"):
+        name = words["untitled"]
+    return name[:120] + ".pdf"
+
+
+def documents(env, run=subprocess.run):
+    home = env.get("HOME") or os.path.expanduser("~")
+    try:
+        out = run(["xdg-user-dir", "DOCUMENTS"], capture_output=True, text=True, env=env).stdout.strip()
+    except OSError:
+        out = ""
+    # xdg-user-dir answers the home itself when no folder is set
+    if not out or os.path.normpath(out) == os.path.normpath(home):
+        out = os.path.join(home, "Documents")
+    os.makedirs(out, exist_ok=True)
+    return out
+
+
+def free_path(folder, name):
+    """name in folder, or "name (2).pdf" and so on: never over a file."""
+    base, ext = os.path.splitext(name)
+    path, n = os.path.join(folder, name), 2
+    while os.path.lexists(path):
+        path = os.path.join(folder, "%s (%d)%s" % (base, n, ext))
+        n += 1
+    return path
+
+
+def tidy(source):
+    folder = os.path.dirname(source)
+    if os.path.basename(folder) == "raye-pdf":
+        try:
+            os.rmdir(folder)
+        except OSError:
+            pass
+
+
+def move(source, target):
+    shutil.move(source, target)
+    tidy(source)
+
+
+def to_documents(source, title, env, run=subprocess.run):
+    words = WORDS[language(env)]
+    target = free_path(documents(env, run), file_name(title, words))
+    move(source, target)
+    try:
+        run(["notify-send", "--app-name", words["printer"], "--icon", "application-pdf",
+             words["saved"], os.path.basename(target)], env=env, capture_output=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    return target
+
+
+def ask(source, title, env, run=subprocess.run):
+    """Save dialog; None when the person cancels. Falls back to Documents
+    when no dialog can be shown."""
+    words = WORDS[language(env)]
+    if not (env.get("WAYLAND_DISPLAY") or env.get("DISPLAY")) or not shutil.which("kdialog", path=env.get("PATH")):
+        return to_documents(source, title, env, run)
+    start = os.path.join(documents(env, run), file_name(title, words))
+    try:
+        answer = run(["kdialog", "--title", words["dialog"], "--getsavefilename", start,
+                      "%s (*.pdf)" % words["filter"]], capture_output=True, text=True, env=env)
+    except OSError:
+        return to_documents(source, title, env, run)
+    if answer.returncode == 1:
+        os.unlink(source)
+        tidy(source)
+        return None
+    target = answer.stdout.strip()
+    if answer.returncode != 0 or not target:
+        return to_documents(source, title, env, run)
+    if not target.lower().endswith(".pdf"):
+        target += ".pdf"
+    move(source, target)
+    return target
+
+
+def receive(job, title, env, data, run=subprocess.run):
+    """Takes the PDF from the backend. With a session it waits there for
+    the dialog, started as a unit of the session so it shows on screen."""
+    runtime = env.get("XDG_RUNTIME_DIR")
+    if runtime and os.path.exists(os.path.join(runtime, "bus")):
+        folder = os.path.join(runtime, "raye-pdf")
+        os.makedirs(folder, mode=0o700, exist_ok=True)
+        staged = os.path.join(folder, "job-%s.pdf" % re.sub(r"\D", "", job))
+        with open(staged, "wb") as out:
+            shutil.copyfileobj(data, out)
+        unit = "raye-pdf-save-%s" % re.sub(r"\D", "", job)
+        started = run(["systemd-run", "--user", "--quiet", "--collect", "--unit", unit,
+                       SELF, staged, title], env=env, capture_output=True)
+        if started.returncode == 0:
+            return staged
+        return to_documents(staged, title, env, run)
+    words = WORDS[language(env)]
+    target = free_path(documents(env, run), file_name(title, words))
+    with open(target, "xb") as out:
+        shutil.copyfileobj(data, out)
+    return target
+
+
+def main(argv):
+    env = dict(os.environ)
+    # started from the print server, which keeps everything private
+    os.umask(0o022)
+    if len(argv) == 4 and argv[1] == "--receive":
+        receive(argv[2], argv[3], env, sys.stdin.buffer)
+    elif len(argv) == 4 and argv[1] == "--documents":
+        to_documents(argv[2], argv[3], env)
+    elif len(argv) == 3:
+        ask(argv[1], argv[2], env)
+    else:
+        print(__doc__.strip(), file=sys.stderr)
+        return 2
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

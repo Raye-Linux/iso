@@ -1,0 +1,6 @@
+#!/bin/sh
+# systemd-sleep hook: $1 = pre | post, $2 = suspend | hybrid-sleep | ...
+# Marks a sleep on disk so that a PC which never wakes up is noticed at the
+# next start (see /usr/libexec/raye-sleep-guard). Never stands in the way.
+/usr/libexec/raye-sleep-guard "$@" || true
+exit 0

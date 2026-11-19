@@ -38,6 +38,11 @@ raye-base (1.0~beta2) resolute; urgency=medium
     unlocked; safer network defaults; two boot services sandboxed.
   * OpenVPN files (.ovpn) can be added in Settings > VPN, like WireGuard
     ones.
+  * A PC that does not wake up from sleep gets sleep turned off: the first
+    time it never comes back, Raye warns; the second time in a row, sleep
+    is turned off, closing the lid locks the PC and turns off the screen,
+    and a notice says so. The Dell Latitude 5490 has sleep off from the
+    start. Settings > System > Power turns it back on.
 
  -- techoraye <190692880+techoraye@users.noreply.github.com>  Thu, 19 Nov 2026 10:00:00 +0000
 

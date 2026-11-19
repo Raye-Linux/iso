@@ -43,6 +43,7 @@ ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
 	python3 -B -m unittest discover -s release/firewall/tests
 	python3 -B -m unittest discover -s release/network/tests
 	python3 -B -m unittest discover -s release/thunderbolt/tests
+	python3 -B -m unittest discover -s release/sleep/tests
 endif
 
 override_dh_install:

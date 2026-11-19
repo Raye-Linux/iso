@@ -102,6 +102,14 @@ raye-system  release/tuning/raye-min-free.service  usr/lib/systemd/system/raye-m
 raye-system  ?release/tuning/raye-net.conf          usr/lib/modules-load.d/raye-net.conf
 raye-system  release/tuning/journald.conf          usr/lib/systemd/journald.conf.d/50-raye.conf
 
+# Sleep that never wakes up (point 135): marked before each sleep, judged
+# at the next start, turned off after two failures or on a known model.
+raye-system  release/sleep/raye-sleep-guard          usr/libexec/raye-sleep-guard
+raye-system  release/sleep/raye-sleep-guard.hook     usr/lib/systemd/system-sleep/raye-sleep-guard
+raye-system  release/sleep/raye-sleep-guard.service  usr/lib/systemd/system/raye-sleep-guard.service
+raye-system  release/sleep/no-sleep.list             usr/share/raye/sleep-guard/no-sleep.list
+raye-system  release/sleep/org.raye.sleep-guard.policy  usr/share/polkit-1/actions/org.raye.sleep-guard.policy
+
 # GRUB of the installed system (IN-12). The wrapper takes the place of
 # update-grub (the stock one stays as update-grub.ubuntu); once
 # 30_raye_windows ships, the stock 30_os-prober is turned off by a
@@ -247,6 +255,7 @@ raye-desktop  ?release/appcrash/raye-app-crash.service  usr/lib/systemd/user/ray
 raye-desktop  release/crash/raye-crash-notice          usr/libexec/raye-crash-notice
 raye-desktop  release/crash/raye-crash-notice.service  usr/lib/systemd/user/raye-crash-notice.service
 raye-desktop  release/crash                            usr/share/raye/crash
+raye-desktop  release/sleep/raye-sleep-notice.service  usr/lib/systemd/user/raye-sleep-notice.service
 
 # Your phone: ports for pairing when the firewall is on (GP-42).
 raye-desktop  ?release/phone/raye-phone  etc/ufw/applications.d/raye-phone

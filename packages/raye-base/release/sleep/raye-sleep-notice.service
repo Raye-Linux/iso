@@ -1,0 +1,17 @@
+[Unit]
+Description=Say when sleep was turned off on this PC
+Documentation=https://github.com/Raye-Linux/handbook
+# no file: this PC sleeps and wakes well, nothing to say
+ConditionPathExists=/var/lib/raye/sleep-guard/state.json
+PartOf=graphical-session.target
+After=graphical-session.target plasma-plasmashell.service plasma-powerdevil.service
+
+[Service]
+Type=exec
+# Settings opened from the notice may run in this unit: let it live
+ExitType=cgroup
+ExecStart=/usr/libexec/raye-sleep-guard notice
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=graphical-session.target

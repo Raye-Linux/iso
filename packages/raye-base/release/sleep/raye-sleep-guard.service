@@ -1,0 +1,14 @@
+[Unit]
+Description=Turn sleep off on a PC where it does not wake up
+Documentation=https://github.com/Raye-Linux/handbook
+# before anyone signs in: Plasma reads once whether the PC can sleep
+Before=display-manager.service systemd-user-sessions.service
+After=local-fs.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/raye-sleep-guard boot
+
+[Install]
+WantedBy=multi-user.target

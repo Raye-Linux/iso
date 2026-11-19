@@ -1,0 +1,9 @@
+# PCs that freeze for good when they go to sleep. Sleep is off on them from
+# the start (raye-sleep-guard); Settings > System > Power turns it back on.
+#
+#   sys_vendor | product_name     (as in /sys/class/dmi/id)
+
+# 2026-11-19: Intel UHD 620 (Kaby Lake-R), BIOS 1.38.0: suspend, deep or
+# s2idle, never comes back with the i915 driver loaded; with nomodeset it
+# sleeps and wakes.
+Dell Inc. | Latitude 5490

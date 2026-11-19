@@ -11,7 +11,7 @@
 #   level 2            nomodeset: the picture the firmware set up, like the
 #                      "Safe graphics" entry of the install USB
 #
-# Each start counts one try in the boot menu's state (grubenv); reaching the
+# Each start of Raye counts one try in the boot menu's state (grubenv); reaching the
 # desktop (raye-graphics-ok) clears it. A try left from the last start also
 # shows the boot menu, hidden otherwise (50-raye.cfg). After two starts in a row where
 # nobody reached the desktop, the next start goes one level down, so a black
@@ -44,11 +44,20 @@ if [ "${raye_gfx_fails}" = 2 ]; then
   elif [ "${raye_gfx_level}" != 2 ]; then set raye_gfx_level=1
   fi
   set raye_gfx_fails=0
+  if [ "${have_grubenv}" = true ]; then save_env raye_gfx_level raye_gfx_fails; fi
 fi
-if [ "${raye_gfx_fails}" = 1 ]; then set raye_gfx_fails=2; else set raye_gfx_fails=1; fi
 if [ "${raye_gfx_level}" = 2 ]; then set raye_gfx=nomodeset
 elif [ "${raye_gfx_level}" = 1 ]; then set raye_gfx="amdgpu.dc=0 plymouth.enable=0"
 else set raye_gfx=
 fi
-if [ "${have_grubenv}" = true ]; then save_env raye_gfx_level raye_gfx_fails; fi
+# The try is counted when a Raye entry starts, not when the menu is read:
+# starting Windows or the firmware settings twice took the boot screen
+# away from Raye. Every entry of 10_linux begins with recordfail; this is
+# the one of 00_header with the count added.
+function recordfail {
+  set recordfail=1
+  if [ -n "${have_grubenv}" ]; then if [ -z "${boot_once}" ]; then save_env recordfail; fi; fi
+  if [ "${raye_gfx_fails}" = 1 ]; then set raye_gfx_fails=2; else set raye_gfx_fails=1; fi
+  if [ "${have_grubenv}" = true ]; then save_env raye_gfx_fails; fi
+}
 GRUB

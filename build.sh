@@ -639,6 +639,25 @@ clean_image() {
     ln -sf ../run/systemd/resolve/stub-resolv.conf "$root/etc/resolv.conf"
 }
 
+# Hyprland, the other desktop Setup offers: not in the live system, a flat apt
+# folder on the stick that the installer's rayedesktop job installs from, so
+# picking it needs no network. Only what the live system lacks is fetched,
+# which is what the installed system lacks too. About 5 MB.
+gather_desktop_pool() {
+    say "Gathering the Hyprland desktop for Setup"
+    local pool=$WORK/desktops cache=/var/cache/raye-desktops
+    rm -rf "$pool" "${root:?}$cache"
+    mkdir -p "$pool" "$root$cache/partial"
+    in_root apt-get install -q -y --no-install-recommends --download-only \
+        -o Dir::Cache::archives="$cache" raye-hyprland
+    mv "$root$cache"/*.deb "$pool/"
+    rm -rf "${root:?}$cache"
+    (cd "$pool" && dpkg-scanpackages --multiversion . /dev/null > Packages 2>/dev/null)
+    grep -qx 'Package: raye-hyprland' "$pool/Packages" ||
+        die "raye-hyprland is not in the desktop pool: Setup would offer a Hyprland it cannot install offline"
+    echo "ok: desktop pool, $(grep -c '^Package:' "$pool/Packages") packages, $(du -sh "$pool" | cut -f1)"
+}
+
 # --------------------------------------------------------------------- ISO
 
 make_iso() {
@@ -656,6 +675,11 @@ make_iso() {
     grep -E '^(casper|calamares|calamares-settings-raye|libcalamares[^ ]*|calamares-data) ' \
         "$iso/casper/filesystem.manifest" | cut -d' ' -f1 > "$iso/casper/filesystem.manifest-remove"
     du -sx --block-size=1 "$root" | cut -f1 > "$iso/casper/filesystem.size"
+
+    if [ -f "$WORK/desktops/Packages" ]; then
+        mkdir -p "$iso/raye"
+        cp -r "$WORK/desktops" "$iso/raye/desktops"
+    fi
 
     say "Packing the squashfs (this is the slow part)"
     mksquashfs "$root" "$iso/casper/filesystem.squashfs" \
@@ -749,7 +773,7 @@ case "${1:-all}" in
         bootstrap
         configure_apt
         install_system
-        mount_chroot; check_image; umount_chroot
+        mount_chroot; check_image; gather_desktop_pool; umount_chroot
         clean_image
         make_iso
         ;;

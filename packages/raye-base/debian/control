@@ -35,7 +35,7 @@ Architecture: amd64
 Depends: raye-release,
          linux-generic-hwe-26.04,
          linux-firmware, intel-microcode, amd64-microcode,
-         shim-signed, grub-efi-amd64-signed, grub-efi-amd64-bin, efibootmgr, os-prober,
+         shim-signed, grub-efi-amd64-signed, grub-efi-amd64-bin, grub-pc-bin, efibootmgr, os-prober,
          grub-theme-raye, raye-kernel,
          initramfs-tools, zstd, plymouth, plymouth-label,
          sudo, locales, tzdata, keyboard-configuration, console-setup,

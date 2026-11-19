@@ -90,7 +90,7 @@ ISO=
 
 # the four entries of the live menu, and the icon each one would need the
 # day the theme is turned back on
-ENTRIES=$'Install Raye Linux\nInstaller Raye Linux\nSafe graphics\nUEFI firmware settings'
+ENTRIES=$'This USB stick was not written correctly\nInstall Raye Linux\nInstaller Raye Linux\nSafe graphics\nCheck the USB stick for errors\nUEFI firmware settings'
 ICONS="raye-install raye-french raye-safe raye-firmware"
 
 fail=0

@@ -685,6 +685,23 @@ make_iso() {
         cp "$root/usr/share/grub/themes/raye/$f" "$theme/"
     done
 
+    # BIOS boot for old PCs, laid out like Ubuntu's own image: GRUB's El
+    # Torito image, its modules (grub.cfg loads vbe there), and the hybrid
+    # MBR so a USB stick starts in BIOS mode too. grub-pc-bin comes with
+    # raye-system; without it the image would quietly be UEFI-only.
+    local bios=$root/usr/lib/grub/i386-pc
+    [ -f "$bios/boot_hybrid.img" ] || die "grub-pc-bin is missing from the image: no BIOS boot"
+    mkdir -p "$iso/boot/grub/i386-pc"
+    cp "$bios"/*.mod "$bios"/*.lst "$iso/boot/grub/i386-pc/"
+    chroot "$root" grub-mkimage -O i386-pc-eltorito -d /usr/lib/grub/i386-pc -p /boot/grub \
+        -o /tmp/raye-eltorito.img biosdisk iso9660 part_msdos part_gpt search \
+        normal configfile linux echo test font gfxterm vbe all_video sleep reboot
+    mv "$root/tmp/raye-eltorito.img" "$iso/boot/grub/i386-pc/eltorito.img"
+
+    # A stick written with a tool that changed it fails this check, from
+    # the "Check the USB stick for errors" entry (casper integrity-check)
+    (cd "$iso" && find . -type f ! -name md5sum.txt -print0 | sort -z | xargs -0 md5sum > md5sum.txt)
+
     # FAT image with the same EFI files, used as the El Torito EFI boot
     # image and as the ESP when the ISO is written to a USB stick
     local efi=$WORK/efi.img
@@ -699,7 +716,12 @@ make_iso() {
     mkdir -p "$OUT"
     xorriso -as mkisofs -r -J -joliet-long -iso-level 3 \
         -V "$volume" -o "$OUT/$name.iso" \
+        --grub2-mbr "$bios/boot_hybrid.img" -partition_offset 16 --mbr-force-bootable \
         -append_partition 2 0xef "$efi" -appended_part_as_gpt \
+        -iso_mbr_part_type a2a0d0eb-e5b9-3344-87c0-68b6b72699c7 \
+        -c /boot.catalog \
+        -b /boot/grub/i386-pc/eltorito.img -no-emul-boot -boot-load-size 4 -boot-info-table --grub2-boot-info \
+        -eltorito-alt-boot \
         -e --interval:appended_partition_2:all:: -no-emul-boot \
         "$iso"
 

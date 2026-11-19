@@ -55,6 +55,7 @@ raye-system  release/netplan/01-network-manager-all.yaml  etc/netplan/01-network
 # Ubuntu's servers, in order; raye-ubuntu-mirrors moves older machines over.
 raye-system  release/apt/ubuntu-mirrors.list           etc/apt/mirrors/ubuntu.list
 raye-system  release/apt/ubuntu-security-mirrors.list  etc/apt/mirrors/ubuntu-security.list
+raye-system  release/apt/raye-timeouts.conf             etc/apt/apt.conf.d/60raye-timeouts
 raye-system  release/apt/raye-ubuntu-mirrors           usr/libexec/raye-ubuntu-mirrors
 raye-system  release/updates/52raye-unattended-upgrades   etc/apt/apt.conf.d/52raye-unattended-upgrades
 raye-system  release/updates/21raye-periodic              etc/apt/apt.conf.d/21raye-periodic

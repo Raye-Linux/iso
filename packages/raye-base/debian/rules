@@ -34,6 +34,7 @@ ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
 	python3 -B -m unittest discover -s release/snapshots/tests
 	python3 -B -m unittest discover -s release/crash/tests
 	python3 -B -m unittest discover -s release/windows/tests
+	python3 -B -m unittest discover -s release/chromebook/tests
 endif
 
 override_dh_install:

@@ -21,6 +21,8 @@ raye-base (1.0~beta1) resolute; urgency=high
     screen and the desktop draw the pointer themselves, so the screen no
     longer stays black; AMD PCs the graphics fallback had left in safe
     graphics try normal graphics once more after this update.
+  * Chromebooks: map the top row of keys through keyd and show where to fix
+    the sound.
 
  -- techoraye <190692880+techoraye@users.noreply.github.com>  Thu, 19 Nov 2026 06:00:00 +0000
 

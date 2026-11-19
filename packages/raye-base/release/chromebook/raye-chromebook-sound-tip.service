@@ -1,0 +1,12 @@
+[Unit]
+Description=Point a Chromebook owner to the sound fix
+Documentation=https://github.com/Raye-Linux/handbook/blob/main/en/11-chromebooks.md#sound
+PartOf=graphical-session.target
+After=graphical-session.target plasma-plasmashell.service wireplumber.service
+
+[Service]
+Type=exec
+ExecStart=/usr/libexec/raye-chromebook sound-tip
+
+[Install]
+WantedBy=graphical-session.target

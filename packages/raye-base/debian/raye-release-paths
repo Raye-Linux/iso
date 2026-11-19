@@ -67,6 +67,13 @@ raye-system  release/drivers/raye-drivers                 usr/libexec/raye-drive
 raye-system  release/drivers/raye-drivers.service         usr/lib/systemd/system/raye-drivers.service
 raye-system  release/drivers/raye-drivers-check.service   usr/lib/systemd/system/raye-drivers-check.service
 raye-system  release/drivers/50-raye-drivers.rules        usr/share/polkit-1/rules.d/50-raye-drivers.rules
+# Chromebooks: the top row through keyd, which only starts when a config
+# exists, and the Pixelbook's Search key. Nothing happens on other machines.
+raye-system  release/chromebook/raye-chromebook               usr/libexec/raye-chromebook
+raye-system  release/chromebook/raye-chromebook-keys.service  usr/lib/systemd/system/raye-chromebook-keys.service
+raye-system  release/chromebook/keyd.service.d/raye.conf      usr/lib/systemd/system/keyd.service.d/raye-chromebook.conf
+raye-system  release/chromebook/50-raye-keyd.quirks           usr/share/libinput/50-raye-keyd.quirks
+raye-system  release/chromebook/61-raye-chromebook.hwdb       usr/lib/udev/hwdb.d/61-raye-chromebook.hwdb
 raye-system  release/dualboot/raye-boot-windows           usr/libexec/raye-boot-windows
 raye-system  release/dualboot/raye-dualboot              usr/libexec/raye-dualboot
 raye-system  release/dualboot/raye-restart-to-windows     usr/bin/raye-restart-to-windows
@@ -197,6 +204,7 @@ raye-gaming  release/gaming/50-raye-game-scheduler.rules        usr/share/polkit
 raye-desktop  release/notices/raye-restart-notice   usr/bin/raye-restart-notice
 raye-desktop  release/notices/raye-notices          usr/libexec/raye-notices
 raye-desktop  release/notices/raye-notices.service  usr/lib/systemd/user/raye-notices.service
+raye-desktop  release/chromebook/raye-chromebook-sound-tip.service  usr/lib/systemd/user/raye-chromebook-sound-tip.service
 # these turn off popups of stock events system-wide
 raye-desktop  release/notices/*.notifyrc            etc/xdg
 

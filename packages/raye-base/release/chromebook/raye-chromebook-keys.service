@@ -1,0 +1,12 @@
+[Unit]
+Description=Map the top row of a Chromebook keyboard
+Documentation=https://github.com/Raye-Linux/handbook/blob/main/en/11-chromebooks.md#keyboard
+Before=keyd.service
+ConditionPathIsReadWrite=/etc
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/raye-chromebook keys
+
+[Install]
+WantedBy=multi-user.target

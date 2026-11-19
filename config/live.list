@@ -26,9 +26,9 @@ htop
 btop
 mesa-utils
 
-# Managing software: the graphical one, the text one, and the piece that
-# add-apt-repository lives in
-synaptic
+# Managing software: the text one and the piece that add-apt-repository
+# lives in. Synaptic is left out: the Store does its work, and it stays
+# one install away for those who want it
 aptitude
 software-properties-common
 

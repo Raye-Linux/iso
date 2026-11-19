@@ -2,8 +2,9 @@
 #
 # Checks the live boot menu and the release name people see:
 #  - grub.cfg loads only modules built into the signed CD GRUB (anything
-#    else is refused when Secure Boot is on), parses, and carries the four
-#    entries under names that are ours and not GNU GRUB's;
+#    else is refused when Secure Boot is on), parses, and carries the
+#    entries under names that are ours and not GNU GRUB's; the two "Try"
+#    entries start the desktop (raye.try) and keep nothing (nopersistent);
 #  - the menu stays PLAIN TEXT: it must NOT set a GRUB theme. The graphical
 #    one restarted a Dell Latitude 5420 before the menu even showed, booted
 #    from a USB optical drive emulator (iso b691d51, 2026-11-02). Turning it
@@ -88,9 +89,9 @@ MACHINE_EFI=/usr/lib/grub/x86_64-efi-signed/gcdx64.efi.signed
 ROOT=${RAYE_ROOT:-}
 ISO=
 
-# the four entries of the live menu, and the icon each one would need the
-# day the theme is turned back on
-ENTRIES=$'This USB stick was not written correctly\nInstall Raye Linux\nInstaller Raye Linux\nSafe graphics\nCheck the USB stick for errors\nUEFI firmware settings'
+# the entries of the live menu, and the icon each one would need the day
+# the theme is turned back on (the two "Try" entries have none drawn yet)
+ENTRIES=$'This USB stick was not written correctly\nInstall Raye Linux\nInstaller Raye Linux\nTry Raye Linux without installing\nEssayer Raye Linux sans l\'installer\nSafe graphics\nCheck the USB stick for errors\nUEFI firmware settings'
 ICONS="raye-install raye-french raye-safe raye-firmware"
 
 fail=0
@@ -202,12 +203,47 @@ check_menu() {
     entries=$(sed -n 's/^[[:space:]]*menuentry[[:space:]]\+"\([^"]*\)".*/\1/p' "$cfg")
     [ "$entries" = "$ENTRIES" ] || err "menu entries are: $(tr '\n' '|' <<<"$entries")"
     grep -q 'GNU GRUB' "$cfg" && err "grub.cfg names GNU GRUB"
+    check_try_entries "$cfg"
     # the menu stays plain text: the graphical theme restarted a Dell
     # Latitude 5420 before the menu showed. If this fires, someone turned the
     # theme back on -- which is allowed, but only after a real-hardware test,
     # and the checks removed with assertion 3 above come back with it.
     grep -q '^set theme=' <(sed 's/^[[:space:]]*//' "$cfg") &&
         err "grub.cfg sets a GRUB theme: the graphical menu restarted a Dell Latitude 5420 before the menu showed (b691d51). Prove it on real hardware first"
+    return 0
+}
+
+# The kernel line of each entry, one "<title>|<linux line>" per entry
+entry_lines() {
+    awk '/^[[:space:]]*menuentry[[:space:]]+"/ { split($0, q, "\""); title = q[2] }
+         /^[[:space:]]*linux[[:space:]]/ && title != "" { sub(/^[[:space:]]+/, ""); print title "|" $0; title = "" }' "$1"
+}
+
+# "Try" starts the desktop (raye.try, read by casper-bottom/16raye_setup in
+# the installer) and keeps nothing (nopersistent: casper makes no writable
+# partition on the stick). The install entries must not carry raye.try, or
+# the stick would stop opening Setup.
+check_try_entries() {
+    local cfg=$1 title line tries=0
+    while IFS='|' read -r title line; do
+        case $title in
+            Try*|Essayer*)
+                tries=$((tries + 1))
+                [[ " $line " == *" raye.try "* ]] || err "\"$title\" does not pass raye.try"
+                [[ " $line " == *" nopersistent "* ]] || err "\"$title\" does not pass nopersistent"
+                [[ " $line " == *" boot=casper "* ]] || err "\"$title\" does not boot casper"
+                ;;
+            *)
+                [[ " $line " == *" raye.try "* ]] && err "\"$title\" passes raye.try: it would not open Setup"
+                ;;
+        esac
+        case $title in
+            Essayer*|Installer*)
+                [[ " $line " == *" locale=fr_CA.UTF-8 "* ]] || err "\"$title\" is not in French"
+                ;;
+        esac
+    done < <(entry_lines "$cfg")
+    [ "$tries" = 2 ] || err "$tries \"Try\" entries, expected 2 (English and French)"
     return 0
 }
 
@@ -452,6 +488,16 @@ self_test() {
     # an entry renamed
     sed 's/Safe graphics/safe graphics/' "$CFG" > "$t/cfg2"
     (fail=0; check_menu "$t/cfg2"; exit $fail) >/dev/null && { echo "self-test: wrong entry not caught"; ok=0; }
+    # a Try entry that would keep the setup session, or keep changes
+    sed '/Try Raye Linux without installing/,/initrd/ s/ raye\.try//' "$CFG" > "$t/cfg-try"
+    (fail=0; check_menu "$t/cfg-try"; exit $fail) >/dev/null &&
+        { echo "self-test: Try entry without raye.try not caught"; ok=0; }
+    sed '/Essayer Raye Linux/,/initrd/ s/ nopersistent//' "$CFG" > "$t/cfg-try2"
+    (fail=0; check_menu "$t/cfg-try2"; exit $fail) >/dev/null &&
+        { echo "self-test: Try entry without nopersistent not caught"; ok=0; }
+    sed '0,/noprompt quiet splash/ s/noprompt quiet splash/noprompt raye.try quiet splash/' "$CFG" > "$t/cfg-try3"
+    (fail=0; check_menu "$t/cfg-try3"; exit $fail) >/dev/null &&
+        { echo "self-test: Install entry with raye.try not caught"; ok=0; }
     # os-release left behind
     cp -r "$REL" "$t/rel"
     sed -i 's/^PRETTY_NAME=.*/PRETTY_NAME="Raye Linux 0.1"/' "$t/rel/os-release"

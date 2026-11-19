@@ -189,6 +189,25 @@ class RunWindows(unittest.TestCase):
         self.assertEqual(launch[3], r"C:\Program Files\7-Zip\7zFM.exe -x y")
         self.assertEqual(launch[4], "org.raye.windows._7_zip")
 
+    def test_program_inside_a_space_runs_there(self):
+        # opened from the Windows programs folder: no new space for it
+        prefix = self.make_space("7-zip")
+        exe = prefix / "drive_c" / "Program Files" / "7-Zip" / "7zFM.exe"
+        exe.parent.mkdir(parents=True)
+        exe.write_bytes(b"MZ")
+        launch = self.run_it(str(exe))[-1]
+        self.assertEqual(launch[3], r"C:\Program Files\7-Zip\7zFM.exe")
+        self.assertEqual(launch[4], "org.raye.windows._7_zip")
+        spaces = sorted(p.name for p in prefix.parent.iterdir() if not p.name.startswith("."))
+        self.assertEqual(spaces, ["7-zip"])
+
+    def test_a_setup_inside_a_space_still_gets_a_space_of_its_own_when_hidden(self):
+        prefix = self.make_space(".template")
+        exe = prefix / "drive_c" / "tool.exe"
+        exe.write_bytes(b"MZ")
+        launch = self.run_it(str(exe))[-1]
+        self.assertNotIn("C:\\", launch[3])
+
     def test_uninstall_command_with_quotes(self):
         self.make_space("7-zip")
         launch = self.run_it("--space", "7-zip", "--uninstall",
@@ -509,6 +528,72 @@ class RunWindows(unittest.TestCase):
         self.profile("tool", 'name="Tool"\nmatch="some*"\nverbs="corefonts vcrun2022"\n')
         self.run_it(PATH="%s:/usr/bin:/bin" % self.system)
         self.assertFalse((self.tmp / "tricks").exists())
+
+    def needs_tool(self, answer, rc=0):
+        """A raye-windows-needs that writes down what it was asked about."""
+        tool = self.tmp / "needs"
+        self.script(tool, '#!/bin/sh\necho "$1|$2" >> "%s"\n[ -n "%s" ] && echo "%s"\nexit 0\n'
+                    % (self.tmp / "needs.log", answer, answer))
+        private = self.tmp / "private"
+        private.mkdir(exist_ok=True)
+        self.script(private / "winetricks",
+                    '#!/bin/sh\necho "$*" >> "%s"\nexit %d\n' % (self.tmp / "tricks", rc))
+        return {"RAYE_WINDOWS_NEEDS": str(tool), "PATH": "%s:/usr/bin:/bin" % self.system}
+
+    def test_what_a_program_asks_for_is_added_before_it_starts(self):
+        env = self.needs_tool("vb6run mfc42")
+        self.run_it(**env)
+        self.assertEqual((self.tmp / "tricks").read_text(), "-q vb6run mfc42\n")
+        asked = (self.tmp / "needs.log").read_text().split("|")
+        self.assertEqual(asked[0], str(self.exe.resolve()))
+        self.assertTrue(asked[1].strip().endswith("/raye/windows/some-tool"), asked)
+
+    def test_start_entry_program_is_read_inside_its_space(self):
+        space = self.make_space("tool")
+        game = space / "drive_c/Games/Old Game/game.exe"
+        game.parent.mkdir(parents=True)
+        game.write_bytes(b"MZ")
+        env = self.needs_tool("openal")
+        self.run_it("--space", "tool", "--run", r"C:\Games\Old Game\game.exe", **env)
+        asked = (self.tmp / "needs.log").read_text().split("|")
+        self.assertEqual(asked[0], str(space / "drive_c/Games/Old Game/game.exe"))
+        self.assertEqual((self.tmp / "tricks").read_text(), "-q openal\n")
+
+    def test_a_program_that_needs_nothing_fetches_nothing(self):
+        env = self.needs_tool("")
+        self.run_it(**env)
+        self.assertTrue((self.tmp / "needs.log").exists())
+        self.assertFalse((self.tmp / "tricks").exists())
+
+    def test_installer_package_is_not_read(self):
+        msi = self.tmp / "setup.msi"
+        msi.write_bytes(b"x")
+        env = self.needs_tool("vb6run")
+        self.run_it(str(msi), **env)
+        self.assertFalse((self.tmp / "needs.log").exists())
+
+    def test_offline_fetch_waits_before_trying_again(self):
+        env = self.needs_tool("vb6run", rc=1)
+        self.run_it(**env)
+        self.run_it(**env)
+        self.assertEqual((self.tmp / "tricks").read_text(), "-q vb6run\n")
+        tried = self.home / ".local/share/raye/windows/some-tool/.raye-needs-tried"
+        old = time.time() - 3600
+        os.utime(tried, (old, old))
+        self.run_it(**env)
+        self.assertEqual((self.tmp / "tricks").read_text().count("vb6run"), 2)
+
+    def test_a_good_fetch_clears_the_wait(self):
+        env = self.needs_tool("vb6run", rc=1)
+        self.run_it(**env)
+        tried = self.home / ".local/share/raye/windows/some-tool/.raye-needs-tried"
+        self.assertTrue(tried.exists())
+        old = time.time() - 3600
+        os.utime(tried, (old, old))
+        env = self.needs_tool("vb6run", rc=0)
+        self.run_it(**env)
+        self.assertFalse(tried.exists())
+
 
     def test_space_remembers_its_profile(self):
         self.profile("tool", 'name="Tool"\nmatch="some*"\n')

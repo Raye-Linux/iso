@@ -23,6 +23,7 @@ ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
 	sh release/grub/tests/test-raye-update-grub.sh
 	sh release/tuning/tests/test-raye-start-if-needed.sh
 	sh release/tuning/tests/test-raye-min-free.sh
+	sh release/tuning/tests/test-serial-access.sh
 	sh release/gaming/tests/test-game-mode.sh
 	sh release/access/tests/test-screen-reader.sh
 	sh release/dualboot/tests/test-boot-windows.sh

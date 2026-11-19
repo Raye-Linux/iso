@@ -9,5 +9,7 @@ IOSchedulingClass=idle
 # once per account: Wine's own menu entries and file types go away
 ExecStartPre=-/usr/libexec/raye-windows-cleanup
 ExecStart=/usr/libexec/raye-windows-prepare
+# a space deleted from Settings leaves its link in the Windows programs folder
+ExecStartPost=-/usr/bin/raye-windows-programs
 # a first build with the Visual C++ runtime takes a few minutes
 TimeoutStartSec=45min

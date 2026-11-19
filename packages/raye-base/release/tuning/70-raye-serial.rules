@@ -1,0 +1,6 @@
+# Serial ports go to the person at the computer, as on Windows: USB serial
+# adapters and boards (Arduino, ESP32...), and the COM ports that have a
+# chip. Without this only the dialout group can open them, and Windows
+# programs see "access denied". The empty 8250 nodes (type 0) are left out.
+SUBSYSTEM=="tty", KERNEL=="ttyUSB[0-9]*|ttyACM[0-9]*", TAG+="uaccess"
+SUBSYSTEM=="tty", KERNEL=="ttyS[0-9]*", ATTR{type}!="0", TAG+="uaccess"

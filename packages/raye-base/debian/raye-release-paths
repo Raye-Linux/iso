@@ -94,6 +94,7 @@ raye-system  release/tuning/60-raye-laptop-wake.rules  usr/lib/udev/rules.d/60-r
 raye-system  release/tuning/60-raye-ntsync.rules   usr/lib/udev/rules.d/60-raye-ntsync.rules
 raye-system  release/tuning/60-raye-iosched.rules  usr/lib/udev/rules.d/60-raye-iosched.rules
 raye-system  release/tuning/60-raye-usb-writeback.rules  usr/lib/udev/rules.d/60-raye-usb-writeback.rules
+raye-system  release/tuning/70-raye-serial.rules        usr/lib/udev/rules.d/70-raye-serial.rules
 raye-system  release/tuning/60-raye-powerdevil.conf  usr/lib/environment.d/60-raye-powerdevil.conf
 raye-system  release/tuning/raye-mglru.conf        usr/lib/tmpfiles.d/raye-mglru.conf
 raye-system  release/tuning/raye-min-free          usr/libexec/raye-min-free
@@ -176,6 +177,8 @@ raye-windows-apps  release/windows/raye-windows-prepare             usr/libexec/
 raye-windows-apps  release/windows/raye-windows-prepare.service     usr/lib/systemd/user/raye-windows-prepare.service
 raye-windows-apps  release/windows/raye-windows-prepare.timer       usr/lib/systemd/user/raye-windows-prepare.timer
 raye-windows-apps  release/windows/raye-windows-prepare.path        usr/lib/systemd/user/raye-windows-prepare.path
+# Every installed program, in a folder of the home (Windows programs).
+raye-windows-apps  release/windows/raye-windows-programs           usr/bin/raye-windows-programs
 # Double-click hub (SW-9).
 raye-windows-apps  ?release/windows/kiorc                           etc/xdg/kiorc
 raye-windows-apps  ?release/windows/icons/raye-windows-program.svg  usr/share/icons/hicolor/scalable/apps/raye-windows-program.svg
@@ -188,6 +191,7 @@ raye-windows-apps  release/windows/raye-windows-cleanup            usr/libexec/r
 raye-windows-apps  release/windows/raye-windows-command   usr/lib/raye/windows/raye-windows-command
 raye-windows-apps  release/windows/raye-windows-commands.sh  etc/profile.d/raye-windows-commands.sh
 raye-windows-apps  release/windows/raye-windows-profile   usr/libexec/raye-windows-profile
+raye-windows-apps  release/windows/raye-windows-needs     usr/libexec/raye-windows-needs
 raye-windows-apps  release/windows/default.profile        usr/share/raye/windows/default.profile
 # Fonts and runtimes Windows programs expect (SW-13).
 raye-windows-apps  release/windows/raye-windows-components         usr/libexec/raye-windows-components

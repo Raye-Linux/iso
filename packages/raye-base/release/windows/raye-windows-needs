@@ -1,0 +1,217 @@
+#!/usr/bin/python3 -I
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""What a Windows program needs that its space does not have yet, read
+from the program itself, so raye-run-windows can add it before the first
+start, with no question, the way Windows already has it:
+
+    raye-windows-needs PROGRAM.exe [SPACE]
+
+prints the winetricks verbs on one line (nothing when there is nothing to
+add) and always exits 0. SPACE is the program's space folder: verbs it
+already lists in .raye-components or winetricks.log are left out.
+
+It reads the import table (normal and delay-loaded) of the program and of
+the DLLs next to it, and the .runtimeconfig.json a .NET 5+ program keeps
+beside it:
+
+    msvbvm60 / msvbvm50       Visual Basic 6 / 5 runtime (built into Windows)
+    mfc42 / mfc42u            MFC 6 (built into Windows)
+    openal32                  OpenAL, unless the program brings its own
+    physxloader               PhysX system software, unless it brings it
+    Microsoft.WindowsDesktop.App N   .NET Desktop Runtime N
+    Microsoft.NETCore.App N          .NET Runtime N
+
+Everything else a program imports (Visual C++ 2005-2022, D3DX, XAudio2,
+XInput, MSXML, .NET Framework through Mono) is already in every space.
+"""
+import json
+import mmap
+import os
+import struct
+import sys
+
+MAX_DLLS = 300           # a game folder can hold thousands of files
+MAX_SIZE = 1 << 30
+IMPORT_VERBS = {
+    "msvbvm60.dll": "vb6run",
+    "msvbvm50.dll": "vb5run",
+    "mfc42.dll": "mfc42",
+    "mfc42u.dll": "mfc42",
+    "openal32.dll": "openal",
+    "physxloader.dll": "physx",
+}
+# a program that ships one of these next to itself does not need the verb
+SHIPPED = {
+    "openal": ("openal32.dll", "soft_oal.dll"),
+    "physx": ("physxloader.dll",),
+}
+# .NET 5+ framework name -> {major version: verb}
+DOTNET = {
+    "microsoft.windowsdesktop.app": {3: "dotnetcoredesktop3", 6: "dotnetdesktop6",
+                                     7: "dotnetdesktop7", 8: "dotnetdesktop8",
+                                     9: "dotnetdesktop9"},
+    "microsoft.netcore.app": {3: "dotnetcore3", 6: "dotnet6", 7: "dotnet7", 8: "dotnet8",
+                              9: "dotnet9"},
+}
+
+
+class PE:
+    def __init__(self, bits, imports, dotnet):
+        self.bits, self.imports, self.dotnet = bits, imports, dotnet
+
+
+def _cstring(data, off):
+    end = data.find(b"\0", off, off + 256)
+    if off <= 0 or end < 0:
+        return None
+    try:
+        return data[off:end].decode("ascii").lower()
+    except UnicodeDecodeError:
+        return None
+
+
+def _parse(data):
+    if data[:2] != b"MZ" or len(data) < 0x40:
+        return None
+    pe_at = struct.unpack_from("<I", data, 0x3c)[0]
+    if pe_at + 24 > len(data) or data[pe_at:pe_at + 4] != b"PE\0\0":
+        return None
+    nsect, opt_size = struct.unpack_from("<H12xH", data, pe_at + 6)
+    opt = pe_at + 24
+    if opt + opt_size > len(data) or opt_size < 2:
+        return None
+    magic = struct.unpack_from("<H", data, opt)[0]
+    if magic == 0x10b:
+        bits, dirs_at, count_at = 32, opt + 96, opt + 92
+    elif magic == 0x20b:
+        bits, dirs_at, count_at = 64, opt + 112, opt + 108
+    else:
+        return None
+    if count_at + 4 > opt + opt_size:
+        return None
+    ndirs = min(struct.unpack_from("<I", data, count_at)[0], 16,
+                (opt + opt_size - dirs_at) // 8)
+    dirs = [struct.unpack_from("<II", data, dirs_at + 8 * i) for i in range(ndirs)]
+    dirs += [(0, 0)] * (16 - len(dirs))
+    sections = []
+    at = opt + opt_size
+    for _ in range(min(nsect, 96)):
+        if at + 40 > len(data):
+            break
+        vsize, va, rawsize, raw = struct.unpack_from("<IIII", data, at + 8)
+        sections.append((va, max(vsize, rawsize), raw, rawsize))
+        at += 40
+
+    def offset(rva):
+        for va, size, raw, rawsize in sections:
+            if va <= rva < va + size and rva - va < rawsize:
+                return raw + rva - va
+        return -1
+
+    imports = set()
+    # normal imports: 20-byte descriptors, name RVA at +12
+    # delay-loaded: 32-byte descriptors, name RVA at +4
+    for index, step, name_at in ((1, 20, 12), (13, 32, 4)):
+        start = offset(dirs[index][0]) if dirs[index][0] else -1
+        for n in range(512 if start >= 0 else 0):
+            at = start + n * step
+            if at + step > len(data) or not any(data[at:at + step]):
+                break
+            name = _cstring(data, offset(struct.unpack_from("<I", data, at + name_at)[0]))
+            if name:
+                imports.add(name)
+    return PE(bits, imports, dirs[14][0] != 0)
+
+
+def read_pe(path):
+    """Bits, imported DLL names (lower case) and the .NET flag of a PE
+    file, or None when it is not one or cannot be read."""
+    try:
+        with open(path, "rb") as f:
+            size = os.fstat(f.fileno()).st_size
+            if size < 0x40 or size > MAX_SIZE:
+                return None
+            with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as data:
+                return _parse(data)
+    except (OSError, ValueError, struct.error):
+        return None
+
+
+def _dotnet_verbs(exe):
+    stem, _ = os.path.splitext(exe)
+    try:
+        with open(stem + ".runtimeconfig.json", encoding="utf-8-sig") as f:
+            options = json.load(f).get("runtimeOptions", {})
+    except (OSError, ValueError, AttributeError):
+        return set()
+    if not isinstance(options, dict):
+        return set()
+    frameworks = options.get("frameworks") or []
+    if isinstance(options.get("framework"), dict):
+        frameworks = [options["framework"]] + list(frameworks)
+    found = {}
+    for fw in frameworks:
+        if not isinstance(fw, dict):
+            continue
+        name = str(fw.get("name", "")).lower()
+        try:
+            major = int(str(fw.get("version", "")).split(".")[0])
+        except ValueError:
+            continue
+        verb = DOTNET.get(name, {}).get(major)
+        if verb:
+            found[name] = verb
+    # the desktop runtime brings the base one with it
+    if "microsoft.windowsdesktop.app" in found:
+        found.pop("microsoft.netcore.app", None)
+    return set(found.values())
+
+
+def _space_has(space):
+    have = set()
+    if not space:
+        return have
+    for name in (".raye-components", "winetricks.log"):
+        try:
+            with open(os.path.join(space, name), encoding="utf-8", errors="replace") as f:
+                have.update(f.read().split())
+        except OSError:
+            pass
+    return have
+
+
+def needs(exe, space=None):
+    """The winetricks verbs the program at path exe needs, sorted."""
+    folder = os.path.dirname(os.path.abspath(exe))
+    try:
+        listing = os.listdir(folder)
+    except OSError:
+        listing = []
+    here = {n.lower() for n in listing}
+    files = [exe] + sorted(os.path.join(folder, n) for n in listing
+                           if n.lower().endswith(".dll"))[:MAX_DLLS]
+    verbs = set()
+    for path in files:
+        info = read_pe(path)
+        if not info:
+            continue
+        for dll in info.imports:
+            verb = IMPORT_VERBS.get(dll)
+            if verb and not any(s in here for s in SHIPPED.get(verb, ())):
+                verbs.add(verb)
+    verbs |= _dotnet_verbs(exe)
+    return sorted(verbs - _space_has(space))
+
+
+def main(argv):
+    if len(argv) not in (2, 3):
+        print("usage: raye-windows-needs PROGRAM.exe [SPACE]", file=sys.stderr)
+        return 2
+    found = needs(argv[1], argv[2] if len(argv) == 3 else None)
+    if found:
+        print(" ".join(found))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

@@ -79,6 +79,21 @@ else
     fi
 fi
 
+# a program already in a space (opened from the Windows programs folder)
+# runs there, not in a new space named after it
+case $(printf '%s' "$file" | tr 'A-Z' 'a-z') in
+    *.exe)
+        spaces=$(realpath -m "${XDG_DATA_HOME:-$HOME/.local/share}/raye/windows")
+        real=$(realpath "$file")
+        case $real in
+            "$spaces"/[!.]*/drive_c/*)
+                rest=${real#"$spaces"/}
+                space=${rest%%/*}
+                target=C:$(printf '%s' "${rest#*/drive_c}" | sed 's#/#\\#g')
+                targs=$setup_args file="" setup_args="" ;;
+        esac ;;
+esac
+
 profiles=${RAYE_WINDOWS_PROFILES_PATH:-/usr/share/raye/windows-profiles}
 name=$(basename "${file:-$target}")
 lname=$(printf '%s' "$name" | tr 'A-Z' 'a-z')
@@ -368,6 +383,33 @@ if [ -n "$fresh" ] && [ -n "$verbs" ]; then
         hidden timeout 20m winetricks -q $verbs </dev/null
     fi
 fi
+# what the program itself imports and Windows has built in or a game
+# installs (Visual Basic 6, MFC 6, OpenAL, PhysX, a .NET runtime): added
+# before its first start. Offline, it is tried again ten minutes later
+needs_tool=${RAYE_WINDOWS_NEEDS:-/usr/libexec/raye-windows-needs}
+prog="" needs=""
+case $target in
+    [Cc]:\\*) prog=$WINEPREFIX/drive_c$(printf '%s' "${target#??}" | sed 's#\\#/#g') ;;
+esac
+if [ -z "$target" ] && [ -n "$file" ]; then
+    case $lname in *.msi) ;; *) prog=$(realpath "$file") ;; esac
+fi
+tried=$WINEPREFIX/.raye-needs-tried
+if [ -n "$prog" ] && [ -f "$prog" ] && [ -x "$needs_tool" ] &&
+   [ -z "$(find "$tried" -mmin -10 2>/dev/null)" ]; then
+    needs=$("$needs_tool" "$prog" "$WINEPREFIX" 2>/dev/null)
+fi
+if [ -n "$needs" ]; then
+    settle=1
+    notice
+    # shellcheck disable=SC2086  # one winetricks verb per word
+    if command -v xvfb-run >/dev/null; then
+        env -u WAYLAND_DISPLAY timeout 20m xvfb-run -a winetricks -q $needs </dev/null >/dev/null 2>&1
+    else
+        hidden timeout 20m winetricks -q $needs </dev/null
+    fi
+    if [ $? -eq 0 ]; then rm -f "$tried"; else : > "$tried"; fi
+fi
 
 # the set-up processes have no display: let them all end, so the program
 # starts a fresh Wine session that can show its windows. Only ours: a
@@ -412,6 +454,7 @@ if [ -n "$uninstall" ]; then
     rc=$?
     # uninstallers often copy themselves to a temp folder and go on there
     [ -n "${WINESERVER:-}" ] && "$WINESERVER" -w
+    command -v raye-windows-programs >/dev/null && raye-windows-programs >/dev/null 2>&1
     exit $rc
 fi
 if [ -n "$open" ]; then
@@ -510,4 +553,6 @@ if [ -n "${WINESERVER:-}" ] &&
     timeout 20 "$WINESERVER" -w
 fi
 command -v raye-windows >/dev/null && raye-windows scan "$slug" >/dev/null 2>&1
+# and a place in the Windows programs folder of the home
+command -v raye-windows-programs >/dev/null && raye-windows-programs >/dev/null 2>&1
 exit $rc

@@ -16,6 +16,9 @@ raye-base (1.0~beta2) resolute; urgency=medium
   * X11 settings are written when X11 starts, not at every sign-in.
   * Starting Windows or the firmware settings from the boot menu no longer
     takes the boot screen away from Raye.
+  * A start that reaches the sign-in screen counts as working graphics:
+    restarting from the sign-in screen, or after an update, no longer
+    turns the boot screen off.
 
  -- techoraye <190692880+techoraye@users.noreply.github.com>  Thu, 19 Nov 2026 10:00:00 +0000
 

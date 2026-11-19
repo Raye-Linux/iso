@@ -151,9 +151,18 @@ def test_a_desktop_session_clears_the_try(tmp_path):
     assert (tmp_path / "written").read_text().split() == [str(tmp_path / "grubenv"), "set", "raye_gfx_fails=0"]
 
 
-def test_the_sign_in_screen_alone_does_not(tmp_path):
+def test_the_sign_in_screen_clears_the_try_too(tmp_path):
+    # the sign-in screen drew: the graphics work. Counting a start that
+    # stopped there (a restart from the sign-in screen, or the restart
+    # after an update) took the boot screen away for nothing (2026-11-19).
     env = fake_loginctl(tmp_path, {"c1": "Class=greeter\nType=wayland\nState=active",
                                    "4": "Class=user\nType=tty\nState=active"})
+    subprocess.run(["sh", str(OK)], env=env, check=True)
+    assert (tmp_path / "written").read_text().split() == [str(tmp_path / "grubenv"), "set", "raye_gfx_fails=0"]
+
+
+def test_a_text_console_alone_does_not(tmp_path):
+    env = fake_loginctl(tmp_path, {"4": "Class=user\nType=tty\nState=active"})
     subprocess.run(["sh", str(OK)], env=env, check=True)
     assert not (tmp_path / "written").exists()
 

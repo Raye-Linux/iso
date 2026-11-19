@@ -38,6 +38,9 @@ raye-base (1.0~beta2) resolute; urgency=medium
     unlocked; safer network defaults; two boot services sandboxed.
   * OpenVPN files (.ovpn) can be added in Settings > VPN, like WireGuard
     ones.
+  * Dell laptops with a Nuvoton TPM (Latitude 5490 and others) no longer
+    freeze for good when going to sleep: the TPM is let go just before
+    sleep and comes back on waking.
 
  -- techoraye <190692880+techoraye@users.noreply.github.com>  Thu, 19 Nov 2026 10:00:00 +0000
 

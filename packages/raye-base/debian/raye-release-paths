@@ -273,6 +273,7 @@ raye-desktop  release/tuning/raye-vm-cursor  usr/lib/systemd/user-environment-ge
 # sign-in screen draw the pointer themselves (a black screen otherwise).
 # raye-desktop.links makes it a user-environment generator too.
 raye-system   release/tuning/raye-amd-cursor  usr/libexec/raye-amd-cursor
+raye-system   release/tuning/raye-tpm-sleep  usr/lib/systemd/system-sleep/raye-tpm-sleep
 raye-desktop  release/tuning/sddm-wayland-raye.conf  etc/sddm.conf.d/sddm-wayland-raye.conf
 raye-desktop  release/xdg/autostart/org.kde.kdeconnect.daemon.desktop  etc/xdg/autostart/org.kde.kdeconnect.daemon.desktop  divert
 raye-desktop  release/xdg/autostart/org.kde.kclockd-autostart.desktop  etc/xdg/autostart/org.kde.kclockd-autostart.desktop  divert

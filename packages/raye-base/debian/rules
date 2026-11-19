@@ -20,6 +20,7 @@ ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
 	sh release/tuning/tests/test-laptop-wake.sh
 	sh release/tuning/tests/test-raye-vm-cursor.sh
 	sh release/tuning/tests/test-raye-amd-cursor.sh
+	sh release/tuning/tests/test-raye-tpm-sleep.sh
 	sh release/grub/tests/test-raye-update-grub.sh
 	sh release/tuning/tests/test-raye-start-if-needed.sh
 	sh release/tuning/tests/test-raye-min-free.sh

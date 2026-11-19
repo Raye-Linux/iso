@@ -1,0 +1,53 @@
+#!/bin/sh
+# systemd-sleep hook. Some Dell laptops (the Latitude 5490 was measured on
+# 2026-11-19) freeze for good when going to sleep: the kernel tells their
+# Nuvoton ("NTC") TPM 2.0, firmware 7.x, to save its state, and the
+# machine never comes back, in deep sleep as in s2idle, with Raye's kernel
+# as with Ubuntu's. With the TPM driver let go just before sleep the same
+# laptop sleeps and wakes every time; the driver is bound again on waking
+# (the TPM restarts itself, as after a cold boot), so the TPM works as
+# usual while the PC is on. Any other PC is left alone.
+#
+#   $1 = pre | post   $2 = suspend | hibernate | hybrid-sleep | ...
+set -u
+
+DMI=${RAYE_TPM_DMI:-/sys/class/dmi/id}
+DRIVER=${RAYE_TPM_DRIVER:-/sys/bus/platform/drivers/tpm_tis}
+STATE=${RAYE_TPM_RUN:-/run}/raye-tpm-sleep
+
+affected() { # device folder
+    [ "$(cat "$DMI/sys_vendor" 2>/dev/null)" = "Dell Inc." ] || return 1
+    command -v tpm2_getcap >/dev/null 2>&1 || return 1
+    for class in "$1"/tpm/tpm*; do
+        [ -e "$class" ] || continue
+        caps=$(tpm2_getcap -T "device:/dev/${class##*/}" properties-fixed 2>/dev/null) || continue
+        maker=$(printf '%s\n' "$caps" | sed -n '/TPM2_PT_MANUFACTURER:/,/value:/s/.*value: *"\([^"]*\)".*/\1/p' | head -1)
+        fw=$(printf '%s\n' "$caps" | sed -n '/TPM2_PT_FIRMWARE_VERSION_1:/,/raw:/s/.*raw: *0x\([0-9a-fA-F]*\).*/\1/p' | head -1)
+        [ "$maker" = NTC ] || return 1
+        # firmware 7.x: the top 16 bits of VERSION_1 are the major number
+        [ "$(( 0x${fw:-0} >> 16 ))" = 7 ] && return 0
+        return 1
+    done
+    return 1
+}
+
+case ${1:-} in
+pre)
+    [ -d "$DRIVER" ] || exit 0
+    for dev in "$DRIVER"/*:*; do
+        [ -e "$dev" ] || continue
+        affected "$dev" || continue
+        name=${dev##*/}
+        echo "$name" >> "$STATE"
+        echo "$name" > "$DRIVER/unbind" 2>/dev/null || true
+    done
+    ;;
+post)
+    [ -f "$STATE" ] || exit 0
+    while read -r name; do
+        [ -n "$name" ] && echo "$name" > "$DRIVER/bind" 2>/dev/null || true
+    done < "$STATE"
+    rm -f "$STATE"
+    ;;
+esac
+exit 0

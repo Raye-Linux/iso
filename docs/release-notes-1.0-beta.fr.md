@@ -27,6 +27,10 @@ English: https://dl.rayelinux.com/iso/1.0-beta/release-notes-1.0-beta.md
   même travail. Steam et Heroic sont mis en avant, et Steam Play est activé
   pour tous les jeux dès que le Store installe Steam. TeamViewer, Mullvad VPN
   et balenaEtcher ont été ajoutés.
+- **Des avis dans le Raye Store** : la page de chaque appli montre ses
+  étoiles et ce que les gens en disent, et une fois l'appli installée, vous
+  pouvez la noter et écrire votre propre avis. Les avis sont partagés avec
+  d'autres magasins d'applis Linux.
 - **Les fichiers .deb** s'installent d'un double-clic, dans une petite
   fenêtre qui va chercher ce qu'il leur faut et explique tout problème en
   mots simples.
@@ -53,6 +57,15 @@ English: https://dl.rayelinux.com/iso/1.0-beta/release-notes-1.0-beta.md
   mode BIOS, et demande avant d'effacer un disque, de supprimer une
   partition ou d'en réduire une. Le menu de la clé a « Check the USB stick
   for errors », et une clé mal écrite le dit au lieu d'une erreur obscure.
+- **Essayer Raye Linux sans l'installer** : le menu de la clé a un nouveau
+  choix qui ouvre le bureau directement depuis la clé, sans que
+  l'installation s'ouvre. Rien ne change sur le PC.
+- **Remplacer et garder vos fichiers** : quand Raye remplace Windows ou un
+  autre système, l'installation peut emporter votre Bureau, vos Documents,
+  Téléchargements, Musique, Images et Vidéos. Elle vérifie d'abord qu'il y a
+  la place et demande avant d'effacer quoi que ce soit.
+- **Machines virtuelles** : Raye apporte maintenant les outils invités de
+  VirtualBox et de VMware, et le PC reste éveillé pendant l'installation.
 - **Les applis web** installées depuis votre navigateur et épinglées à la
   barre des tâches gardent leur propre icône et leur nom.
 - Ctrl+Win+Entrée active ou coupe le lecteur d'écran.

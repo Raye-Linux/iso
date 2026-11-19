@@ -22,6 +22,9 @@ Français : https://dl.rayelinux.com/iso/1.0-beta/release-notes-1.0-beta.fr.md
   Battle.net...) and it finds the apps that do the same job. Steam and
   Heroic are up front, and Steam Play is on for every game once the Store
   installs Steam. TeamViewer, Mullvad VPN and balenaEtcher were added.
+- **Reviews in the Raye Store**: each app's page shows its stars and what
+  people say about it, and once an app is installed you can rate it and
+  write your own review. Reviews are shared with other Linux app stores.
 - **.deb files** install with a double-click, in a small window that fetches
   what they need and explains any problem in plain words.
 - **Windows programs** get the fonts they ask for, start in their own
@@ -44,6 +47,15 @@ Français : https://dl.rayelinux.com/iso/1.0-beta/release-notes-1.0-beta.fr.md
   before it erases a disk, deletes a partition or makes one smaller. The USB
   menu has "Check the USB stick for errors", and a stick written badly says
   so instead of a cryptic error.
+- **Try Raye Linux without installing**: the USB menu has a new choice that
+  opens the desktop straight from the stick, without Setup popping up.
+  Nothing on the PC changes.
+- **Replace and keep your files**: when Raye replaces Windows or another
+  system, Setup can bring your Desktop, Documents, Downloads, Music,
+  Pictures and Videos along. It checks there is room first and asks before
+  it deletes anything.
+- **Virtual machines**: Raye now comes with the VirtualBox and VMware guest
+  tools, and the PC stays awake while Setup installs.
 - **The web apps** you install from your browser and pin to the taskbar keep
   their own icon and name.
 - Ctrl+Win+Enter turns the screen reader on or off.

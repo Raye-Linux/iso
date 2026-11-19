@@ -14,6 +14,7 @@ raye-base (1.0~beta1) resolute; urgency=high
   * No switch to the Raye kernel while NVIDIA's prebuilt modules are
     installed (they only load on the standard kernel).
   * Old BIOS PCs: GRUB for BIOS comes with the system.
+  * Boot menu: Try Raye Linux without installing, in English and French.
 
  -- techoraye <190692880+techoraye@users.noreply.github.com>  Thu, 19 Nov 2026 06:00:00 +0000
 

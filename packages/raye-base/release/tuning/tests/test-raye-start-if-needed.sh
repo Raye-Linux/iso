@@ -108,6 +108,12 @@ if [ -x "$x11" ] && grep -q 'systemctl --user --no-block start' "$x11" &&
 else
     echo "FAIL X11 starting brings the X11 helpers"; failures=$((failures + 1))
 fi
+# and the X resources the session no longer writes at sign-in
+if grep -q '^kcminit kcm_fonts_init kcm_style_init' "$x11"; then
+    echo "ok   X11 starting writes the X resources"
+else
+    echo "FAIL X11 starting writes the X resources"; failures=$((failures + 1))
+fi
 
 echo
 [ "$failures" -eq 0 ] && echo "all checks passed" || { echo "$failures check(s) failed"; exit 1; }

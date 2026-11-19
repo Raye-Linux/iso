@@ -2,5 +2,8 @@
 # KWin starts X11 the first time an X11 program opens and runs this then:
 # the tray icons of X11 programs, the accessibility settings and, when a
 # global menu is in use, the menus of GTK programs come with it.
+# The X resources (font DPI, colours, cursor) are written now too: at
+# sign-in the session leaves them out, as writing them would start X11.
+kcminit kcm_fonts_init kcm_style_init >/dev/null 2>&1 &
 exec systemctl --user --no-block start plasma-xembedsniproxy.service plasma-kaccess.service \
     plasma-gmenudbusmenuproxy.service

@@ -96,6 +96,8 @@ raye-system  release/tuning/60-raye-iosched.rules  usr/lib/udev/rules.d/60-raye-
 raye-system  release/tuning/60-raye-usb-writeback.rules  usr/lib/udev/rules.d/60-raye-usb-writeback.rules
 raye-system  release/tuning/60-raye-powerdevil.conf  usr/lib/environment.d/60-raye-powerdevil.conf
 raye-system  release/tuning/raye-mglru.conf        usr/lib/tmpfiles.d/raye-mglru.conf
+raye-system  release/tuning/raye-min-free          usr/libexec/raye-min-free
+raye-system  release/tuning/raye-min-free.service  usr/lib/systemd/system/raye-min-free.service
 raye-system  ?release/tuning/raye-net.conf          usr/lib/modules-load.d/raye-net.conf
 raye-system  release/tuning/journald.conf          usr/lib/systemd/journald.conf.d/50-raye.conf
 
@@ -213,6 +215,7 @@ raye-gaming  release/gaming/50-raye-game-scheduler.rules        usr/share/polkit
 raye-desktop  release/notices/raye-restart-notice   usr/bin/raye-restart-notice
 raye-desktop  release/notices/raye-notices          usr/libexec/raye-notices
 raye-desktop  release/notices/raye-notices.service  usr/lib/systemd/user/raye-notices.service
+raye-desktop  release/notices/raye-notices.timer    usr/lib/systemd/user/raye-notices.timer
 raye-desktop  release/chromebook/raye-chromebook-sound-tip.service  usr/lib/systemd/user/raye-chromebook-sound-tip.service
 # these turn off popups of stock events system-wide
 raye-desktop  release/notices/*.notifyrc            etc/xdg

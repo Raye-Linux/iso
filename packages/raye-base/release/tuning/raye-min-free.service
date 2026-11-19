@@ -1,0 +1,15 @@
+[Unit]
+Description=Size the memory the kernel keeps free for this PC
+Documentation=https://github.com/Raye-Linux/handbook
+DefaultDependencies=no
+After=systemd-sysctl.service
+Before=sysinit.target shutdown.target
+Conflicts=shutdown.target
+ConditionPathIsReadWrite=/proc/sys/vm/min_free_kbytes
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/raye-min-free
+
+[Install]
+WantedBy=sysinit.target

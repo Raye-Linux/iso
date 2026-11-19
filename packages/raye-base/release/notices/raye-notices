@@ -1,8 +1,9 @@
 #!/usr/bin/python3 -I
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Low disk, failing disk, low battery and "sign in to this network", in
-Raye's words. Runs in the user's session and looks once a minute: one notice
-when something starts or gets worse, nothing while it stays the same.
+Raye's words. Looks once and exits; a timer of the session runs it every
+minute. One notice when something starts or gets worse, nothing while it
+stays the same: what was said is kept in a file, for this sign-in only.
 
 The stock popups for the same events are off (the *.notifyrc files in this
 folder); powerdevil still acts on a critical battery.
@@ -10,9 +11,9 @@ folder); powerdevil still acts on a critical battery.
 import argparse
 import json
 import os
+import pathlib
+import shlex
 import subprocess
-import threading
-import time
 from collections import namedtuple
 
 Notice = namedtuple("Notice", "key level app icon title body actions")
@@ -26,7 +27,7 @@ LOW_DISK_BYTES = 2 * GIB
 LOW_DISK_SHARE = 0.05
 VERY_LOW_DISK_BYTES = 500 * MIB
 
-TICK_SECONDS = 60
+# drives are asked every 30 looks, so every half hour
 HEALTH_EVERY_TICKS = 30
 
 # UPower Device.State and Device.WarningLevel
@@ -270,52 +271,114 @@ def _this_boot():
         return ""
 
 
-def show(notice, wait=True):
-    cmd = ["notify-send", "--app-name=" + notice.app, "--icon=" + notice.icon, "--urgency=normal"]
-    cmd += ["--action=%s=%s" % (a[0], a[1]) for a in notice.actions]
+def waiter(notice):
+    """A unit of its own that waits for a button, so the look can exit."""
+    ask = ["notify-send", "--app-name=" + notice.app, "--icon=" + notice.icon, "--urgency=normal",
+           *["--action=%s=%s" % (a[0], a[1]) for a in notice.actions], "--wait", notice.title, notice.body]
+    cases = " ".join("%s) exec %s ;;" % (shlex.quote(key), shlex.join(cmd)) for key, _, cmd in notice.actions)
+    script = 'case "$(%s)" in %s esac' % (shlex.join(ask), cases)
+    return ["systemd-run", "--user", "--quiet", "--collect", "--no-block", "--", "sh", "-c", script]
+
+
+def show(notice):
     if notice.actions:
-        cmd.append("--wait")
-    cmd += [notice.title, notice.body]
-
-    def run():
+        cmd = waiter(notice)
         try:
-            res = subprocess.run(cmd, capture_output=True, text=True)
+            if subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
+                return
         except OSError:
-            return
-        chosen = res.stdout.strip()
-        for action in notice.actions:
-            if action[0] == chosen:
-                try:
-                    subprocess.Popen(action[2], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                except OSError:
-                    pass
+            pass
+        # no user manager to ask: wait in a child of our own
+        subprocess.Popen(cmd[cmd.index("--") + 1:], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True)
+        return
+    try:
+        subprocess.run(["notify-send", "--app-name=" + notice.app, "--icon=" + notice.icon,
+                        "--urgency=normal", notice.title, notice.body],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError:
+        pass
 
-    if wait and notice.actions:
-        threading.Thread(target=run, daemon=True).start()
-    else:
-        run()
+
+def session_key(env=os.environ):
+    """Changes at each sign-in, so a new session hears everything again."""
+    return "%s/%s" % (_this_boot(), env.get("XDG_SESSION_ID", ""))
+
+
+def state_path(env=os.environ):
+    base = env.get("XDG_RUNTIME_DIR") or os.path.join(os.path.expanduser("~"), ".cache")
+    return pathlib.Path(base, "raye-notices.json")
+
+
+def read_state(path):
+    try:
+        state = json.loads(pathlib.Path(path).read_text())
+    except (OSError, ValueError):
+        return None
+    return state if isinstance(state, dict) else None
+
+
+def write_state(path, state):
+    path = pathlib.Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".new")
+    tmp.write_text(json.dumps(state))
+    os.replace(tmp, path)
+
+
+def look(state, session, read, send, clear_mark, groups=None):
+    """One look. read(groups) gives {group: [Notice]}; returns the next state."""
+    if not state or state.get("session") != session:
+        clear_mark()
+        state = {"session": session, "tick": 0, "shown": []}
+    mon = Monitor(send)
+    mon.shown = {(g, k): level for g, k, level in state.get("shown", [])}
+    tick = state.get("tick", 0)
+    wanted = ["disk", "battery", "portal"]
+    if tick % HEALTH_EVERY_TICKS == 0:
+        wanted.append("health")
+    found = read(wanted)
+    for group in wanted:
+        if groups:
+            groups(group)
+        mon.update(group, found.get(group, []))
+    return {"session": session, "tick": tick + 1,
+            "shown": [[g, k, level] for (g, k), level in mon.shown.items()]}
+
+
+def reader(words, paths):
+    def read(wanted):
+        out = {}
+        if "disk" in wanted:
+            out["disk"] = disk_conditions(statvfs, words, paths)
+        if "battery" in wanted:
+            out["battery"] = battery_conditions(read_battery(), words)
+        if "portal" in wanted:
+            out["portal"] = portal_conditions(*read_portal(), words)
+        if "health" in wanted:
+            out["health"] = health_conditions(read_drives(), words)
+        return out
+    return read
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--once", action="store_true", help="look once and exit")
+    parser.add_argument("--once", action="store_true", help="say everything true now, keep no state")
+    parser.add_argument("--state", default=None, help="file of what was said (default: in XDG_RUNTIME_DIR)")
     parser.add_argument("--paths", nargs="*", default=None)
     args = parser.parse_args()
     paths = args.paths if args.paths is not None else ["/", os.path.expanduser("~")]
     words = WORDS[language()]
-    clear_restart_mark(_read_boot_mark, _clear_key, _this_boot())
-    mon = Monitor(lambda n: show(n, wait=not args.once))
-    tick = 0
-    while True:
-        mon.update("disk", disk_conditions(statvfs, words, paths))
-        mon.update("battery", battery_conditions(read_battery(), words))
-        mon.update("portal", portal_conditions(*read_portal(), words))
-        if tick % HEALTH_EVERY_TICKS == 0:
-            mon.update("health", health_conditions(read_drives(), words))
-        if args.once:
-            return 0
-        tick += 1
-        time.sleep(TICK_SECONDS)
+    path = None if args.once else pathlib.Path(args.state) if args.state else state_path()
+    state = read_state(path) if path else None
+    state = look(state, session_key(), reader(words, paths), show,
+                 lambda: clear_restart_mark(_read_boot_mark, _clear_key, _this_boot()))
+    if path:
+        try:
+            write_state(path, state)
+        except OSError:
+            pass
+    return 0
 
 
 if __name__ == "__main__":

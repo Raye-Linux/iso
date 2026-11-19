@@ -1,0 +1,47 @@
+#!/bin/sh
+# Sizes the free memory the kernel keeps aside (vm.min_free_kbytes) the way
+# the kernel itself does without huge pages: sqrt(16 x RAM in kB), about
+# 8 MB on 4 GB, 16 MB on 16 GB, 32 MB on 64 GB.
+#
+# With huge pages on (madvise), khugepaged raises it at boot to 66 MB
+# whatever the RAM, and the watermarks built on it keep about 150 MB out
+# of reach on every PC. Raye only gives huge pages to programs that ask,
+# so the fragmentation reserve that number is for buys little here.
+#
+# Runs once at boot, after sysctl.d. It only ever lowers the value, and a
+# vm.min_free_kbytes set in /etc (or /run) wins.
+set -u
+zoneinfo=${RAYE_ZONEINFO:-/proc/zoneinfo}
+file=${RAYE_MIN_FREE_FILE:-/proc/sys/vm/min_free_kbytes}
+dirs=${RAYE_SYSCTL_DIRS:-/etc/sysctl.conf /etc/sysctl.d /run/sysctl.d /usr/local/lib/sysctl.d}
+
+for d in $dirs; do
+    if [ -d "$d" ]; then set -- "$d"/*.conf; else set -- "$d"; fi
+    for f in "$@"; do
+        [ -f "$f" ] || continue
+        if grep -Eqs '^[[:space:]]*-?vm[./]min_free_kbytes[[:space:]]*=' "$f"; then
+            echo "raye-min-free: set in $f, left alone"
+            exit 0
+        fi
+    done
+done
+
+# what the kernel counts as low memory: managed pages minus the high
+# watermark of every zone up to Normal (nr_free_buffer_pages)
+want=$(awk -v page="$(getconf PAGESIZE 2>/dev/null || echo 4096)" '
+    /^Node/ { zone = $4; next }
+    zone ~ /^(DMA|DMA32|Normal)$/ && $1 == "high" { h = $2 }
+    zone ~ /^(DMA|DMA32|Normal)$/ && $1 == "managed" { if ($2 > h) pages += $2 - h; h = 0 }
+    END {
+        if (pages <= 0) exit 1
+        v = int(sqrt(pages * page / 1024 * 16))
+        if (v < 128) v = 128
+        if (v > 262144) v = 262144
+        print v
+    }' "$zoneinfo") || { echo "raye-min-free: cannot read $zoneinfo"; exit 0; }
+
+have=$(cat "$file" 2>/dev/null) || exit 0
+if [ "$want" -lt "$have" ]; then
+    echo "$want" > "$file" && echo "raye-min-free: $have kB -> $want kB"
+fi
+exit 0

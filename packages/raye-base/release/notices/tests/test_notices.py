@@ -153,6 +153,84 @@ class Monitor(unittest.TestCase):
         self.assertEqual(len(sent), 1)
 
 
+class State(unittest.TestCase):
+    """One look a minute from a timer: what was said lives in a file."""
+
+    def look(self, state, notices, session="boot/3", cleared=None):
+        sent = []
+        new = rn.look(state, session, lambda wanted: notices, sent.append,
+                      lambda: cleared.append(1) if cleared is not None else None)
+        return new, sent
+
+    def test_nothing_is_said_twice_across_looks(self):
+        disk = [rn.Notice("d", 1, "", "", "", "", [])]
+        state, sent = self.look(None, {"disk": disk})
+        self.assertEqual(len(sent), 1)
+        state = json.loads(json.dumps(state))   # through the file
+        state, sent = self.look(state, {"disk": disk})
+        self.assertEqual(sent, [])
+        state, sent = self.look(state, {"disk": [rn.Notice("d", 2, "", "", "", "", [])]})
+        self.assertEqual(len(sent), 1, "worse says so")
+
+    def test_a_new_session_starts_fresh_and_clears_the_restart_mark(self):
+        disk = [rn.Notice("d", 1, "", "", "", "", [])]
+        cleared = []
+        state, _ = self.look(None, {"disk": disk}, cleared=cleared)
+        self.assertEqual(len(cleared), 1)
+        _, sent = self.look(state, {"disk": disk}, cleared=cleared)
+        self.assertEqual(len(cleared), 1, "once a session")
+        _, sent = self.look(state, {"disk": disk}, session="boot/4", cleared=cleared)
+        self.assertEqual(len(sent), 1, "said again at the next sign-in")
+        self.assertEqual(len(cleared), 2)
+
+    def test_drives_are_read_every_thirty_looks(self):
+        groups = []
+        state = None
+        for _ in range(61):
+            state = rn.look(state, "s", lambda wanted: {}, lambda n: None, lambda: None,
+                            groups=groups.append)
+        self.assertEqual(groups.count("health"), 3)
+        self.assertEqual(groups.count("disk"), 61)
+
+    def test_file_round_trip_and_a_broken_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp, "x", "state.json")
+            self.assertIsNone(rn.read_state(path))
+            rn.write_state(path, {"session": "s", "tick": 2, "shown": [["disk", "d", 1]]})
+            self.assertEqual(rn.read_state(path)["tick"], 2)
+            path.write_text("{not json")
+            self.assertIsNone(rn.read_state(path))
+
+
+class Buttons(unittest.TestCase):
+    def test_the_answer_waits_in_its_own_unit(self):
+        notice = rn.Notice("disk:1", 1, "Storage", "drive-harddisk", "Low", "Body",
+                           [("clean", "Clean up", rn.OPEN_STORAGE)])
+        cmd = rn.waiter(notice)
+        self.assertEqual(cmd[:2], ["systemd-run", "--user"])
+        self.assertIn("--collect", cmd)
+        self.assertNotIn("--wait", cmd[:cmd.index("--")])
+
+    def test_the_chosen_button_runs_its_command(self):
+        notice = rn.Notice("p", 1, "Network", "net", "Sign in to Café 'A'", "Body",
+                           [("signin", "Sign in", ["sh", "-c", 'echo opened >> "$CALLS"'])])
+        script = rn.waiter(notice)[-1]
+        with tempfile.TemporaryDirectory() as tmp:
+            bindir = pathlib.Path(tmp, "bin")
+            bindir.mkdir()
+            log = pathlib.Path(tmp, "calls")
+            for answer in ("", "signin"):
+                stub = bindir / "notify-send"
+                stub.write_text('#!/bin/sh\necho "notify-send $*" >> "$CALLS"\necho %s\n' % answer)
+                stub.chmod(0o755)
+                subprocess.run(["sh", "-c", script], env=dict(os.environ, PATH=f"{bindir}:/usr/bin:/bin",
+                                                              CALLS=str(log)), check=True, timeout=10)
+            calls = log.read_text()
+            self.assertEqual(calls.count("opened"), 1, calls)
+            self.assertIn("--wait", calls)
+            self.assertIn("Sign in to Café 'A'", calls)
+
+
 class RestartMark(unittest.TestCase):
     def run_it(self, marked, this_boot):
         gone = []
@@ -196,6 +274,17 @@ class Live(unittest.TestCase):
                     break
                 subprocess.run(["sleep", "0.1"])
             return res, log.read_text() if log.exists() else ""
+
+    def test_each_look_leaves_its_state(self):
+        with tempfile.TemporaryDirectory() as state_dir:
+            state = pathlib.Path(state_dir, "notices.json")
+            for _ in range(2):
+                res, calls = self.run_once("raye-notices", "--state", str(state), "--paths",
+                                           env={"XDG_SESSION_ID": "7"})
+                self.assertEqual(res.returncode, 0, res.stderr)
+            got = json.loads(state.read_text())
+            self.assertEqual(got["tick"], 2)
+            self.assertTrue(got["session"].endswith("/7"))
 
     def test_nothing_answers_and_it_stays_quiet(self):
         # no disk to read and busctl fails: no battery, no drive, no network
@@ -296,11 +385,18 @@ class Shipped(unittest.TestCase):
             self.assertRegex(paths, r"(?m)^raye-desktop\s+release/notices/\S+\s+%s\s*$" % line)
         self.assertRegex(paths, r"(?m)^raye-desktop\s+release/notices/\*\.notifyrc\s+etc/xdg\s*$")
 
-    def test_the_service_starts_with_the_session(self):
+    def test_the_first_look_comes_with_the_session_then_a_timer(self):
         unit = (NOTICES / "raye-notices.service").read_text()
         self.assertIn("WantedBy=graphical-session.target", unit)
         self.assertIn("ExecStart=/usr/libexec/raye-notices", unit)
-        self.assertIn("Restart=on-failure", unit)
+        self.assertIn("Type=oneshot", unit)
+        self.assertIn("Wants=raye-notices.timer", unit)
+        timer = (NOTICES / "raye-notices.timer").read_text()
+        self.assertIn("OnUnitActiveSec=60", timer)
+        self.assertIn("PartOf=graphical-session.target", timer)
+        self.assertNotIn("[Install]", timer)
+        self.assertRegex(PATHS.read_text(), r"(?m)^raye-desktop\s+release/notices/raye-notices.timer\s+"
+                                            r"usr/lib/systemd/user/raye-notices.timer\s*$")
 
 
 if __name__ == "__main__":

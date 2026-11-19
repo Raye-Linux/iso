@@ -3,13 +3,12 @@ Description=Low disk, battery and network notices
 Documentation=https://github.com/Raye-Linux/handbook
 PartOf=graphical-session.target
 After=graphical-session.target plasma-plasmashell.service
+# the first look comes with the session, the timer does the others
+Wants=raye-notices.timer
 
 [Service]
-Type=exec
-ExitType=cgroup
+Type=oneshot
 ExecStart=/usr/libexec/raye-notices
-Restart=on-failure
-RestartSec=30
 NoNewPrivileges=yes
 MemoryHigh=64M
 

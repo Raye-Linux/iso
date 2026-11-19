@@ -1,3 +1,22 @@
+raye-base (1.0~beta1) resolute; urgency=high
+
+  * Raye starts without waiting on the boot menu: it shows only after a start
+    that did not reach the desktop, and for 3 seconds (not 10) when Windows
+    is on the disk.
+  * The NVIDIA helper no longer runs before the sign-in screen on PCs without
+    NVIDIA's driver; the start-up files carry only this PC's microcode.
+  * The X11 helpers start with the first X11 program instead of at every
+    sign-in. Ctrl+Win+Enter turns the screen reader on or off.
+  * The NVIDIA Control Panel is installed with the driver; the Clock and
+    Graphics Card apps come with the desktop.
+  * Windows programs start in their own folder, 32-bit ones get 4 GB, and
+    Store packages (.msix, .appx) open with Raye.
+  * No switch to the Raye kernel while NVIDIA's prebuilt modules are
+    installed (they only load on the standard kernel).
+  * Old BIOS PCs: GRUB for BIOS comes with the system.
+
+ -- techoraye <190692880+techoraye@users.noreply.github.com>  Thu, 19 Nov 2026 06:00:00 +0000
+
 raye-base (0.5.17~beta1) resolute; urgency=high
 
   * Graphics ladder, second step: amdgpu.dc=0 now also starts without the

@@ -723,7 +723,7 @@ for _n in ("extra", "feeds", "plasma_discover", "version"):
           "CMakeLists.txt: add_test(py-%s) -- python3 -I -B tests/test_%s.py"
           % (_n, _n), count="unittest", timeout=300)
 skipped("store/qtest", "store", "CMakeLists.txt: the test_*.cpp programs",
-        no_build("store/CMakeLists.txt:233",
+        no_build("store/CMakeLists.txt:236",
                  STORE_BUILT + "✅ It covers 5 of 5: background, jobs, "
                  "runner_index, store and windows_lib are the five "
                  "test_*.cpp, and all five are in that run. ✅ And the five "
@@ -732,7 +732,7 @@ skipped("store/qtest", "store", "CMakeLists.txt: the test_*.cpp programs",
                  "py-version) -- the 2026-11-01 log had two of them."))
 skipped("store/qml", "store",
         "CMakeLists.txt: add_test(qml) -- raye-store --check-qml",
-        no_build("store/CMakeLists.txt:245",
+        no_build("store/CMakeLists.txt:251",
                  STORE_BUILT + "It covers 1 of 1: \"Start 12: qml\" IS "
                  "this suite."))
 

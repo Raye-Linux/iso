@@ -13,7 +13,7 @@ BaseURI-amd64: http://archive.ubuntu.com/ubuntu/
 MatchURI-amd64: archive.ubuntu.com/ubuntu
 MirrorsFile: raye.mirrors
 MirrorsFile-amd64: raye.mirrors
-Description: Raye Linux 0.5 Beta Alpenglow
+Description: Raye Linux 1.0 Beta Brocken
 Component: main
 CompDescription: Supported software
 CompDescriptionLong: Free and open-source software, kept up to date

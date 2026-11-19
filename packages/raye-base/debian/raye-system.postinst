@@ -9,10 +9,21 @@ WINDOWS_ENTRY="#RAYE_WINDOWS_ENTRY#"
 OS_PROBER=/etc/grub.d/30_os-prober
 # set when this package is the one that turned os-prober's entry off
 OS_PROBER_OFF=/var/lib/raye-system/os-prober-off
+# set once Ubuntu's upgrade guard was made to start with each upgrade run
+GUARD_ON_DEMAND=/var/lib/raye-system/upgrade-guard-on-demand
 
 if [ "$1" = configure ]; then
     # netplan refuses to read a config other users can see
     chmod 600 "$DPKG_ROOT/etc/netplan/01-network-manager-all.yaml"
+
+    # unattended-upgrade-shutdown waits in memory all day for a shutdown
+    # during an upgrade run; apt-daily-upgrade.service now starts it for
+    # each run. Done once, so someone who enables it again keeps it.
+    if [ ! -e "$DPKG_ROOT$GUARD_ON_DEMAND" ] && command -v deb-systemd-helper >/dev/null 2>&1; then
+        deb-systemd-helper disable unattended-upgrades.service >/dev/null || true
+        mkdir -p "$DPKG_ROOT${GUARD_ON_DEMAND%/*}"
+        : > "$DPKG_ROOT$GUARD_ON_DEMAND"
+    fi
 
     # older installs name one server per line in ubuntu.sources
     if [ -x "$DPKG_ROOT/usr/libexec/raye-ubuntu-mirrors" ]; then

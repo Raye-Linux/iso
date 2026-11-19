@@ -5,6 +5,7 @@ set -e
 
 OS_PROBER=/etc/grub.d/30_os-prober
 OS_PROBER_OFF=/var/lib/raye-system/os-prober-off
+GUARD_ON_DEMAND=/var/lib/raye-system/upgrade-guard-on-demand
 
 #DEBHELPER#
 
@@ -15,6 +16,13 @@ case "$1" in
             [ "$kind" = diversion ] && [ "$owner" = raye-system ] || continue
             dpkg-divert --package raye-system --remove --rename --divert "$to" "$file"
         done
+        # the drop-ins that started the upgrade guard go with this package
+        if [ -e "$DPKG_ROOT$GUARD_ON_DEMAND" ]; then
+            if command -v deb-systemd-helper >/dev/null 2>&1; then
+                deb-systemd-helper enable unattended-upgrades.service >/dev/null || true
+            fi
+            rm -f "$DPKG_ROOT$GUARD_ON_DEMAND"
+        fi
         if [ -e "$DPKG_ROOT$OS_PROBER_OFF" ]; then
             dpkg-statoverride --remove "$OS_PROBER" >/dev/null 2>&1 || true
             if [ -e "$DPKG_ROOT$OS_PROBER" ]; then

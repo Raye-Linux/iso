@@ -536,6 +536,49 @@ def test_system_postrm_undoes_everything(tmp_path):
     assert log == []
 
 
+def test_system_postinst_starts_the_upgrade_guard_on_demand_once(tmp_path):
+    script, bin_dir = maintscript(tmp_path, "raye-system.postinst",
+                                  {"RAYE_DIVERT": "", "RAYE_WINDOWS_ENTRY": ""})
+    fake(bin_dir, "dpkg-divert")
+    fake(bin_dir, "chmod")
+    fake(bin_dir, "deb-systemd-helper")
+    proc, log = run(script, bin_dir, tmp_path, "configure", "")
+    assert proc.returncode == 0, proc.stderr
+    # apt-daily-upgrade.service brings it along for each run
+    helper = [l for l in log if l.startswith("deb-systemd-helper")]
+    assert helper == ["deb-systemd-helper disable unattended-upgrades.service"]
+    assert (tmp_path / "root/var/lib/raye-system/upgrade-guard-on-demand").exists()
+    # an upgrade leaves alone a guard someone turned back on
+    proc, log = run(script, bin_dir, tmp_path, "configure", "0.1")
+    assert proc.returncode == 0, proc.stderr
+    assert not any(l.startswith("deb-systemd-helper") for l in log)
+
+
+def test_system_postinst_leaves_the_guard_alone_without_the_helper(tmp_path):
+    script, bin_dir = maintscript(tmp_path, "raye-system.postinst",
+                                  {"RAYE_DIVERT": "", "RAYE_WINDOWS_ENTRY": ""})
+    fake(bin_dir, "dpkg-divert")
+    fake(bin_dir, "chmod")
+    proc, log = run(script, bin_dir, tmp_path, "configure", "",
+                    env={"PATH": f"{bin_dir}:/nonexistent"})
+    assert proc.returncode == 0, proc.stderr
+    assert not (tmp_path / "root/var/lib/raye-system/upgrade-guard-on-demand").exists()
+
+
+def test_system_postrm_gives_the_guard_back(tmp_path):
+    mark = write(tmp_path / "root/var/lib/raye-system/upgrade-guard-on-demand", "")
+    script, bin_dir = maintscript(tmp_path, "raye-system.postrm", {})
+    fake(bin_dir, "dpkg-divert")
+    fake(bin_dir, "deb-systemd-helper")
+    proc, log = run(script, bin_dir, tmp_path, "upgrade", "0.2")
+    assert proc.returncode == 0, proc.stderr
+    assert mark.exists() and log == []
+    proc, log = run(script, bin_dir, tmp_path, "remove")
+    assert proc.returncode == 0, proc.stderr
+    assert "deb-systemd-helper enable unattended-upgrades.service" in log
+    assert not mark.exists()
+
+
 def test_desktop_postinst_sets_the_app_defaults(tmp_path):
     script, bin_dir = maintscript(tmp_path, "raye-desktop.postinst", {"RAYE_DIVERT": ""})
     fake(bin_dir, "dpkg-divert")

@@ -59,6 +59,10 @@ raye-system  release/apt/raye-timeouts.conf             etc/apt/apt.conf.d/60ray
 raye-system  release/apt/raye-ubuntu-mirrors           usr/libexec/raye-ubuntu-mirrors
 raye-system  release/updates/52raye-unattended-upgrades   etc/apt/apt.conf.d/52raye-unattended-upgrades
 raye-system  release/updates/21raye-periodic              etc/apt/apt.conf.d/21raye-periodic
+# fwupd and Ubuntu's upgrade guard leave memory when they have nothing to do
+raye-system  release/updates/fwupd.conf  var/etc/fwupd/fwupd.conf
+raye-system  release/updates/apt-daily-upgrade.service.d/raye-shutdown-guard.conf  usr/lib/systemd/system/apt-daily-upgrade.service.d/raye-shutdown-guard.conf
+raye-system  release/updates/unattended-upgrades.service.d/raye-on-demand.conf  usr/lib/systemd/system/unattended-upgrades.service.d/raye-on-demand.conf
 raye-system  release/snapshots/raye-snapshots-setup       usr/libexec/raye-snapshots-setup
 raye-system  release/snapshots/raye-snapshots.service     usr/lib/systemd/system/raye-snapshots.service
 raye-system  release/snapshots/raye-snapshots-daily       usr/libexec/raye-snapshots-daily

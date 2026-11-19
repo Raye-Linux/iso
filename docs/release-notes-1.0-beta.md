@@ -32,7 +32,8 @@ Français : https://dl.rayelinux.com/iso/1.0-beta/release-notes-1.0-beta.fr.md
   when the drive is safe to remove, and Properties and Folder options are
   clearer.
 - **Raye Update** is quieter and more reliable: Plasma updates arrive in one
-  set, a file that fails to download is simply tried again later, and
+  set, a file that fails to download is simply tried again later, checking
+  for updates no longer hangs for minutes when a server goes quiet, and
   Settings shows the download speed, the time left and each update's status.
 - **Faster start**: no boot menu wait while starts go well, smaller start-up
   files, and helpers for older programs start only when one needs them.

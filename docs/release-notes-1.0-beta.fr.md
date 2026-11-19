@@ -40,8 +40,9 @@ English: https://dl.rayelinux.com/iso/1.0-beta/release-notes-1.0-beta.md
   des dossiers sont plus clairs.
 - **Raye Update** est plus discret et plus fiable : les mises à jour de
   Plasma arrivent d'un seul bloc, un fichier qui n'a pas pu être téléchargé
-  est simplement réessayé plus tard, et Paramètres montre la vitesse, le
-  temps restant et l'état de chaque mise à jour.
+  est simplement réessayé plus tard, la recherche de mises à jour ne reste
+  plus bloquée des minutes quand un serveur ne répond plus, et Paramètres
+  montre la vitesse, le temps restant et l'état de chaque mise à jour.
 - **Démarrage plus rapide** : plus d'attente sur le menu de démarrage tant
   que tout va bien, des fichiers de démarrage plus petits, et les aides des
   vieux programmes ne démarrent que quand l'un d'eux en a besoin.

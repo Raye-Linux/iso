@@ -44,6 +44,12 @@ raye-base (1.0~beta2) resolute; urgency=medium
     and a notice says so. The Dell Latitude 5490 has sleep off from the
     start. Settings > System > Power turns it back on.
 
+  * Ubuntu updates come from the Ubuntu mirror of your country first, found
+    from the time zone, when the country has one of its own. A mirror that
+    does not answer or is days behind is left out for a day, so updates
+    never wait for it; security updates still come from Ubuntu's security
+    server first, and archive.ubuntu.com and the other servers stay behind
+    as fallbacks.
  -- techoraye <190692880+techoraye@users.noreply.github.com>  Thu, 19 Nov 2026 10:00:00 +0000
 
 raye-base (1.0~beta1.2) resolute; urgency=high

@@ -203,6 +203,10 @@ check_file() {
     for k in "${!bin[@]}"; do
         u=${k%%|*}
         case "$u" in
+            mirror+file:/etc/apt/mirrors/ubuntu.list|mirror+file:/etc/apt/mirrors/ubuntu-security.list)
+                err "$u is raye-system's conffile: the country mirror is written into" \
+                    "the *-nearby list next to it, which is what the sources must read"
+                lists=0 ;;
             mirror+file:/etc/apt/mirrors/*.list)
                 grep -qF "\$root${u#mirror+file:}\"" "$BUILD" ||
                     { err "$u is not put in the image by $(basename "$BUILD"): apt" \
@@ -300,14 +304,14 @@ check_image() {
 good_file() {
     cat > "$1" <<'EOF'
 Types: deb
-URIs: mirror+file:/etc/apt/mirrors/ubuntu.list
+URIs: mirror+file:/etc/apt/mirrors/ubuntu-nearby.list
 Suites: resolute resolute-updates resolute-backports
 Components: main universe
 Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
 
 # a comment between groups, and one naming Enabled: yes in prose
 Types: deb-src
-URIs: mirror+file:/etc/apt/mirrors/ubuntu.list
+URIs: mirror+file:/etc/apt/mirrors/ubuntu-nearby.list
 Suites: resolute resolute-updates resolute-backports
 Components: main universe
 Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
@@ -318,7 +322,7 @@ EOF
 self_test() {
     local t bad=0 out n=0
     t=$(mktemp -d); TMPS+=("$t")
-    printf 'SUITE=resolute\ninstall -D x "$root/etc/apt/mirrors/ubuntu.list"\n' > "$t/build.sh"
+    printf 'SUITE=resolute\ninstall -D x "$root/etc/apt/mirrors/ubuntu-nearby.list"\n' > "$t/build.sh"
 
     run() { "$0" --sources "$1" --build "$t/build.sh" 2>&1; }
 
@@ -359,9 +363,11 @@ self_test() {
     case_breaks "an incomplete group is caught" "is incomplete" \
         'sed -i "/^Components: main universe$/d" "$t/bad$n"'
     case_breaks "a single server is caught" "is a single server" \
-        'sed -i "s#mirror+file:/etc/apt/mirrors/ubuntu.list#http://archive.ubuntu.com/ubuntu#" "$t/bad$n"'
+        'sed -i "s#mirror+file:/etc/apt/mirrors/ubuntu-nearby.list#http://archive.ubuntu.com/ubuntu#" "$t/bad$n"'
+    case_breaks "the conffile list read directly is caught" "the country mirror" \
+        'sed -i "s#/ubuntu-nearby.list#/ubuntu.list#" "$t/bad$n"'
     case_breaks "a list the image lacks is caught" "is not put in the image" \
-        'sed -i "s#/ubuntu.list#/other.list#" "$t/bad$n"'
+        'sed -i "s#/ubuntu-nearby.list#/other.list#" "$t/bad$n"'
     case_breaks "an unknown Types is caught" "deb and deb-src only" \
         'sed -i "s/^Types: deb\$/Types: deb-foo/" "$t/bad$n"'
 

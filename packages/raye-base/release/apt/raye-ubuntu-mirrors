@@ -1,26 +1,272 @@
 #!/bin/sh
+# Ubuntu's servers for this machine, nearest first.
+#
+#   raye-ubuntu-mirrors            write the lists, move ubuntu.sources onto
+#                                  them (postinst, installer); safe to run again
+#   raye-ubuntu-mirrors --refresh  write the lists only (before each apt update)
+#
+# /etc/apt/mirrors/ubuntu.list and ubuntu-security.list are raye-system's
+# conffiles: they are never written here, or dpkg would ask about them at
+# the next upgrade. This script writes ubuntu-nearby.list and
+# ubuntu-security-nearby.list instead, from them plus the Ubuntu mirror of
+# the country of the time zone, and ubuntu.sources reads those two.
+#
+# A country mirror goes first only when all of this holds, otherwise the
+# list is the conffile's, in the conffile's order, and nothing is slower
+# than before:
+#  - the country has a mirror of its own. Every <cc>.archive.ubuntu.com
+#    resolves (a DNS wildcard sends the rest to Canonical's own servers,
+#    which are farther than archive.ubuntu.com behind its CDN), so a name
+#    that resolves proves nothing: the countries are listed below, measured;
+#  - it answered within a few seconds just now. apt does not leave a silent
+#    mirror quickly: it waits out the timeout for each file, retries, and
+#    an update took minutes in a test with one silent server first;
+#  - its updates are not days behind the security server's. A mirror that
+#    stopped syncing still answers, with old files, and apt takes them.
+# A mirror that fails one of the last two is left alone for a day.
+#
 # Machines installed before 0.3 have ubuntu.sources pointing straight at
-# archive.ubuntu.com and security.ubuntu.com. Point those two lines at the
-# mirror lists instead. Lines naming any other server are the owner's
-# choice and stay as they are. Safe to run again.
+# archive.ubuntu.com and security.ubuntu.com; those lines move to the
+# lists as well. Lines naming any other server are the owner's choice and
+# stay as they are.
 set -e
 
-src=${DPKG_ROOT:-}/etc/apt/sources.list.d/ubuntu.sources
-keep=${DPKG_ROOT:-}/var/lib/raye-system/ubuntu.sources.before-mirrors
+ROOT=${DPKG_ROOT:-}
+MIRRORS=$ROOT/etc/apt/mirrors
+SRC=$ROOT/etc/apt/sources.list.d/ubuntu.sources
+STATE=$ROOT/var/lib/raye-system
+LISTS=${RAYE_APT_LISTS:-$ROOT/var/lib/apt/lists}
+ZONEINFO=${RAYE_ZONEINFO:-$ROOT/usr/share/zoneinfo}
+SKIP=$STATE/ubuntu-country-mirror.skip
 
-archive='^\(URIs:[[:space:]]*\)http://archive\.ubuntu\.com/ubuntu/\{0,1\}[[:space:]]*$'
-security='^\(URIs:[[:space:]]*\)http://security\.ubuntu\.com/ubuntu/\{0,1\}[[:space:]]*$'
+# Countries whose <cc>.archive.ubuntu.com is a mirror of its own, served
+# over http, carrying resolute and less than a day behind archive.ubuntu.com.
+# Measured 2026-11-19 (dig on every ISO 3166 code, then the -updates
+# InRelease of each). Left out: the ones Canonical's own servers answer for
+# (us, ca, gb, jp, in, za, mx, ar, ...), gl (did not answer), bg (10 days
+# behind), ba (2 days behind). Several codes share a mirror next door: that
+# is Canonical's choice in its DNS (bo -> Brazil, mt -> Italy, kh -> Singapore).
+COUNTRIES="ae al am at au az bi bo br bw by cd ch cl cn cr cz de dk ec ee es
+fi fr ge gs gy hk hr hu id ir it ke kh kr li lv md mk mt my nc nl no nz pe ph
+py ru rw sd se sg si sk sm so sr ss tr tw tz ua ug uy ve vn zm zw"
+# These three send http to https on the same name: written as https.
+COUNTRIES_HTTPS="is lu pt"
 
-[ -f "$src" ] || exit 0
-grep -q -e "$archive" -e "$security" "$src" || exit 0
+PROBE_TIMEOUT=${RAYE_MIRROR_PROBE_TIMEOUT:-4}
+SKIP_SECONDS=86400
+# -updates behind -security by more than this: the mirror stopped syncing
+BEHIND_SECONDS=172800
 
-mkdir -p "${keep%/*}"
-[ -e "$keep" ] || cp -p "$src" "$keep"
+DEFAULT_ARCHIVE='http://archive.ubuntu.com/ubuntu/
+http://ca.archive.ubuntu.com/ubuntu/
+http://gb.archive.ubuntu.com/ubuntu/'
+DEFAULT_SECURITY='http://security.ubuntu.com/ubuntu/
+http://ca.archive.ubuntu.com/ubuntu/
+http://gb.archive.ubuntu.com/ubuntu/'
 
-# apt skips *.dpkg-tmp without a word, should this ever be left behind
-tmp=$src.dpkg-tmp
-cp -p "$src" "$tmp"
-sed -e "s#$archive#\1mirror+file:/etc/apt/mirrors/ubuntu.list#" \
-    -e "s#$security#\1mirror+file:/etc/apt/mirrors/ubuntu-security.list#" \
-    "$src" > "$tmp"
-mv -f "$tmp" "$src"
+say() { echo "raye-ubuntu-mirrors: $*" >&2; }
+
+# ------------------------------------------------------------ the country
+
+# Europe/Paris from /etc/localtime (a link into the zoneinfo tree), or
+# from /etc/timezone when there is no link.
+zone_name() {
+    link=$(readlink "$ROOT/etc/localtime" 2>/dev/null || true)
+    case "$link" in
+        *zoneinfo/*) zone=${link#*zoneinfo/} ;;
+        *) zone=$(sed -n '1{s/[[:space:]]//g;p;}' "$ROOT/etc/timezone" 2>/dev/null || true) ;;
+    esac
+    zone=${zone#posix/}
+    echo "${zone#right/}"
+}
+
+# Country code of a zone: zone.tab gives one per zone; zone1970.tab names
+# the main country first; an old name (US/Eastern) is a link to a new one.
+country_of_zone() {
+    z=$1
+    [ -n "$z" ] || return 0
+    case "$z" in *[!A-Za-z0-9_+./-]*|*..*) return 0 ;; esac
+    cc=$(awk -F'\t' -v z="$z" '!/^#/ && $3 == z { print $1; exit }' \
+        "$ZONEINFO/zone.tab" 2>/dev/null || true)
+    if [ -z "$cc" ]; then
+        cc=$(awk -F'\t' -v z="$z" '!/^#/ && $3 == z { split($1, c, ","); print c[1]; exit }' \
+            "$ZONEINFO/zone1970.tab" 2>/dev/null || true)
+    fi
+    if [ -z "$cc" ] && [ -z "$2" ] && [ -L "$ZONEINFO/$z" ]; then
+        real=$(readlink -f "$ZONEINFO/$z" 2>/dev/null || true)
+        base=$(readlink -f "$ZONEINFO" 2>/dev/null || true)
+        case "$real" in "$base"/*) country_of_zone "${real#"$base"/}" again; return ;; esac
+    fi
+    echo "$cc" | tr 'A-Z' 'a-z'
+}
+
+country_mirror() {
+    for c in $COUNTRIES; do
+        [ "$c" = "$1" ] && { echo "http://$1.archive.ubuntu.com/ubuntu/"; return; }
+    done
+    for c in $COUNTRIES_HTTPS; do
+        [ "$c" = "$1" ] && { echo "https://$1.archive.ubuntu.com/ubuntu/"; return; }
+    done
+    return 0
+}
+
+# ------------------------------------------------------- is it healthy?
+
+# Seconds since 1970 of the "Date:" field of a Release file on stdin.
+release_date() {
+    d=$(sed -n 's/^Date:[[:space:]]*//p' | head -n1)
+    [ -n "$d" ] && date -d "$d" +%s 2>/dev/null || true
+}
+
+codename() {
+    sed -n 's/^\(UBUNTU_CODENAME\|VERSION_CODENAME\)=//p' "$ROOT/etc/os-release" 2>/dev/null |
+        tr -d '"' | head -n1
+}
+
+# The first kilobyte of the mirror's -updates InRelease, where its Date is.
+probe() {
+    if [ -n "${RAYE_MIRROR_PROBE:-}" ]; then
+        $RAYE_MIRROR_PROBE "$1"
+        return
+    fi
+    command -v curl >/dev/null 2>&1 || return 1
+    timeout $((PROBE_TIMEOUT + 2)) curl -fsS -L --proto '=http,https' \
+        --connect-timeout "$PROBE_TIMEOUT" --max-time "$PROBE_TIMEOUT" \
+        -r 0-1023 "$1" 2>/dev/null
+}
+
+skipped() {
+    [ -f "$SKIP" ] || return 1
+    read -r s_cc s_until < "$SKIP" || return 1
+    [ "$s_cc" = "$1" ] && [ "${s_until:-0}" -gt "$(date +%s)" ] 2>/dev/null
+}
+
+skip_for_a_day() {
+    mkdir -p "$STATE"
+    echo "$1 $(( $(date +%s) + SKIP_SECONDS ))" > "$SKIP"
+    say "$2; $1.archive.ubuntu.com is left out for a day"
+}
+
+# Echoes the mirror when it may go first, nothing otherwise.
+usable_mirror() {
+    cc=$1 url=$(country_mirror "$1")
+    [ -n "$url" ] || return 0
+    skipped "$cc" && return 0
+    suite=$(codename)
+    [ -n "$suite" ] || return 0
+    head=$(probe "${url}dists/$suite-updates/InRelease") || head=
+    theirs=$(printf '%s\n' "$head" | release_date)
+    if [ -z "$theirs" ]; then
+        # Offline, or no name service yet (the installer's chroot): that
+        # says nothing about the mirror, so it is only left out this time.
+        ref=$(probe "http://archive.ubuntu.com/ubuntu/dists/$suite-updates/InRelease") || ref=
+        if [ -n "$(printf '%s\n' "$ref" | release_date)" ]; then
+            skip_for_a_day "$cc" "no answer from $url"
+        fi
+        return 0
+    fi
+    now=$(date +%s)
+    # what security.ubuntu.com gave us at the last update, if anything
+    sec=$(cat "$LISTS"/*security*_dists_"$suite"-security_InRelease 2>/dev/null | release_date)
+    newest=${sec:-$now}
+    if [ $((newest - theirs)) -gt "$BEHIND_SECONDS" ]; then
+        skip_for_a_day "$cc" "$url is $(( (newest - theirs) / 86400 )) days behind"
+        return 0
+    fi
+    echo "$url"
+}
+
+# --------------------------------------------------------------- the lists
+
+# The servers of a conffile list, lowest priority first, one per line as
+# "<uri><TAB><other metadata>"; the shipped servers if the file is gone.
+servers_of() {
+    if [ -f "$1" ] && grep -q '^[[:space:]]*[a-z]' "$1"; then
+        awk '
+            /^[[:space:]]*(#|$)/ { next }
+            {
+                uri = $1; prio = 1000000; meta = ""
+                for (i = 2; i <= NF; i++) {
+                    if ($i ~ /^priority:[0-9]+$/) { prio = substr($i, 10) + 0 }
+                    else meta = meta (meta == "" ? "" : " ") $i
+                }
+                printf "%d\t%d\t%s\t%s\n", prio, NR, uri, meta
+            }' "$1" | sort -n -k1,1 -k2,2 | cut -f3-
+    else
+        printf '%s\n' "$2" | sed 's/$/\t/'
+    fi
+}
+
+host_of() { echo "$1" | sed 's#^[a-z+]*://##; s#/.*##'; }
+
+# write_list <file> <conffile> <defaults> <country url> <first|second>
+write_list() {
+    out=$1 conf=$2 defaults=$3 country=$4 where=$5
+    tmp=$out.raye-tmp
+    servers=$(servers_of "$conf" "$defaults")
+    if [ -n "$country" ]; then
+        # the same server twice would only be tried twice
+        servers=$(printf '%s\n' "$servers" |
+            awk -F'\t' -v h="$(host_of "$country")" '{ u = $1; sub(/^[a-z+]*:\/\//, "", u); sub(/\/.*/, "", u) } u != h')
+        case "$where" in
+            first) servers=$(printf '%s\t\n%s' "$country" "$servers") ;;
+            *) servers=$(printf '%s\n' "$servers" |
+                   awk -v c="$country" 'NR == 1 { print; print c "\t"; next } { print } END { if (NR == 0) print c "\t" }') ;;
+        esac
+    fi
+    {
+        echo "# Written by /usr/libexec/raye-ubuntu-mirrors before each update."
+        echo "# The servers come from ${conf#"$ROOT"}: change that file, not this one."
+        if [ -n "$country" ]; then
+            echo "# ${country} is the mirror of the time zone's country ($ZONE: $CC)."
+        else
+            echo "# No country mirror was added (time zone: ${ZONE:-none})."
+        fi
+        printf '%s\n' "$servers" | awk -F'\t' '
+            $1 != "" { n++; printf "%s\tpriority:%d%s\n", $1, n, ($2 == "" ? "" : " " $2) }'
+    } > "$tmp"
+    chmod 644 "$tmp"
+    if cmp -s "$tmp" "$out"; then rm -f "$tmp"; else mv -f "$tmp" "$out"; fi
+}
+
+write_lists() {
+    mkdir -p "$MIRRORS"
+    ZONE=$(zone_name)
+    CC=$(country_of_zone "$ZONE" "")
+    country=
+    [ -n "$CC" ] && country=$(usable_mirror "$CC")
+    write_list "$MIRRORS/ubuntu-nearby.list" "$MIRRORS/ubuntu.list" \
+        "$DEFAULT_ARCHIVE" "$country" first
+    write_list "$MIRRORS/ubuntu-security-nearby.list" "$MIRRORS/ubuntu-security.list" \
+        "$DEFAULT_SECURITY" "$country" second
+}
+
+# ------------------------------------------------------------ the sources
+
+move_sources() {
+    [ -f "$SRC" ] || return 0
+    # older machines, one server per line; then the shipped mirror lists
+    archive='^\(URIs:[[:space:]]*\)\(http://archive\.ubuntu\.com/ubuntu/\{0,1\}\|mirror+file:/etc/apt/mirrors/ubuntu\.list\)[[:space:]]*$'
+    security='^\(URIs:[[:space:]]*\)\(http://security\.ubuntu\.com/ubuntu/\{0,1\}\|mirror+file:/etc/apt/mirrors/ubuntu-security\.list\)[[:space:]]*$'
+    grep -q -e "$archive" -e "$security" "$SRC" || return 0
+    # never point apt at a list that is not there
+    [ -s "$MIRRORS/ubuntu-nearby.list" ] && [ -s "$MIRRORS/ubuntu-security-nearby.list" ] ||
+        return 0
+
+    keep=$STATE/ubuntu.sources.before-nearby
+    mkdir -p "$STATE"
+    [ -e "$keep" ] || cp -p "$SRC" "$keep"
+    # apt skips *.dpkg-tmp without a word, should this ever be left behind
+    tmp=$SRC.dpkg-tmp
+    cp -p "$SRC" "$tmp"
+    sed -e "s#$archive#\1mirror+file:/etc/apt/mirrors/ubuntu-nearby.list#" \
+        -e "s#$security#\1mirror+file:/etc/apt/mirrors/ubuntu-security-nearby.list#" \
+        "$SRC" > "$tmp"
+    mv -f "$tmp" "$SRC"
+}
+
+case "${1:-}" in
+    --refresh) write_lists ;;
+    "") write_lists; move_sources ;;
+    *) say "unknown option: $1"; exit 2 ;;
+esac

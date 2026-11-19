@@ -1,13 +1,16 @@
 # The servers are read from /etc/apt/mirrors (raye-system): if the first
-# one does not answer, apt takes the file from the next.
+# one does not answer, apt takes the file from the next. The two *-nearby
+# lists are written before each update by raye-ubuntu-mirrors: the mirror
+# of the time zone's country first when there is one, then the servers of
+# ubuntu.list and ubuntu-security.list.
 Types: deb
-URIs: mirror+file:/etc/apt/mirrors/ubuntu.list
+URIs: mirror+file:/etc/apt/mirrors/ubuntu-nearby.list
 Suites: resolute resolute-updates resolute-backports
 Components: main restricted universe multiverse
 Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
 
 Types: deb
-URIs: mirror+file:/etc/apt/mirrors/ubuntu-security.list
+URIs: mirror+file:/etc/apt/mirrors/ubuntu-security-nearby.list
 Suites: resolute-security
 Components: main restricted universe multiverse
 Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
@@ -38,14 +41,14 @@ Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
 # nothing at all to fetch from this group, and "Enabled: yes" gives it
 # the Sources index of every suite and component named here.
 Types: deb-src
-URIs: mirror+file:/etc/apt/mirrors/ubuntu.list
+URIs: mirror+file:/etc/apt/mirrors/ubuntu-nearby.list
 Suites: resolute resolute-updates resolute-backports
 Components: main restricted universe multiverse
 Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
 Enabled: no
 
 Types: deb-src
-URIs: mirror+file:/etc/apt/mirrors/ubuntu-security.list
+URIs: mirror+file:/etc/apt/mirrors/ubuntu-security-nearby.list
 Suites: resolute-security
 Components: main restricted universe multiverse
 Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg

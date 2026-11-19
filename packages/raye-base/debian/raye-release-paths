@@ -52,10 +52,13 @@ raye-release  release/identity/motd/*  usr/lib/raye/motd
 
 # ---------------------------------------------------------------- system
 raye-system  release/netplan/01-network-manager-all.yaml  etc/netplan/01-network-manager-all.yaml
-# Ubuntu's servers, in order; raye-ubuntu-mirrors moves older machines over.
+# Ubuntu's servers, in order. raye-ubuntu-mirrors writes ubuntu-nearby.list
+# and ubuntu-security-nearby.list from them (country mirror first) and
+# points ubuntu.sources at those; these two are never written on a machine.
 raye-system  release/apt/ubuntu-mirrors.list           etc/apt/mirrors/ubuntu.list
 raye-system  release/apt/ubuntu-security-mirrors.list  etc/apt/mirrors/ubuntu-security.list
 raye-system  release/apt/raye-timeouts.conf             etc/apt/apt.conf.d/60raye-timeouts
+raye-system  release/apt/raye-ubuntu-mirrors.conf       etc/apt/apt.conf.d/59raye-ubuntu-mirrors
 raye-system  release/apt/raye-ubuntu-mirrors           usr/libexec/raye-ubuntu-mirrors
 raye-system  release/updates/52raye-unattended-upgrades   etc/apt/apt.conf.d/52raye-unattended-upgrades
 raye-system  release/updates/21raye-periodic              etc/apt/apt.conf.d/21raye-periodic

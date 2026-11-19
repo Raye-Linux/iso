@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Ubuntu's mirror lists and the move of older machines onto them."""
+"""Ubuntu's mirror lists and the move of older machines onto them.
+
+ubuntu.sources reads ubuntu-nearby.list and ubuntu-security-nearby.list,
+written from the shipped lists (see test_country_mirror.py)."""
 import os
 import pathlib
 import subprocess
@@ -29,6 +32,10 @@ Components: main restricted universe multiverse
 Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
 Enabled: no
 """
+
+
+NEARBY = "mirror+file:/etc/apt/mirrors/ubuntu-nearby.list"
+SECURITY_NEARBY = "mirror+file:/etc/apt/mirrors/ubuntu-security-nearby.list"
 
 
 def mirror_lines(path):
@@ -85,13 +92,11 @@ def test_stock_sources_move_to_the_lists(tmp_path):
     src = machine(tmp_path)
     assert run(tmp_path).returncode == 0
     text = src.read_text()
-    assert uris(text) == ["mirror+file:/etc/apt/mirrors/ubuntu.list",
-                          "mirror+file:/etc/apt/mirrors/ubuntu-security.list",
-                          "mirror+file:/etc/apt/mirrors/ubuntu.list"]
+    assert uris(text) == [NEARBY, SECURITY_NEARBY, NEARBY]
     assert "# the source packages" in text
     assert "Enabled: no" in text
     assert oct(src.stat().st_mode & 0o777) == "0o644"
-    keep = tmp_path / "var/lib/raye-system/ubuntu.sources.before-mirrors"
+    keep = tmp_path / "var/lib/raye-system/ubuntu.sources.before-nearby"
     assert keep.read_text() == STOCK
     assert not list(src.parent.glob("*.dpkg-tmp"))
 
@@ -100,7 +105,7 @@ def test_second_run_changes_nothing(tmp_path):
     src = machine(tmp_path)
     run(tmp_path)
     first = src.read_text()
-    keep = tmp_path / "var/lib/raye-system/ubuntu.sources.before-mirrors"
+    keep = tmp_path / "var/lib/raye-system/ubuntu.sources.before-nearby"
     keep.write_text("left alone\n")
     assert run(tmp_path).returncode == 0
     assert src.read_text() == first
@@ -113,7 +118,7 @@ def test_server_picked_by_the_owner_stays(tmp_path):
     src = machine(tmp_path, mine)
     assert run(tmp_path).returncode == 0
     assert uris(src.read_text()) == ["http://fr.archive.ubuntu.com/ubuntu",
-                                     "mirror+file:/etc/apt/mirrors/ubuntu-security.list",
+                                     SECURITY_NEARBY,
                                      "http://fr.archive.ubuntu.com/ubuntu/"]
 
 
@@ -128,7 +133,30 @@ def test_nothing_to_do_leaves_no_backup(tmp_path):
 
 def test_no_sources_file_is_fine(tmp_path):
     assert run(tmp_path).returncode == 0
-    assert not (tmp_path / "etc").exists()
+    assert not (tmp_path / "etc/apt/sources.list.d").exists()
+
+
+def test_machines_on_the_shipped_lists_move_to_the_nearby_ones(tmp_path):
+    # every machine installed from 0.3 to 1.0 Beta 1
+    on_lists = STOCK.replace("URIs: http://archive.ubuntu.com/ubuntu/\n",
+                             "URIs: mirror+file:/etc/apt/mirrors/ubuntu.list\n") \
+                    .replace("URIs: http://archive.ubuntu.com/ubuntu\n",
+                             "URIs: mirror+file:/etc/apt/mirrors/ubuntu.list\n") \
+                    .replace("URIs: http://security.ubuntu.com/ubuntu\n",
+                             "URIs: mirror+file:/etc/apt/mirrors/ubuntu-security.list\n")
+    src = machine(tmp_path, on_lists)
+    assert run(tmp_path).returncode == 0
+    assert uris(src.read_text()) == [NEARBY, SECURITY_NEARBY, NEARBY]
+    for name in ("ubuntu-nearby.list", "ubuntu-security-nearby.list"):
+        assert mirror_lines(tmp_path / "etc/apt/mirrors" / name)
+
+
+def test_sources_are_not_moved_onto_lists_that_are_not_there(tmp_path):
+    src = machine(tmp_path)
+    # the lists cannot be written (works as root too: a file, not a folder)
+    (tmp_path / "etc/apt/mirrors").write_text("")
+    run(tmp_path)
+    assert src.read_text() == STOCK
 
 
 def test_raye_system_ships_lists_and_script():

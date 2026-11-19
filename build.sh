@@ -330,6 +330,13 @@ configure_apt() {
         "$root/etc/apt/mirrors/ubuntu.list"
     install -D -m644 "$here/packages/raye-base/release/apt/ubuntu-security-mirrors.list" \
         "$root/etc/apt/mirrors/ubuntu-security.list"
+    # what ubuntu.sources reads; raye-ubuntu-mirrors writes them again with
+    # the country mirror first once the machine has a time zone. Until then
+    # they are the lists above, in the same order.
+    install -m644 "$root/etc/apt/mirrors/ubuntu.list" \
+        "$root/etc/apt/mirrors/ubuntu-nearby.list"
+    install -m644 "$root/etc/apt/mirrors/ubuntu-security.list" \
+        "$root/etc/apt/mirrors/ubuntu-security-nearby.list"
     # the keyring and release packages bring their own sources and pins,
     # but they come from the Raye repo, so bootstrap that one by hand
     install -m644 "$here/packages/raye-base/keyring/raye-archive-keyring.gpg" \

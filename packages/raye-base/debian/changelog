@@ -25,6 +25,7 @@ raye-base (1.0~beta1) resolute; urgency=high
     the sound.
   * Checking for updates no longer hangs for minutes when an Ubuntu server
     goes quiet: apt moves to the next mirror after 15 seconds.
+  * FL Studio no longer downloads extra fonts on first start.
 
  -- techoraye <190692880+techoraye@users.noreply.github.com>  Thu, 19 Nov 2026 06:00:00 +0000
 

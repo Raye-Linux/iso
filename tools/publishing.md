@@ -86,6 +86,18 @@ phases alone.
 
 GitHub Pages does both by itself.
 
+## Old versions stay downloadable for 72 hours
+
+A version that leaves the index keeps its `.deb` in the pool for
+`GRACE_HOURS` (72), out of every index: a PC that read the lists just
+before a publish still finishes its download, then Raye Update reads the
+lists again and takes the newest (it never installs a version its lists no
+longer name). Both mirrors copy the tree as it is, so they keep these files
+too, and drop them at the first publish after the 72 hours. A kept file's
+time is the time it left the index. If the tree would weigh more than
+`GRACE_BUDGET` (900 MB, GitHub Pages stays under 1 GB) the oldest go first.
+A kept version cannot come back with other contents: raise its version.
+
 ## What may go out
 
 The apt tree is public; the ISO is not, and never goes in it. Before a

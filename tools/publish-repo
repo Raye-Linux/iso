@@ -25,6 +25,13 @@ Release is signed: a visitor browses the tree, apt never reads them.
 
 Index files are also kept under by-hash/ for two weeks, so a client that
 read an older InRelease from a cache still finds the files it names.
+
+A version that leaves the index keeps its .deb in the pool for GRACE_HOURS
+(out of every index), so a PC that read the lists just before a publish
+still finishes its download; Raye Update then reads the lists again and
+takes the newest. The oldest of these go first if the tree would pass
+GRACE_BUDGET (GitHub Pages stays under 1 GB). A file's time is the time it
+left the index.
 """
 from __future__ import annotations
 
@@ -46,6 +53,10 @@ import raye_pages  # noqa: E402
 import raye_publish as rp  # noqa: E402
 
 BY_HASH_DAYS = 14
+GRACE_HOURS = 72
+# what the whole tree may weigh with the old versions in: under GitHub's
+# 1 GB for a Pages site, with room for the folder pages
+GRACE_BUDGET = rp.TREE_LIMIT - 100 * 1000 * 1000
 # SHA256 only: apt fetches by-hash files under the strongest hash it sees
 FTPARCHIVE = ["-o", "APT::FTPArchive::MD5=false", "-o", "APT::FTPArchive::SHA1=false",
               "-o", "APT::FTPArchive::SHA512=false"]
@@ -117,6 +128,12 @@ def plan(debs, tree, conf):
             continue
         rel = f"{pool_dir(fields, conf['COMPONENT'])}/{deb.name}"
         note = "new"
+        kept = tree / rel
+        if key not in old and kept.is_file() and control_of(kept)[1:] != (control, md5sums):
+            # an old version still kept for downloads in progress
+            errors.append(f"{key[0]} {key[1]} was published with other contents "
+                          "(its file is still downloadable): raise its version (debian/changelog)")
+            continue
         if key in old:
             before = tree / old[key]
             if not before.is_file():
@@ -251,7 +268,63 @@ def sign(suite_dir, conf, keyring=rp.KEYRING):
         raise rp.PublishError(f"the signature does not verify with {keyring}")
 
 
-def build(debs, out, conf, signed=True, keyring=rp.KEYRING, dscs=()):
+def retired_debs(out, conf, chosen, now=None):
+    """[(path in the tree, file, the time it left the index)] of the
+    packages the new tree keeps out of its index: the ones the old index
+    named and the new one does not, plus the ones kept already, while
+    younger than GRACE_HOURS."""
+    now = time.time() if now is None else now
+    if not out.is_dir():
+        return []
+    indexed = set(published(out, conf).values())
+    found = {}
+    for rel in indexed:
+        if rel not in chosen and (out / rel).is_file():
+            found[rel] = now
+    pool = out / "pool"
+    if pool.is_dir():
+        for path in pool.rglob("*.deb"):
+            rel = path.relative_to(out).as_posix()
+            if rel not in chosen and rel not in indexed:
+                found[rel] = path.stat().st_mtime
+    keep = [(rel, out / rel, at) for rel, at in found.items() if now - at < GRACE_HOURS * 3600]
+    return sorted(keep, key=lambda k: k[2], reverse=True)       # the youngest first
+
+
+def tree_size(tree):
+    return sum(p.stat().st_size for p in tree.rglob("*") if p.is_file())
+
+
+def keep_retired(new, out, conf, chosen, budget=None, now=None):
+    """Copies the old versions still in their grace time into the new tree,
+    after its index is written (so no index names them). ([kept], [pruned])."""
+    budget = GRACE_BUDGET if budget is None else budget
+    room = budget - tree_size(new)
+    kept, pruned = [], []
+    candidates = retired_debs(out, conf, chosen, now)
+    young = {rel for rel, _, _ in candidates}
+    for rel, src, at in candidates:
+        size = src.stat().st_size
+        if size > room:
+            pruned.append(rel)
+            continue
+        dest = new / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dest)
+        os.chmod(dest, 0o644)
+        os.utime(dest, (at, at))
+        room -= size
+        kept.append(rel)
+    if out.is_dir() and (out / "pool").is_dir():
+        for path in (out / "pool").rglob("*.deb"):
+            rel = path.relative_to(out).as_posix()
+            if rel not in chosen and rel not in young and rel not in pruned:
+                pruned.append(rel)
+    return kept, sorted(pruned)
+
+
+def build(debs, out, conf, signed=True, keyring=rp.KEYRING, dscs=(), report=None,
+          grace_budget=None, now=None):
     files, gone = plan(debs, out, conf)
     if not files:
         raise rp.PublishError("no packages to publish")
@@ -271,6 +344,10 @@ def build(debs, out, conf, signed=True, keyring=rp.KEYRING, dscs=()):
         os.chmod(dest, 0o644)
     suite_dir = write_indexes(new, conf)
     add_by_hash(new, out, conf)
+    kept, pruned = keep_retired(new, out, conf, {rel for _, rel, _ in files},
+                                grace_budget, now)
+    if report is not None:
+        report.update(kept=kept, pruned=pruned)
     if signed:
         sign(suite_dir, conf, keyring)
     # last: the folder pages are not apt indexes, Release must not name them
@@ -315,6 +392,7 @@ def main(argv=None):
             print(f"  refused   {p}")
         print(f"{args.check}: " + ("must not be published" if problems else "may be published"))
         return 1 if problems else 0
+    report = {"kept": [], "pruned": []}
     try:
         dscs = []
         for d in args.sources:
@@ -328,14 +406,19 @@ def main(argv=None):
         else:
             if not args.no_sign and not rp.have_key(conf):
                 raise rp.PublishError(f"no signing key {conf['SIGNING_KEY']} in {conf['GNUPGHOME']}")
-            files, gone = build(debs, out, conf, signed=not args.no_sign, dscs=dscs)
+            files, gone = build(debs, out, conf, signed=not args.no_sign, dscs=dscs,
+                                report=report)
     except (rp.PublishError, subprocess.CalledProcessError) as e:
         print(f"publish-repo: {e}", file=sys.stderr)
         return 1
     for _, rel, note in files:
         print(f"  {note:9} {rel}")
     for name in gone:
-        print(f"  removed   {name}")
+        print(f"  retired   {name}" + ("" if args.dry_run else f" (its file stays {GRACE_HOURS} h)"))
+    for rel in report["kept"]:
+        print(f"  kept      {rel}")
+    for rel in report["pruned"]:
+        print(f"  removed   {rel}")
     for dsc in dscs:
         print(f"  source    {dsc.name}")
     print(("would write " if args.dry_run else "wrote ") + str(out))

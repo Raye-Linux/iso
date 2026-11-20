@@ -84,9 +84,9 @@ class PublishRepoTests(unittest.TestCase):
         self.debs.mkdir()
         self.out = self.work / "apt"
 
-    def build(self, debs=None):
+    def build(self, debs=None, **kw):
         return pr.build(debs or sorted(self.debs.glob("*.deb")), self.out, self.conf,
-                        keyring=self.keyring)
+                        keyring=self.keyring, **kw)
 
     def packages(self):
         index = self.out / "dists/resolute/main/binary-amd64/Packages"
@@ -159,6 +159,82 @@ class PublishRepoTests(unittest.TestCase):
         os.utime(by_hash / old, (0, 0))
         self.build([make_deb(newer, "raye-demo", "1.2", payload="3")])
         self.assertFalse((by_hash / old).exists())
+
+    def test_the_old_version_stays_downloadable_for_a_while(self):
+        """A PC that read the lists a minute before a publish downloads the
+        version they name: its file stays in the pool, out of the index,
+        for GRACE_HOURS, so a download in progress always ends."""
+        make_deb(self.debs, "raye-demo", "1.0")
+        self.build()
+        newer = self.work / "newer"
+        newer.mkdir()
+        files, gone = self.build([make_deb(newer, "raye-demo", "1.1", payload="2")])
+        self.assertEqual(gone, ["raye-demo 1.0"])
+        self.assertEqual(list(self.packages()), [("raye-demo", "1.1")])
+        old = self.out / "pool/main/r/raye-demo/raye-demo_1.0_all.deb"
+        self.assertTrue(old.is_file())
+        self.assertNotIn("raye-demo_1.0", (self.out / "dists/resolute/main/binary-amd64/Packages")
+                         .read_text())
+        self.assertEqual(rp.audit_tree(self.out, "resolute", self.keyring), [])
+        # still young at the next publish: kept again
+        self.build([make_deb(newer, "raye-demo", "1.2", payload="3")])
+        self.assertTrue(old.is_file())
+        self.assertTrue((self.out / "pool/main/r/raye-demo/raye-demo_1.1_all.deb").is_file())
+
+    def test_an_old_version_goes_once_its_time_is_over(self):
+        make_deb(self.debs, "raye-demo", "1.0")
+        self.build()
+        newer = self.work / "newer"
+        newer.mkdir()
+        self.build([make_deb(newer, "raye-demo", "1.1", payload="2")])
+        old = self.out / "pool/main/r/raye-demo/raye-demo_1.0_all.deb"
+        past = time.time() - pr.GRACE_HOURS * 3600 - 60
+        os.utime(old, (past, past))
+        report = {}
+        self.build([make_deb(newer, "raye-demo", "1.2", payload="3")], report=report)
+        self.assertFalse(old.exists())
+        self.assertIn("pool/main/r/raye-demo/raye-demo_1.0_all.deb", report["pruned"])
+        self.assertIn("pool/main/r/raye-demo/raye-demo_1.1_all.deb", report["kept"])
+
+    def test_old_versions_never_push_the_tree_over_its_limit(self):
+        """GitHub Pages stays under 1 GB: the oldest old versions go first."""
+        make_deb(self.debs, "raye-demo", "1.0")
+        self.build()
+        newer = self.work / "newer"
+        newer.mkdir()
+        self.build([make_deb(newer, "raye-demo", "1.1", payload="2")])
+        old = self.out / "pool/main/r/raye-demo/raye-demo_1.0_all.deb"
+        size = old.stat().st_size
+        report = {}
+        files, _ = pr.build([make_deb(newer, "raye-demo", "1.2", payload="3")], self.out,
+                            self.conf, keyring=self.keyring, report=report,
+                            grace_budget=1)
+        self.assertFalse(old.exists())
+        self.assertTrue(report["pruned"])
+        self.assertGreater(size, 0)
+
+    def test_a_kept_file_is_never_listed_nor_a_source(self):
+        make_deb(self.debs, "raye-demo", "1.0")
+        self.build()
+        newer = self.work / "newer"
+        newer.mkdir()
+        self.build([make_deb(newer, "raye-demo", "1.1", payload="2")])
+        # the version comes back (a republish): it is in the index again, once
+        self.build([make_deb(newer, "raye-demo", "1.0", payload="1"),
+                    make_deb(newer, "raye-demo", "1.1", payload="2")])
+        self.assertEqual(sorted(self.packages()), [("raye-demo", "1.0"), ("raye-demo", "1.1")])
+
+    def test_a_kept_version_cannot_come_back_with_other_contents(self):
+        """A PC may be downloading it: same version, other bytes is a hash
+        mismatch there, as for a published one."""
+        make_deb(self.debs, "raye-demo", "1.0")
+        self.build()
+        newer = self.work / "newer"
+        newer.mkdir()
+        self.build([make_deb(newer, "raye-demo", "1.1", payload="2")])
+        with self.assertRaisesRegex(rp.PublishError, "raise its version"):
+            self.build([make_deb(newer, "raye-demo", "1.0", payload="other"),
+                        make_deb(newer, "raye-demo", "1.1", payload="2")])
 
     def test_dry_run_writes_nothing(self):
         make_deb(self.debs, "raye-demo", "1.0")

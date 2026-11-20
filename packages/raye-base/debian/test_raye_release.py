@@ -694,3 +694,102 @@ def test_firmware_updates_can_reach_the_uefi_flasher():
     text = (TOP / "debian/control").read_text()
     para = [p for p in control_paragraphs(text) if "Package: raye-system" in p][0]
     assert {"fwupd", "fwupd-signed"} <= depends_of(para)
+
+
+# --- what one binary package needs from another of raye-base ---------------
+#
+# 2026-11-19: Raye Update installed raye-desktop 1.0 in use and left
+# raye-system at 0.5 for the next restart. raye-desktop's sign-in settings
+# named /usr/libexec/raye-amd-cursor, which only raye-system 1.0 has: after
+# a plain restart, no sign-in screen. A file that names a path another
+# package of this source ships needs that package at this version or newer,
+# so apt can never bring one without the other.
+
+# pairs that name each other's files and keep working without them; each
+# with the reason it is safe. Never add one to make the test pass.
+TOLERATED = {
+    # raye-kernel-setup runs raye-tpm "quietly; 127 when it is not
+    # installed"; raye-system already depends on raye-kernel.
+    ("raye-kernel", "raye-system"),
+}
+SAME_VERSION = re.compile(r"\((?:>=|=) \$\{(?:source|binary):Version\}\)")
+
+
+def _control_depends():
+    """Package -> the text of its Depends (live lines only)."""
+    out, pkg, field_ = {}, None, None
+    for line in (TOP / "debian/control").read_text().splitlines():
+        if line.startswith("#"):
+            continue
+        if line.startswith("Package:"):
+            pkg, field_ = line.split()[1], None
+            out[pkg] = ""
+        elif re.match(r"^[A-Za-z-]+:", line):
+            field_ = line.split(":", 1)[0]
+            if field_ in ("Depends", "Pre-Depends") and pkg:
+                out[pkg] += " " + line.split(":", 1)[1]
+        elif line.startswith((" ", "\t")) and field_ in ("Depends", "Pre-Depends") and pkg:
+            out[pkg] += " " + line
+    return out
+
+
+def _depends_on_this_version(depends, other):
+    for rel in depends.split(","):
+        for alt in rel.split("|"):
+            alt = alt.strip()
+            if alt.split(" ", 1)[0].split(":", 1)[0] == other and SAME_VERSION.search(alt):
+                return True
+    return False
+
+
+def _cross_references():
+    """(package, other package) -> [(its file, the other's path it names)]."""
+    result = rr.plan(TOP, False)
+    owner = {"/" + dest.lstrip("/"): pkg for _src, dest, pkg, _o in result.copies}
+    links = []
+    for f in (TOP / "debian").glob("*.links"):
+        for line in f.read_text().splitlines():
+            if line.strip() and not line.startswith("#"):
+                target, name = line.split()[:2]
+                owner.setdefault("/" + name.lstrip("/"), f.name[:-len(".links")])
+                links.append((f.name[:-len(".links")], name, "/" + target.lstrip("/")))
+    found = {}
+    for src, dest, pkg, _o in result.copies:
+        try:
+            text = pathlib.Path(src).read_text()
+        except (UnicodeDecodeError, IsADirectoryError):
+            continue
+        for path, other in owner.items():
+            # a whole path, not the start of a longer one
+            if other != pkg and re.search(re.escape(path) + r"(?![\w.-])", text):
+                found.setdefault((pkg, other), []).append((dest, path))
+    for pkg, name, target in links:
+        other = owner.get(target)
+        if other and other != pkg:
+            found.setdefault((pkg, other), []).append((name, target))
+    return found
+
+
+def test_a_package_naming_another_ones_file_needs_that_version():
+    depends = _control_depends()
+    refs = _cross_references()
+    assert refs, "the scan found nothing: it no longer reads the packages"
+    missing = []
+    for (pkg, other), where in sorted(refs.items()):
+        if (pkg, other) in TOLERATED:
+            continue
+        if not _depends_on_this_version(depends.get(pkg, ""), other):
+            missing.append(f"{pkg} needs '{other} (>= ${{source:Version}})': "
+                           + ", ".join(f"{d} names {p}" for d, p in where[:3]))
+    assert not missing, "\n".join(missing)
+
+
+def test_the_tolerated_pairs_are_still_real():
+    refs = _cross_references()
+    stale = [pair for pair in TOLERATED if pair not in refs]
+    assert not stale, f"no longer naming each other, take them out of TOLERATED: {stale}"
+
+
+def test_desktop_and_system_move_together():
+    """The case of 2026-11-19, named on its own."""
+    assert _depends_on_this_version(_control_depends()["raye-desktop"], "raye-system")

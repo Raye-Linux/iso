@@ -4,9 +4,7 @@ Priority: optional
 Maintainer: techoraye <190692880+techoraye@users.noreply.github.com>
 Build-Depends: debhelper-compat (= 13),
                python3:any,
-               python3-pytest <!nocheck>,
-               keyd <!nocheck>,
-               udev <!nocheck>
+               python3-pytest <!nocheck>
 Standards-Version: 4.7.0
 Rules-Requires-Root: no
 Vcs-Git: https://github.com/Raye-Linux/iso.git
@@ -22,7 +20,7 @@ Description: OpenPGP key of the Raye Linux package archive
 
 Package: raye-release
 Architecture: all
-Depends: raye-archive-keyring, base-files, ${misc:Depends}
+Depends: raye-archive-keyring (>= ${source:Version}), base-files, ${misc:Depends}
 Description: Raye Linux release files
  Identifies the system as Raye Linux (os-release, lsb-release, issue)
  and sets up apt the Raye way: snaps are blocked, Firefox comes from
@@ -38,7 +36,7 @@ Depends: raye-release,
          linux-generic-hwe-26.04,
          linux-firmware, intel-microcode, amd64-microcode,
          shim-signed, grub-efi-amd64-signed, grub-efi-amd64-bin, grub-pc-bin, efibootmgr, os-prober,
-         grub-theme-raye, raye-kernel,
+         grub-theme-raye, raye-kernel (>= ${source:Version}),
          initramfs-tools, zstd, plymouth, plymouth-label,
          sudo, locales, tzdata, keyboard-configuration, console-setup,
          systemd-zram-generator,
@@ -51,7 +49,6 @@ Depends: raye-release,
          nano, less, curl, ca-certificates, zip, unzip, bash-completion, whiptail,
          unattended-upgrades, snapper,
          tpm2-tools,
-         keyd,
          ${misc:Depends}
 Description: Raye Linux base system
  Kernel, firmware, boot chain and the core services every Raye Linux
@@ -59,7 +56,7 @@ Description: Raye Linux base system
 
 Package: raye-desktop
 Architecture: all
-Depends: raye-system, raye-theme,
+Depends: raye-system (>= ${source:Version}), raye-theme,
          raye-style, raye-icon-theme, raye-cursor-theme, raye-sound-theme,
          papirus-icon-theme, sound-theme-freedesktop,
          raye-first-run,
@@ -93,7 +90,7 @@ Depends: raye-system, raye-theme,
          mesa-vulkan-drivers, va-driver-all, mesa-va-drivers, gstreamer1.0-libav,
          ubuntu-drivers-common, switcheroo-control, iio-sensor-proxy,
          language-selector-common, at-spi2-core, orca,
-         systemd-coredump, libnotify-bin,
+         systemd-coredump,
 # staged: the lines below wait for the Raye package they name. When it is
 # in the image (built by build.sh), replace the "#" of its line by a space.
 # LK-0 (admin prompt)

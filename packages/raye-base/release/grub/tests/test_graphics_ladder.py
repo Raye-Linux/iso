@@ -20,14 +20,31 @@ def ladder_code(tmp_path, fs="ext4"):
 
 
 def run_grub(code, env):
-    """Runs the generated GRUB code: if/elif/else/fi, set, save_env, with ${var}."""
+    """Runs the generated GRUB code: if/elif/else/fi, set, save_env, with ${var},
+    and function definitions called by name."""
     lines = [l.strip() for l in code.splitlines() if l.strip() and not l.strip().startswith("#")]
+    funcs = {}
+    body = None
+    top = []
+    for line in lines:
+        m = re.fullmatch(r"function (\w+) \{", line)
+        if m:
+            body = funcs.setdefault(m.group(1), [])
+        elif body is not None and line == "}":
+            body = None
+        elif body is not None:
+            body.append(line)
+        else:
+            top.append(line)
     stack = []          # (taken_any, active)
 
     def active():
         return all(a for _, a in stack)
 
     def test(expr):
+        m = re.fullmatch(r'\[ -([nz]) "\$\{(\w+)\}" \]', expr)
+        if m:
+            return bool(env.get(m.group(2), "")) == (m.group(1) == "n")
         m = re.fullmatch(r'\[ "\$\{(\w+)\}" (=|!=) (\S+) \]', expr)
         val = env.get(m.group(1), "")
         return (val == m.group(3)) if m.group(2) == "=" else (val != m.group(3))
@@ -40,30 +57,43 @@ def run_grub(code, env):
             env[k] = v.strip('"')
         elif stmt.startswith("save_env"):
             env["saved"] = "yes"
-    for line in lines:
-        for part in [p.strip() for p in re.split(r";\s*(?=then|else|fi|set|if)", line) if p.strip()]:
-            if part.startswith("if "):
-                ok = active() and test(part[3:].replace(" then", "").strip())
-                stack.append([ok, ok])
-            elif part.startswith("elif "):
-                taken = stack[-1][0]
-                ok = not taken and all(a for _, a in stack[:-1]) and test(part[5:].replace(" then", "").strip())
-                stack[-1] = [taken or ok, ok]
-            elif part.startswith("else"):
-                taken = stack[-1][0]
-                stack[-1] = [True, not taken and all(a for _, a in stack[:-1])]
-                rest = part[4:].strip()
-                if rest:
-                    do(rest)
-            elif part == "fi":
-                stack.pop()
-            elif part.startswith("then"):
-                rest = part[4:].strip()
-                if rest:
-                    do(rest)
-            else:
-                do(part)
+            env.setdefault("saved_vars", set()).update(stmt.split()[1:])
+        elif stmt in funcs:
+            run(funcs[stmt])
+
+    def part_of(part):
+        if part.startswith("if "):
+            ok = active() and test(part[3:].replace(" then", "").strip())
+            stack.append([ok, ok])
+        elif part.startswith("elif "):
+            taken = stack[-1][0]
+            ok = not taken and all(a for _, a in stack[:-1]) and test(part[5:].replace(" then", "").strip())
+            stack[-1] = [taken or ok, ok]
+        elif part.startswith("else"):
+            taken = stack[-1][0]
+            stack[-1] = [True, not taken and all(a for _, a in stack[:-1])]
+            if part[4:].strip():
+                part_of(part[4:].strip())
+        elif part == "fi":
+            stack.pop()
+        elif part.startswith("then"):
+            if part[4:].strip():
+                part_of(part[4:].strip())
+        else:
+            do(part)
+
+    def run(block):
+        for line in block:
+            for part in [p.strip() for p in re.split(r";\s*(?=then|else|fi|set|if|save_env)", line) if p.strip()]:
+                part_of(part)
+    run(top)
     return env
+
+
+def start_raye(code, env):
+    """GRUB reads its menu, then the Raye entry runs; every Linux entry of
+    10_linux starts with recordfail."""
+    return run_grub(code + "\nrecordfail\n", env)
 
 
 def test_the_kernel_line_carries_the_ladder():
@@ -80,7 +110,7 @@ def test_two_failed_starts_step_down_and_a_good_one_stays(tmp_path):
     env = {"have_grubenv": "true"}
     levels = []
     for reached_desktop in [False, False, False, False, True, True]:
-        run_grub(code, env)
+        start_raye(code, env)
         levels.append(env["raye_gfx"])
         if reached_desktop:
             env["raye_gfx_fails"] = "0"         # what raye-graphics-ok writes
@@ -93,7 +123,7 @@ def test_a_working_desktop_never_steps_down(tmp_path):
     code = ladder_code(tmp_path)
     env = {"have_grubenv": "true"}
     for _ in range(10):
-        run_grub(code, env)
+        start_raye(code, env)
         assert env["raye_gfx"] == ""
         env["raye_gfx_fails"] = "0"
 
@@ -121,9 +151,18 @@ def test_a_desktop_session_clears_the_try(tmp_path):
     assert (tmp_path / "written").read_text().split() == [str(tmp_path / "grubenv"), "set", "raye_gfx_fails=0"]
 
 
-def test_the_sign_in_screen_alone_does_not(tmp_path):
+def test_the_sign_in_screen_clears_the_try_too(tmp_path):
+    # the sign-in screen drew: the graphics work. Counting a start that
+    # stopped there (a restart from the sign-in screen, or the restart
+    # after an update) took the boot screen away for nothing (2026-11-19).
     env = fake_loginctl(tmp_path, {"c1": "Class=greeter\nType=wayland\nState=active",
                                    "4": "Class=user\nType=tty\nState=active"})
+    subprocess.run(["sh", str(OK)], env=env, check=True)
+    assert (tmp_path / "written").read_text().split() == [str(tmp_path / "grubenv"), "set", "raye_gfx_fails=0"]
+
+
+def test_a_text_console_alone_does_not(tmp_path):
+    env = fake_loginctl(tmp_path, {"4": "Class=user\nType=tty\nState=active"})
     subprocess.run(["sh", str(OK)], env=env, check=True)
     assert not (tmp_path / "written").exists()
 
@@ -132,20 +171,20 @@ def test_the_menu_shows_after_a_start_that_never_reached_the_desktop(tmp_path):
     code = ladder_code(tmp_path)
     # what 00_header leaves for a hidden menu
     env = {"have_grubenv": "true", "timeout_style": "hidden", "timeout": "0"}
-    run_grub(code, env)
+    start_raye(code, env)
     assert (env["timeout_style"], env["timeout"]) == ("hidden", "0")
     # nobody reached the desktop: the next start shows the menu
-    run_grub(code, env)
+    start_raye(code, env)
     assert (env["timeout_style"], env["timeout"]) == ("menu", "3")
     # still nothing: the ladder steps down and the menu shows again
     env["timeout_style"], env["timeout"] = "hidden", "0"
-    run_grub(code, env)
+    start_raye(code, env)
     assert (env["timeout_style"], env["timeout"]) == ("menu", "3")
     assert env["raye_gfx"].startswith("amdgpu.dc=0")
     # someone signed in: hidden again
     env["raye_gfx_fails"] = "0"
     env["timeout_style"], env["timeout"] = "hidden", "0"
-    run_grub(code, env)
+    start_raye(code, env)
     assert (env["timeout_style"], env["timeout"]) == ("hidden", "0")
 
 
@@ -153,7 +192,7 @@ def test_a_longer_menu_wait_is_kept(tmp_path):
     # recordfail already asked for its own wait
     code = ladder_code(tmp_path)
     env = {"have_grubenv": "true", "raye_gfx_fails": "1", "timeout": "5"}
-    run_grub(code, env)
+    start_raye(code, env)
     assert (env["timeout_style"], env["timeout"]) == ("menu", "5")
 
 
@@ -183,3 +222,42 @@ def test_a_menu_wait_set_by_hand_is_left_alone():
     paths = (GRUB.parent.parent / "debian" / "raye-release-paths").read_text()
     assert re.search(r"^raye-system\s+release/grub/31_raye_menu_wait\s+etc/grub.d/31_raye_menu_wait\s*$",
                      paths, re.M)
+
+
+def test_picking_another_system_counts_no_try(tmp_path):
+    # Windows, twice: Raye never started, so its graphics never failed
+    code = ladder_code(tmp_path)
+    env = {"have_grubenv": "true"}
+    for _ in range(4):
+        run_grub(code, env)
+    assert env.get("raye_gfx_fails", "") == ""
+    assert env["raye_gfx"] == ""
+    start_raye(code, env)
+    assert env["raye_gfx_fails"] == "1" and env["raye_gfx"] == ""
+
+
+def test_the_raye_entry_still_records_its_start(tmp_path):
+    code = ladder_code(tmp_path)
+    env = {"have_grubenv": "true"}
+    start_raye(code, env)
+    assert env["recordfail"] == "1"
+    assert {"recordfail", "raye_gfx_fails"} <= env["saved_vars"]
+    # grub-reboot: the one-time start does not mark the saved default as failed
+    env = {"have_grubenv": "true", "boot_once": "true"}
+    start_raye(code, env)
+    assert "recordfail" not in env["saved_vars"]
+    assert "raye_gfx_fails" in env["saved_vars"]
+
+
+def test_recordfail_keeps_the_stock_body():
+    header = Path("/etc/grub.d/00_header")
+    if not header.exists():
+        import pytest
+        pytest.skip("no /etc/grub.d/00_header here")
+    stock = header.read_text().replace("\\$", "$")
+    m = re.search(r"function recordfail \{\n(.*?)\n(?:EOF|\})", stock, re.S)
+    assert m
+    ours = (GRUB / "09_raye_graphics").read_text()
+    for line in m.group(1).splitlines():
+        if line.strip():
+            assert line in ours, line

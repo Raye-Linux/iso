@@ -1,6 +1,0 @@
-# The Search key of the Pixelbook and the Pixelbook Go sends a scancode
-# the kernel has no name for. Make it the Start menu key, like on every
-# other Chromebook.
-evdev:atkbd:dmi:bvn*:bvr*:bd*:svnGoogle:pnEve:*
-evdev:atkbd:dmi:bvn*:bvr*:bd*:svnGoogle:pnAtlas:*
- KEYBOARD_KEY_d8=leftmeta

@@ -1,7 +1,8 @@
 #!/bin/sh
-# Someone reached the desktop: the graphics level of this start works.
-# Clears the try the boot menu counted (09_raye_graphics) once a graphical
-# session of a person (not the sign-in screen) is open, within an hour.
+# The screen drew the sign-in screen or a desktop: the graphics level of
+# this start works. Clears the try the boot menu counted (09_raye_graphics)
+# once a graphical session is open (the sign-in screen's or a person's),
+# within an hour.
 set -u
 ENV=${RAYE_GRUBENV:-/boot/grub/grubenv}
 LOGINCTL=${LOGINCTL:-loginctl}
@@ -14,7 +15,8 @@ while [ "$i" -lt "$TRIES" ]; do
             while read -r id _; do
                 [ -n "$id" ] || continue
                 info=$("$LOGINCTL" show-session "$id" -p Class -p Type -p State 2>/dev/null)
-                case $info in *Class=user*) ;; *) continue ;; esac
+                # the sign-in screen drawing proves the graphics work, like a desktop
+                case $info in *Class=user*|*Class=greeter*) ;; *) continue ;; esac
                 case $info in *Type=wayland*|*Type=x11*) ;; *) continue ;; esac
                 case $info in *State=active*|*State=online*) exit 0 ;; esac
             done

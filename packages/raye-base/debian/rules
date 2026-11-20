@@ -20,6 +20,7 @@ ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
 	sh release/tuning/tests/test-laptop-wake.sh
 	sh release/tuning/tests/test-raye-vm-cursor.sh
 	sh release/tuning/tests/test-raye-amd-cursor.sh
+	sh release/tuning/tests/test-raye-amd-cursor-guard.sh
 	sh release/grub/tests/test-raye-update-grub.sh
 	sh release/tuning/tests/test-raye-start-if-needed.sh
 	sh release/access/tests/test-screen-reader.sh
@@ -34,7 +35,6 @@ ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
 	python3 -B -m unittest discover -s release/snapshots/tests
 	python3 -B -m unittest discover -s release/crash/tests
 	python3 -B -m unittest discover -s release/windows/tests
-	python3 -B -m unittest discover -s release/chromebook/tests
 endif
 
 override_dh_install:

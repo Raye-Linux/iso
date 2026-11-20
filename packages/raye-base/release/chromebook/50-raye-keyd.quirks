@@ -1,7 +1,0 @@
-# keyd hands the keys on through a virtual keyboard. Without this, the
-# touchpad sees it as an external keyboard: no palm rejection while typing,
-# and the keyboard would be switched off when a convertible folds over.
-[keyd virtual keyboard]
-MatchName=keyd virtual keyboard
-AttrKeyboardIntegration=internal
-ModelTabletModeNoSuspend=1

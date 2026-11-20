@@ -302,3 +302,44 @@ def test_no_amd_does_not_use_the_amd_fix_mark(tmp_path):
 def test_postinst_runs_no_amd():
     text = (GRUB.parents[1] / "debian" / "raye-system.postinst").read_text()
     assert "/usr/libexec/raye-graphics-retry --no-amd || true" in text
+
+
+# The update from 0.5 or 1.0 Beta: the old count took a start that only
+# reached the sign-in screen (a night restart, the update's own start) for a
+# black screen. --no-amd runs once, from the postinst, during the update's
+# start -- when the PC may still be on level 0 with two such tries counted.
+# The first start of the new system would then take level 1 (no boot screen)
+# with the mark already set, so nothing would ever give the boot screen back.
+# Reproduced on VM 130 (0.5, encrypted, ext4 /boot, virtio-gpu): two starts
+# without anyone signing in -> raye_gfx_level=1, "plymouth.enable=0".
+
+def test_old_tries_on_level_zero_are_forgotten(tmp_path):
+    pc = PC(tmp_path, level="0", fails="2", covered=False)
+    fake_card(pc, "0x1af4")
+    assert run_no_amd(pc).returncode == 0
+    assert pc.state()["raye_gfx_fails"] == "0"
+    assert pc.state()["raye_gfx_level"] == "0"
+    assert (tmp_path / "state" / "level1").exists()
+
+
+def test_old_tries_without_a_level_yet_are_forgotten(tmp_path):
+    pc = PC(tmp_path, level=None, fails="1", covered=False)
+    fake_card(pc, "0x8086")
+    run_no_amd(pc)
+    assert pc.state()["raye_gfx_fails"] == "0"
+
+
+def test_old_tries_are_kept_with_an_amd_card(tmp_path):
+    # on an AMD card a black screen is what the ladder exists for
+    pc = PC(tmp_path, level="0", fails="2", covered=False)
+    fake_card(pc, "0x1002")
+    run_no_amd(pc)
+    assert pc.state()["raye_gfx_fails"] == "2"
+
+
+def test_no_tries_nothing_is_written(tmp_path):
+    pc = PC(tmp_path, level=None, fails=None, covered=False)
+    fake_card(pc, "0x1af4")
+    before = pc.env_file.read_text()
+    run_no_amd(pc)
+    assert pc.env_file.read_text() == before

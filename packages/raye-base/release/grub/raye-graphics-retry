@@ -19,7 +19,10 @@
 # second start) for a black screen, and left such PCs on level 1 for good:
 # no boot screen, an update screen in plain text. amdgpu.dc=0 does nothing
 # on another card, so level 1 there only took the boot screen away. Level 2
-# (nomodeset, reached by two more black starts) is kept.
+# (nomodeset, reached by two more black starts) is kept. A PC still on
+# level 0 with such tries counted (the update's own start is one) has them
+# forgotten, or the first start of the new system would step down to level 1
+# after this one-time repair has run.
 #
 # Only the ladder's own level is touched: nomodeset or amdgpu.dc= written
 # by the user in /etc/default/grub or grub.d stays as it is. Run by
@@ -49,11 +52,21 @@ esac
 [ -e "$ENV" ] || done_once
 
 level=$(grub-editenv "$ENV" list 2>/dev/null | sed -n 's/^raye_gfx_level=//p')
-case $level in
-1 | 2) ;;
-*) done_once ;;
-esac
-[ -n "$no_amd" ] && [ "$level" != 1 ] && done_once
+fails=$(grub-editenv "$ENV" list 2>/dev/null | sed -n 's/^raye_gfx_fails=//p')
+if [ -n "$no_amd" ]; then
+    case $level in
+    1) ;;
+    2) done_once ;;
+    # still on the normal level, with tries the old count made: the first
+    # start of the new system would turn them into level 1
+    *) case $fails in '' | 0) done_once ;; esac ;;
+    esac
+else
+    case $level in
+    1 | 2) ;;
+    *) done_once ;;
+    esac
+fi
 
 if cat "$DEFAULTS/grub" "$DEFAULTS"/grub.d/*.cfg 2>/dev/null |
         grep -v '^[[:space:]]*#' |

@@ -1,8 +1,15 @@
-# Release names, by version number. A name is letters only: no accent,
-# no space, no quote, nothing around it. os-release, lsb-release, issue
-# and raye.info say "Raye Linux <VERSION> <name>"; the ISO file name and
-# its volume label keep the number only. Put the next names here before
-# they ship: tests/test_boot_menu.sh takes the line of VERSION's number.
-0.5 Alpenglow
-1.0 Brocken
-1.1 Crepuscule
+# Release names, one line per release: "<VERSION>: <Name>". VERSION (next
+# to this file) says which line is the release being built. A name is
+# letters only: no accent, space, quote or digit, and it may be left empty
+# until it is decided. os-release, lsb-release, issue, raye.info, the
+# publish title and Raye Setup say "Raye Linux <VERSION> <Name>"; the ISO
+# file name and its volume label keep VERSION only.
+#
+# After changing a line, run tools/release_name.py --write and commit what
+# it wrote (iso and installer): the image build refuses to start until
+# every file says the same release (tools/release_name.py --check).
+0.5 Beta: Alpenglow
+1.0 Beta: Brocken
+# TODO-NAME: the name of 1.0 Beta 2 goes after the colon, letters only
+1.0 Beta 2:
+1.1: Crepuscule

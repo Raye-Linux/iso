@@ -58,6 +58,11 @@ raye-base (1.0~beta2) resolute; urgency=medium
     the boot menu had stepped down to a fallback (nomodeset), and the
     driver check runs again when a new graphics card is put in; a driver
     picked by hand stays, and nothing is installed on the Raye kernel.
+  * A PC without an AMD card that earlier versions had put on the fallback
+    graphics level (restarts where nobody signed in, such as an update's)
+    gets its boot screen back, once; updates no longer run on a text screen.
+  * The system calls itself Raye Linux 1.0 Beta 2 (About, sign-in, software
+    sources); the release is written in one place and checked at every build.
 
  -- techoraye <190692880+techoraye@users.noreply.github.com>  Thu, 19 Nov 2026 10:00:00 +0000
 

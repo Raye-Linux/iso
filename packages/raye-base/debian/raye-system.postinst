@@ -100,6 +100,9 @@ if [ "$1" = configure ]; then
         # once, with the AMD RGBA8888 fix: an AMD PC the ladder left on a
         # fallback level tries the normal one again
         /usr/libexec/raye-graphics-retry || true
+        # once: a PC without an AMD card that the old count of the ladder
+        # left on level 1 (no boot screen) gets its boot screen back
+        /usr/libexec/raye-graphics-retry --no-amd || true
         sum=$(cat "$cfg" "$picture" "$safe" "$DPKG_ROOT/etc/grub.d/09_raye_graphics" \
             "$DPKG_ROOT/etc/grub.d/31_raye_menu_wait" 2>/dev/null | md5sum)
         if [ "$sum" != "$(cat "$stamp" 2>/dev/null)" ] && update-grub; then

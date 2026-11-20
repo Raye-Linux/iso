@@ -99,9 +99,10 @@ err() { echo "FAIL: $*"; fail=1; }
 note() { echo "note: $*"; }
 
 # "0.5 Beta" -> "0.5 Beta Alpenglow", the name taken from release-names
+# by the one parser of that file (tools/release_name.py)
 full_release() {
     local release=$1 n
-    n=$(awk -v num="${release%% *}" '!/^#/ && $1 == num { print $2; exit }' "$here/release-names")
+    n=$(awk -F: -v v="$release" '!/^#/ { k = $1; sub(/[ \t]+$/, "", k); if (k == v) { n = $2; sub(/#.*/, "", n); gsub(/[ \t]/, "", n); print n; exit } }' "$here/release-names")
     printf '%s%s\n' "$release" "${n:+ $n}"
 }
 ok() { echo "ok: $*"; }
@@ -424,8 +425,10 @@ check_release() {
     local version=$1 release rel=$2 number name volume
     release=$(full_release "$version")
     number=${release%% *}
-    awk -v num="$number" '!/^#/ && $1 == num { f = 1 } END { exit !f }' "$here/release-names" ||
-        err "release-names has no line for $number"
+    python3 -B "$here/tools/release_name.py" > /dev/null ||
+        err "release-names has no usable line for \"$version\""
+    [ "$(python3 -B "$here/tools/release_name.py")" = "$release" ] ||
+        err "release-names and tools/release_name.py disagree on \"$version\""
     [[ ${release#"$version"} =~ ^(\ [A-Za-z]+)?$ ]] ||
         err "the release name of $number is not letters only: \"${release#"$version "}\""
     [ "$(field VERSION_ID "$rel/os-release")" = "$number" ] || err "os-release VERSION_ID is not $number"
@@ -544,8 +547,14 @@ self_test() {
         (fail=0; check_image_release "$VERSION_STR" "$t/bad"; exit $fail) >/dev/null &&
             { echo "self-test: \"$f\" sans le mot de VERSION non attrape"; ok=0; }
     done
-    # the right number without its name
-    rm -rf "$t/bad"; fake_image "$t/bad" "$VERSION_STR"
+    # the right number without its name; or, while the release has no name
+    # yet, an image left on another release's name (1.0 Beta 2 said Brocken)
+    rm -rf "$t/bad"
+    if [ "$rel" != "$VERSION_STR" ]; then
+        fake_image "$t/bad" "$VERSION_STR"
+    else
+        fake_image "$t/bad" "$VERSION_STR Brocken"
+    fi
     (fail=0; check_image_release "$VERSION_STR" "$t/bad"; exit $fail) >/dev/null &&
         { echo "self-test: une image sans le nom de la version non attrapee"; ok=0; }
     # a file gone from the image, not merely wrong

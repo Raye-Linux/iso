@@ -221,7 +221,8 @@ check_repo() {
         # with its name from release-names, beside VERSION: "0.5 Beta Alpenglow"
         local names name
         names=$(dirname "$VERSIONFILE")/release-names
-        name=$(awk -v num="${release%% *}" '!/^#/ && $1 == num { print $2; exit }' "$names" 2>/dev/null)
+        # "<VERSION>: <Name>", the format tools/release_name.py reads
+        name=$(awk -F: -v v="$release" '!/^#/ { k = $1; sub(/[ \t]+$/, "", k); if (k == v) { n = $2; sub(/#.*/, "", n); gsub(/[ \t]/, "", n); print n; exit } }' "$names" 2>/dev/null)
         release="$release${name:+ $name}"
         shown=$(awk '/^Suite:/ { n++ } n == 1 && /^Description:/ { sub(/^Description:[[:space:]]*/, ""); print; exit }' "$info")
         if [ "$shown" = "Raye Linux $release" ]; then

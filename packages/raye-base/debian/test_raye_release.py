@@ -866,3 +866,23 @@ def test_the_tolerated_pairs_are_still_real():
 def test_desktop_and_system_move_together():
     """The case of 2026-11-19, named on its own."""
     assert _depends_on_this_version(_control_depends()["raye-desktop"], "raye-system")
+
+
+def test_the_release_files_say_the_release():
+    """os-release, lsb-release, issue and raye.info say what ../../VERSION
+    and ../../release-names say (tools/release_name.py writes them). Run at
+    every build of this package, so an image cannot carry a release the
+    sources do not name: 1.0 Beta 2 first came out saying "Beta Brocken"."""
+    import importlib.util
+    import io
+    tool = HERE.parent.parent.parent / "tools" / "release_name.py"
+    if not tool.is_file():
+        pytest.skip(f"no {tool}: built outside the iso repository")
+    spec = importlib.util.spec_from_file_location("release_name", tool)
+    rn = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(rn)
+    _version, _name, full = rn.release(tool.parent.parent)
+    out = io.StringIO()
+    drift = [p for p in rn.run(tool.parent.parent, stream=out) if "packages/raye-base" in str(p)]
+    assert drift == [], out.getvalue()
+    assert f'PRETTY_NAME="Raye Linux {full}"' in (HERE.parent / "release/os-release").read_text()

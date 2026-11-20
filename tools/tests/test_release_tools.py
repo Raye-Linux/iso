@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """release-files, publish-r2 and publish-github, without sending anything."""
+import re
 import contextlib
 import hashlib
 import importlib.machinery
@@ -59,14 +60,19 @@ class SettingsTests(unittest.TestCase):
         no space; the word stays in the title.
         """
         version = (TOOLS.parent / "VERSION").read_text().strip()
-        # and the release name, from release-names: "Raye Linux 0.5 Beta Alpenglow"
-        name = ""
-        for line in (TOOLS.parent / "release-names").read_text().splitlines():
-            if not line.startswith("#") and line.split()[:1] == [version.split()[0]]:
-                name = " " + line.split()[1]
+        # and the release name, from release-names ("Raye Linux 0.5 Beta
+        # Alpenglow"), read by the one parser of that file
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("release_name", TOOLS / "release_name.py")
+        rn = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(rn)
+        _v, _name, full = rn.release(TOOLS.parent)
         conf = rp.settings(env={})
-        self.assertEqual(conf["RELEASE_TITLE"], f"Raye Linux {version}{name}")
-        self.assertEqual(conf["RELEASE"], version.lower().replace(" ", "-"))
+        self.assertEqual(conf["RELEASE_TITLE"], f"Raye Linux {full}")
+        # the series: every beta of 1.0 is published as 1.0-beta, so the
+        # links people were given keep working (release_name.series)
+        self.assertEqual(conf["RELEASE"], rn.series(version))
+        self.assertEqual(rn.series(version), re.sub(r"-beta-\d+$", "-beta", version.lower().replace(" ", "-")))
         self.assertNotIn(" ", conf["RELEASE"])
 
 

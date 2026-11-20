@@ -552,6 +552,12 @@ suite("iso/apt-template", "iso", ["bash", "tests/test_apt_template.sh"],
 # this launcher sets), and without an image it says the module verdict is
 # missing instead of inventing one. --iso adds the ISO's own name and
 # volume label, which only the finished artefact carries.
+# The release people read: VERSION and release-names, written everywhere it
+# shows by tools/release_name.py (os-release, Raye Setup, the publish
+# title). Reads the sibling installer, settings, store and handbook too.
+suite("iso/release-name", "iso", ["python3", "-I", "-B", "tests/test_release_name.py"],
+      "tests/test_release_name.py docstring: python3 -I -B tests/test_release_name.py",
+      count="unittest", timeout=120)
 suite("iso/boot-menu", "iso", ["bash", "tests/test_boot_menu.sh"],
       "tests/test_boot_menu.sh header: --root DIR also questions the image, "
       "--iso FILE its name and volume label",

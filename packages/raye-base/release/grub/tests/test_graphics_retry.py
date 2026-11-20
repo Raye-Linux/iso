@@ -210,3 +210,95 @@ def test_driver_change_on_a_normal_pc_changes_nothing(tmp_path):
     before = pc.env_file.read_text()
     pc.run("--driver")
     assert pc.env_file.read_text() == before
+
+
+# --- --no-amd: level 1 left by the old count -------------------------------
+#
+# Up to 1.0 Beta, the ladder counted a start that only reached the sign-in
+# screen as a black screen, and an update's own starts too. Two starts in a
+# row without anyone signing in (an update restart at night, or a restart
+# from the sign-in screen) put the PC on level 1: amdgpu.dc=0 and no boot
+# screen, for good. Measured on VM 130 (0.5, encrypted, 2026-11-20): the
+# update to 1.0 Beta 2 then ran on a text screen. On a card that is not AMD
+# level 1 only takes the boot screen away, so it goes back to level 0, once.
+
+def fake_card(pc, vendor, cls="0x030000", name="0000:00:02.0"):
+    dev = pc.tmp / "sys" / "bus" / "pci" / "devices" / name
+    dev.mkdir(parents=True)
+    (dev / "vendor").write_text(vendor + "\n")
+    (dev / "class").write_text(cls + "\n")
+
+
+def run_no_amd(pc):
+    env = {"PATH": f"{pc.bin}:/usr/bin:/bin", "RAYE_GRUBENV": str(pc.env_file),
+           "RAYE_GFX_LEVEL1_MARK": str(pc.tmp / "state" / "level1"),
+           "RAYE_GFX_RETRY_MARK": str(pc.mark), "RAYE_GRUB_DEFAULTS": str(pc.defaults),
+           "RAYE_AMD_CURSOR": str(pc.bin / "amd-cursor"), "RAYE_SYS": str(pc.tmp / "sys"),
+           "grub_probe": str(pc.bin / "grub-probe"), "RAYE_BOOT_DIR": str(pc.tmp)}
+    return subprocess.run(["sh", str(RETRY), "--no-amd"], env=env, capture_output=True, text=True)
+
+
+def test_level_one_without_amd_card_goes_back_to_normal(tmp_path):
+    pc = PC(tmp_path, level="1", fails="2", covered=False)
+    fake_card(pc, "0x1af4")                       # virtio-gpu
+    assert run_no_amd(pc).returncode == 0
+    assert pc.state()["raye_gfx_level"] == "0"
+    assert pc.state()["raye_gfx_fails"] == "0"
+    assert (tmp_path / "state" / "level1").exists()
+
+
+def test_level_one_with_an_amd_card_is_kept(tmp_path):
+    pc = PC(tmp_path, level="1", covered=False)
+    fake_card(pc, "0x8086", name="0000:00:02.0")
+    fake_card(pc, "0x1002", name="0000:03:00.0")  # an AMD card beside the Intel one
+    run_no_amd(pc)
+    assert pc.state()["raye_gfx_level"] == "1"
+
+
+def test_an_amd_device_that_is_not_a_display_does_not_count(tmp_path):
+    pc = PC(tmp_path, level="1", covered=False)
+    fake_card(pc, "0x10de")
+    fake_card(pc, "0x1002", cls="0x040300", name="0000:03:00.1")   # HDMI audio
+    run_no_amd(pc)
+    assert pc.state()["raye_gfx_level"] == "0"
+
+
+def test_nomodeset_level_is_kept(tmp_path):
+    # level 2 was reached through two more black starts: a real black screen
+    pc = PC(tmp_path, level="2", covered=False)
+    fake_card(pc, "0x10de")
+    run_no_amd(pc)
+    assert pc.state()["raye_gfx_level"] == "2"
+
+
+def test_no_amd_runs_once(tmp_path):
+    pc = PC(tmp_path, level="1", covered=False)
+    fake_card(pc, "0x1af4")
+    run_no_amd(pc)
+    assert pc.state()["raye_gfx_level"] == "0"
+    pc.env_file.write_text("raye_gfx_level=1\nraye_gfx_fails=0\n")   # the ladder stepped down again
+    run_no_amd(pc)
+    assert pc.state()["raye_gfx_level"] == "1"
+
+
+def test_no_amd_keeps_the_users_own_words(tmp_path):
+    pc = PC(tmp_path, level="1", covered=False)
+    fake_card(pc, "0x1af4")
+    (pc.defaults / "grub.d" / "99-mine.cfg").write_text('GRUB_CMDLINE_LINUX="$GRUB_CMDLINE_LINUX amdgpu.dc=0"\n')
+    run_no_amd(pc)
+    assert pc.state()["raye_gfx_level"] == "1"
+
+
+def test_no_amd_does_not_use_the_amd_fix_mark(tmp_path):
+    # the RGBA8888 retry ran on every PC (and left its mark) long ago
+    pc = PC(tmp_path, level="1", covered=False)
+    fake_card(pc, "0x1af4")
+    pc.mark.parent.mkdir(parents=True)
+    pc.mark.write_text("")
+    run_no_amd(pc)
+    assert pc.state()["raye_gfx_level"] == "0"
+
+
+def test_postinst_runs_no_amd():
+    text = (GRUB.parents[1] / "debian" / "raye-system.postinst").read_text()
+    assert "/usr/libexec/raye-graphics-retry --no-amd || true" in text

@@ -13,6 +13,14 @@
 # chance, or a PC with a working NVIDIA driver stays at nomodeset (no
 # acceleration, a few frames per second in games) for good.
 #
+# raye-graphics-retry --no-amd: once, on a PC with no AMD display device,
+# level 1 goes back to level 0. Up to 1.0 Beta the ladder took two starts
+# that only reached the sign-in screen (an update restart at night, its own
+# second start) for a black screen, and left such PCs on level 1 for good:
+# no boot screen, an update screen in plain text. amdgpu.dc=0 does nothing
+# on another card, so level 1 there only took the boot screen away. Level 2
+# (nomodeset, reached by two more black starts) is kept.
+#
 # Only the ladder's own level is touched: nomodeset or amdgpu.dc= written
 # by the user in /etc/default/grub or grub.d stays as it is. Run by
 # raye-system's postinst; the mark makes sure it never runs twice.
@@ -22,8 +30,10 @@ MARK=${RAYE_GFX_RETRY_MARK:-/var/lib/raye-system/gfx-retry-rgba8888}
 DEFAULTS=${RAYE_GRUB_DEFAULTS:-/etc/default}
 AMD_CURSOR=${RAYE_AMD_CURSOR:-/usr/libexec/raye-amd-cursor}
 
-driver=
+driver= no_amd=
 [ "${1-}" = --driver ] && driver=yes
+[ "${1-}" = --no-amd ] && no_amd=yes
+[ -n "$no_amd" ] && MARK=${RAYE_GFX_LEVEL1_MARK:-/var/lib/raye-system/gfx-retry-level1-no-amd}
 if [ -n "$driver" ]; then
     done_once() { exit 0; }
 else
@@ -43,6 +53,7 @@ case $level in
 1 | 2) ;;
 *) done_once ;;
 esac
+[ -n "$no_amd" ] && [ "$level" != 1 ] && done_once
 
 if cat "$DEFAULTS/grub" "$DEFAULTS"/grub.d/*.cfg 2>/dev/null |
         grep -v '^[[:space:]]*#' |
@@ -50,7 +61,23 @@ if cat "$DEFAULTS/grub" "$DEFAULTS"/grub.d/*.cfg 2>/dev/null |
     done_once
 fi
 
-[ -n "$driver" ] || "$AMD_CURSOR" --covered || done_once
+# an AMD display device (vendor 0x1002, class 0x03xxxx) keeps level 1:
+# amdgpu.dc=0 may be what lets it show a picture
+amd_display() {
+    for dev in "${RAYE_SYS:-/sys}"/bus/pci/devices/*; do
+        [ -r "$dev/vendor" ] && [ -r "$dev/class" ] || continue
+        read -r vendor < "$dev/vendor" || continue
+        read -r class < "$dev/class" || continue
+        [ "$vendor" = 0x1002 ] || continue
+        case $class in 0x03*) return 0 ;; esac
+    done
+    return 1
+}
+if [ -n "$no_amd" ]; then
+    amd_display && done_once
+elif [ -z "$driver" ]; then
+    "$AMD_CURSOR" --covered || done_once
+fi
 
 # a failed write leaves no mark: the next upgrade tries again
 grub-editenv "$ENV" set raye_gfx_level=0 raye_gfx_fails=0 || exit 0

@@ -74,6 +74,11 @@ unset GNUPGHOME
 root=$WORK/chroot
 devroot=${DEVROOT:-/srv/resolute-dev}       # resolute tree for compiled packages
 iso=$WORK/iso
+# VERSION and release-names are the one place the release people read is
+# written; tools/release_name.py writes it into os-release, Raye Setup and
+# the rest. Refuse to build an image where one of them says something else.
+python3 -B "$here/tools/release_name.py" --check ||
+    { echo "build.sh: the release is not the same everywhere (tools/release_name.py --write)" >&2; exit 1; }
 # VERSION is what people read ("0.5 Beta"); files and labels get it
 # squeezed: raye-0.5-beta-<date>-amd64.iso, volume RAYE_0_5_BETA.
 # The release name (release-names) is only in os-release and friends.

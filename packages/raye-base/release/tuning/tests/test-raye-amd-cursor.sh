@@ -188,7 +188,7 @@ else bad "wrapper with a value set (said '$got')"; fi
 conf=$here/../sddm-wayland-raye.conf
 cmd=$(sed -n 's/^CompositorCommand=//p' "$conf")
 case $cmd in
-"/usr/libexec/raye-amd-cursor kwin_wayland "*) ok "sign-in KWin goes through the wrapper" ;;
+"/usr/libexec/raye-amd-cursor-guard kwin_wayland "*) ok "sign-in KWin goes through the wrapper (by its guard)" ;;
 *) bad "sign-in KWin command: '$cmd'" ;;
 esac
 paths=$here/../../../debian/raye-release-paths
@@ -199,7 +199,7 @@ if [ "${dest%/*}" = etc/sddm.conf.d ] && [ "$name" \> sddm-raye.conf ] && [ "$na
 else
     bad "sddm file lands at '$dest'"
 fi
-grep -q '^usr/libexec/raye-amd-cursor usr/lib/systemd/user-environment-generators/' \
+grep -q '^usr/libexec/raye-amd-cursor-guard usr/lib/systemd/user-environment-generators/' \
     "$here/../../../debian/raye-desktop.links" &&
     ok "the session gets it as a user-environment generator" ||
     bad "no generator link in raye-desktop.links"
@@ -208,7 +208,7 @@ grep -q '^usr/libexec/raye-amd-cursor usr/lib/systemd/user-environment-generator
 theme=$here/../../../../../../theme/config/sddm-raye.conf
 if [ -r "$theme" ]; then
     want=$(sed -n 's/^CompositorCommand=//p' "$theme")
-    if [ "${cmd#/usr/libexec/raye-amd-cursor }" = "$want" ]; then ok "same command as the theme's sddm-raye.conf"
+    if [ "${cmd#/usr/libexec/raye-amd-cursor-guard }" = "$want" ]; then ok "same command as the theme's sddm-raye.conf"
     else bad "the theme says '$want', here '${cmd#* }'"; fi
 fi
 

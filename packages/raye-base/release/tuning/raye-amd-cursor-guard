@@ -1,0 +1,20 @@
+#!/bin/sh
+# The way into raye-amd-cursor from raye-desktop: the sign-in screen's KWin
+# (sddm-wayland-raye.conf) and the session's environment generator.
+#
+# raye-amd-cursor comes with raye-system, the sign-in settings with
+# raye-desktop. Should apt ever bring the second without the first, SDDM
+# would be told to start a program that is not there and no sign-in
+# screen would come up. This file ships with the settings that name it,
+# so it is always there: with the helper, it hands over to it; without,
+# KWin starts as it is (it then draws the pointer the usual way).
+#
+#   raye-amd-cursor-guard CMD ARGS...   run CMD, through the helper if any
+#   raye-amd-cursor-guard               the generator: the helper's output,
+#                                       or nothing
+helper=${RAYE_AMD_CURSOR:-/usr/libexec/raye-amd-cursor}
+if [ -x "$helper" ] && [ -f "$helper" ]; then
+    exec "$helper" "$@"
+fi
+[ $# -gt 0 ] || exit 0
+exec "$@"

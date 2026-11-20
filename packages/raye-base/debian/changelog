@@ -58,6 +58,10 @@ raye-base (1.0~beta1.2) resolute; urgency=high
     starting Windows or the firmware settings no longer counts: restarting
     from the sign-in screen or after an update no longer turns the boot
     screen off or moves the PC to simpler graphics.
+  * Updating from 0.5 no longer leaves the PC without a sign-in screen: the
+    desktop package needs the system package of the same version, and the
+    sign-in screen starts even when a helper of the system package is not
+    there yet.
 
  -- techoraye <190692880+techoraye@users.noreply.github.com>  Thu, 19 Nov 2026 18:00:00 +0000
 

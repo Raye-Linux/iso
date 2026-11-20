@@ -22,7 +22,7 @@ Description: OpenPGP key of the Raye Linux package archive
 
 Package: raye-release
 Architecture: all
-Depends: raye-archive-keyring, base-files, ${misc:Depends}
+Depends: raye-archive-keyring (>= ${source:Version}), base-files, ${misc:Depends}
 Description: Raye Linux release files
  Identifies the system as Raye Linux (os-release, lsb-release, issue)
  and sets up apt the Raye way: snaps are blocked, Firefox comes from
@@ -38,7 +38,7 @@ Depends: raye-release,
          linux-generic-hwe-26.04,
          linux-firmware, intel-microcode, amd64-microcode,
          shim-signed, grub-efi-amd64-signed, grub-efi-amd64-bin, grub-pc-bin, efibootmgr, os-prober,
-         grub-theme-raye, raye-kernel,
+         grub-theme-raye, raye-kernel (>= ${source:Version}),
          initramfs-tools, zstd, plymouth, plymouth-label,
          sudo, locales, tzdata, keyboard-configuration, console-setup,
          systemd-zram-generator,
@@ -60,7 +60,7 @@ Description: Raye Linux base system
 
 Package: raye-desktop
 Architecture: all
-Depends: raye-system, raye-theme,
+Depends: raye-system (>= ${source:Version}), raye-theme,
          raye-style, raye-icon-theme, raye-cursor-theme, raye-sound-theme,
          papirus-icon-theme, sound-theme-freedesktop,
          raye-first-run,

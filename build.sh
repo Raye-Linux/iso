@@ -130,6 +130,40 @@ add_wine_debs() {
     echo "raye-wine added"
 }
 
+# The image must hold the very file apt is offered for a version it already
+# has. A package whose version did not move (raye-account, raye-archive,
+# raye-scx) is built again by every image build, and the new build is never
+# the same file: apt then knows two packages under one version, and the
+# first check of a fresh install offered them as updates, a restart included
+# (1.0 Beta Sundog on VM 130, 2026-11-20: "raye-account 0.5.4~beta1 ->
+# 0.5.4~beta1", "raye-scx 1.1.4-1 -> 1.1.4-1"). PUBLISHED_DEBS=<folder> holds
+# the .deb files of the published archive: a build of a package, version and
+# architecture found there is replaced by the published file. A package
+# whose code changed without a new version is publish-repo's to refuse; here
+# it is named, so the build log says the image keeps the published one.
+PUBLISHED_DEBS=${PUBLISHED_DEBS:-}
+prefer_published() {
+    local debs=$1 f pub key n=0
+    [ -n "$PUBLISHED_DEBS" ] && [ -d "$PUBLISHED_DEBS" ] || return 0
+    local -A have=()
+    for pub in "$PUBLISHED_DEBS"/*.deb; do
+        [ -e "$pub" ] || continue
+        key=$(dpkg-deb --showformat='${Package} ${Version} ${Architecture}' -W "$pub") || continue
+        have[$key]=$pub
+    done
+    for f in "$debs"/*.deb; do
+        [ -e "$f" ] || continue
+        key=$(dpkg-deb --showformat='${Package} ${Version} ${Architecture}' -W "$f") || continue
+        pub=${have[$key]:-}
+        [ -n "$pub" ] || continue
+        cmp -s "$f" "$pub" && continue
+        cp "$pub" "$f"
+        n=$((n + 1))
+        echo "  already published at this version, the published file is used: ${f##*/}"
+    done
+    echo "$n package(s) taken from the published archive"
+}
+
 # ---------------------------------------------------------------- packages
 
 # Packages with compiled code are built against resolute's libraries, in
@@ -246,6 +280,7 @@ build_packages() {
     done
     add_desktop_debs "$debs"
     add_wine_debs "$debs"
+    prefer_published "$debs"
     ls -1 "$debs"
 
     if [ "$LOCAL_REPO" = 1 ]; then

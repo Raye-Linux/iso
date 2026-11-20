@@ -586,6 +586,8 @@ suite("iso/build-pty", "iso", ["bash", "tests/test_build_pty.sh"],
       "tests/test_build_pty.sh header: everything", count="shell", timeout=300)
 suite("iso/desktop-pool-dns", "iso", ["bash", "tests/test_desktop_pool_dns.sh"],
       "tests/test_desktop_pool_dns.sh header: everything", count="shell", timeout=300)
+suite("iso/prefer-published", "iso", ["bash", "tests/test_prefer_published.sh"],
+      "tests/test_prefer_published.sh header: everything", count="shell", timeout=300)
 suite("iso/desktop-debs", "iso", ["bash", "tests/test_desktop_debs.sh"],
       "tests/test_desktop_debs.sh header: everything", count="shell", timeout=300)
 suite("iso/wine-debs", "iso", ["bash", "tests/test_wine_debs.sh"],

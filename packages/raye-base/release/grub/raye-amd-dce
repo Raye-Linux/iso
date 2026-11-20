@@ -1,0 +1,75 @@
+#!/bin/sh
+# Does this PC have an AMD graphics card with the older display engine
+# (DCE: Radeon HD 7000 to RX 500, Vega 56/64 and Radeon VII, the APUs up
+# to Carrizo and Stoney)?
+#
+#   raye-amd-dce          exit 0 when it does, 1 when it does not
+#   raye-amd-dce --sync   write the answer for the boot menu:
+#                         raye_gfx_amd_dce=1 in grubenv, or no such line
+#
+# Level 1 of the graphics ladder (09_raye_graphics) turns amdgpu's display
+# code (DC) off with amdgpu.dc=0. Only DCE cards have another display path:
+# on every card since (Raven and newer APUs, RX 5000 and later) amdgpu.dc=0
+# leaves the screen black for good -- reported on an RX 5700 XT, 1.0 Beta,
+# 2026-11-20. So the boot menu only writes amdgpu.dc=0 where this says yes.
+#
+# The device ids are the DCE chips of amdgpu's own table (amdgpu_drv.c,
+# CHIP_TAHITI to CHIP_VEGA20). A card that is not in it (all the newer
+# ones, which amdgpu finds by their display class) is not DCE: being wrong
+# that way costs the dc=0 step of the ladder, never the picture.
+set -u
+SYS=${RAYE_SYS:-/sys}
+ENV=${RAYE_GRUBENV:-/boot/grub/grubenv}
+
+DCE_IDS="
+tahiti: 6780 6784 6788 678a 6790 6791 6792 6798 6799 679a 679b 679e 679f
+pitcairn: 6800 6801 6802 6806 6808 6809 6810 6811 6816 6817 6818 6819
+oland: 6600 6601 6602 6603 6604 6605 6606 6607 6608 6610 6611 6613 6617 6620 6621 6623 6631
+verde: 6820 6821 6822 6823 6824 6825 6826 6827 6828 6829 682a 682b 682c 682d 682f 6830 6831 6835 6837 6838 6839 683b 683d 683f
+hainan: 6660 6663 6664 6665 6667 666f
+kaveri: 1304 1305 1306 1307 1309 130a 130b 130c 130d 130e 130f 1310 1311 1312 1313 1315 1316 1317 1318 131b 131c 131d
+bonaire: 6640 6641 6646 6647 6649 6650 6651 6658 665c 665d 665f
+hawaii: 67a0 67a1 67a2 67a8 67a9 67aa 67b0 67b1 67b8 67b9 67ba 67be
+kabini: 9830 9831 9832 9833 9834 9835 9836 9837 9838 9839 983a 983b 983c 983d 983e 983f
+mullins: 9850 9851 9852 9853 9854 9855 9856 9857 9858 9859 985a 985b 985c 985d 985e 985f
+tonga: 6920 6921 6928 6929 692b 692f 6930 6938 6939
+fiji: 7300 730f
+carrizo: 9870 9874 9875 9876 9877
+stoney: 98e4
+polaris11: 67e0 67e3 67e8 67eb 67ef 67ff 67e1 67e7 67e9
+polaris10: 67c0 67c1 67c2 67c4 67c7 67d0 67df 67c8 67c9 67ca 67cc 67cf 6fdf
+polaris12: 6980 6981 6985 6986 6987 6995 6997 699f
+vegam: 694c 694e 694f
+vega10: 6860 6861 6862 6863 6864 6867 6868 6869 686a 686b 686c 686d 686e 686f 687f
+vega12: 69a0 69a1 69a2 69a3 69af
+vega20: 66a0 66a1 66a2 66a3 66a4 66a7 66af
+"
+
+dce_display() {
+    for dev in "$SYS"/bus/pci/devices/*; do
+        [ -r "$dev/vendor" ] && [ -r "$dev/class" ] && [ -r "$dev/device" ] || continue
+        read -r vendor < "$dev/vendor" || continue
+        read -r class < "$dev/class" || continue
+        read -r device < "$dev/device" || continue
+        [ "$vendor" = 0x1002 ] || continue
+        case $class in 0x03*) ;; *) continue ;; esac
+        device=$(printf '%s' "${device#0x}" | tr 'A-F' 'a-f')
+        case $DCE_IDS in *" $device "* | *" $device
+"*) return 0 ;; esac
+    done
+    return 1
+}
+
+if [ "${1-}" != --sync ]; then
+    dce_display
+    exit
+fi
+
+[ -e "$ENV" ] || exit 0
+have=$(grub-editenv "$ENV" list 2>/dev/null | sed -n 's/^raye_gfx_amd_dce=//p')
+if dce_display; then
+    [ "$have" = 1 ] || grub-editenv "$ENV" set raye_gfx_amd_dce=1 || true
+elif [ -n "$have" ]; then
+    grub-editenv "$ENV" unset raye_gfx_amd_dce || true
+fi
+exit 0

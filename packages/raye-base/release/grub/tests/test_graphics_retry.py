@@ -222,11 +222,15 @@ def test_driver_change_on_a_normal_pc_changes_nothing(tmp_path):
 # update to 1.0 Beta 2 then ran on a text screen. On a card that is not AMD
 # level 1 only takes the boot screen away, so it goes back to level 0, once.
 
-def fake_card(pc, vendor, cls="0x030000", name="0000:00:02.0"):
+def fake_card(pc, vendor, cls="0x030000", name="0000:00:02.0", device=None):
     dev = pc.tmp / "sys" / "bus" / "pci" / "devices" / name
     dev.mkdir(parents=True)
     (dev / "vendor").write_text(vendor + "\n")
     (dev / "class").write_text(cls + "\n")
+    if device is None:
+        # an AMD card is an RX 550 (Polaris 12, older display engine) unless said
+        device = "0x699f" if vendor == "0x1002" else "0x1234"
+    (dev / "device").write_text(device + "\n")
 
 
 def run_no_amd(pc):
@@ -234,6 +238,7 @@ def run_no_amd(pc):
            "RAYE_GFX_LEVEL1_MARK": str(pc.tmp / "state" / "level1"),
            "RAYE_GFX_RETRY_MARK": str(pc.mark), "RAYE_GRUB_DEFAULTS": str(pc.defaults),
            "RAYE_AMD_CURSOR": str(pc.bin / "amd-cursor"), "RAYE_SYS": str(pc.tmp / "sys"),
+           "RAYE_AMD_DCE": str(GRUB / "raye-amd-dce"),
            "grub_probe": str(pc.bin / "grub-probe"), "RAYE_BOOT_DIR": str(pc.tmp)}
     return subprocess.run(["sh", str(RETRY), "--no-amd"], env=env, capture_output=True, text=True)
 
@@ -343,3 +348,35 @@ def test_no_tries_nothing_is_written(tmp_path):
     before = pc.env_file.read_text()
     run_no_amd(pc)
     assert pc.env_file.read_text() == before
+
+
+# --- a newer AMD card on level 1 ---------------------------------------------
+#
+# Level 1 wrote amdgpu.dc=0 on every PC. Only AMD cards up to RX 500 / Vega
+# (older display engine, DCE) have a display path without DC: an RX 5700 XT
+# (Navi 10, 0x731f) on level 1 stayed black for 7 minutes through its first
+# update, no boot screen (2026-11-20). The update brings such a PC back to
+# level 0, and forgets the tries the old count left.
+
+def test_level_one_with_a_newer_amd_card_goes_back_to_normal(tmp_path):
+    pc = PC(tmp_path, level="1", fails="1", covered=False)
+    fake_card(pc, "0x1002", device="0x731f")          # RX 5700 XT
+    fake_card(pc, "0x1002", cls="0x040300", name="0000:03:00.1", device="0xab38")
+    assert run_no_amd(pc).returncode == 0
+    assert pc.state()["raye_gfx_level"] == "0"
+    assert pc.state()["raye_gfx_fails"] == "0"
+
+
+def test_old_tries_are_forgotten_with_a_ryzen_graphics_chip(tmp_path):
+    pc = PC(tmp_path, level="0", fails="2", covered=False)
+    fake_card(pc, "0x1002", cls="0x038000", device="0x1638")   # Ryzen 5000 graphics
+    run_no_amd(pc)
+    assert pc.state()["raye_gfx_fails"] == "0"
+
+
+def test_an_older_amd_card_beside_a_newer_one_keeps_level_one(tmp_path):
+    pc = PC(tmp_path, level="1", covered=False)
+    fake_card(pc, "0x1002", device="0x1638")
+    fake_card(pc, "0x1002", name="0000:03:00.0", device="0x67DF")   # RX 580, upper case
+    run_no_amd(pc)
+    assert pc.state()["raye_gfx_level"] == "1"

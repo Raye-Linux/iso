@@ -128,6 +128,7 @@ raye-system  release/grub/11_raye_safe_graphics etc/grub.d/11_raye_safe_graphics
 raye-system  release/grub/09_raye_graphics      etc/grub.d/09_raye_graphics
 raye-system  release/grub/raye-graphics-ok      usr/libexec/raye-graphics-ok
 raye-system  release/grub/raye-graphics-retry   usr/libexec/raye-graphics-retry
+raye-system  release/grub/raye-amd-dce          usr/libexec/raye-amd-dce
 raye-system  release/grub/raye-graphics-ok.service usr/lib/systemd/system/raye-graphics-ok.service  no-start
 raye-system  ?release/grub/30_raye_windows       etc/grub.d/30_raye_windows
 raye-system  release/grub/31_raye_menu_wait      etc/grub.d/31_raye_menu_wait

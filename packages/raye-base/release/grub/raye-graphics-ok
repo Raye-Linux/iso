@@ -8,6 +8,10 @@ ENV=${RAYE_GRUBENV:-/boot/grub/grubenv}
 LOGINCTL=${LOGINCTL:-loginctl}
 TRIES=${RAYE_GFX_TRIES:-720}
 [ -e "$ENV" ] || exit 0
+# first, whatever this start shows: tell the boot menu whether the AMD
+# card (if any) may take amdgpu.dc=0 at level 1 of the ladder. A start that
+# stays black runs this too, so the step down already knows.
+"${RAYE_AMD_DCE:-/usr/libexec/raye-amd-dce}" --sync >/dev/null 2>&1 || true
 i=0
 while [ "$i" -lt "$TRIES" ]; do
     # the subshell answers 0 only when such a session was found

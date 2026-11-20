@@ -3,11 +3,17 @@
 # chosen again at every start from what happened at the last ones.
 #
 #   level 0 (default)  nothing: the graphics driver as it comes
-#   level 1            amdgpu.dc=0 plymouth.enable=0: the older display
-#                      path of AMD cards, for cards (an RX 550 was the first
+#   level 1            plymouth.enable=0: no boot screen, so nothing sits
+#                      between the firmware picture and the sign-in screen;
+#                      on an AMD card with the older display engine (DCE,
+#                      up to RX 500 and Vega: raye_gfx_amd_dce=1, written
+#                      by raye-amd-dce --sync) also amdgpu.dc=0, the older
+#                      display path, for cards (an RX 550 was the first
 #                      report) that leave the screen black with the newer
-#                      one, and no boot screen, so nothing sits between the
-#                      firmware picture and the sign-in screen
+#                      one. Never on a newer AMD card (RX 5000 and later,
+#                      Ryzen graphics since Raven): it has no display
+#                      without DC, so amdgpu.dc=0 left an RX 5700 XT black
+#                      for good, update screen included (2026-11-20)
 #   level 2            nomodeset: the picture the firmware set up, like the
 #                      "Safe graphics" entry of the install USB
 #
@@ -47,7 +53,10 @@ if [ "${raye_gfx_fails}" = 2 ]; then
   if [ "${have_grubenv}" = true ]; then save_env raye_gfx_level raye_gfx_fails; fi
 fi
 if [ "${raye_gfx_level}" = 2 ]; then set raye_gfx=nomodeset
-elif [ "${raye_gfx_level}" = 1 ]; then set raye_gfx="amdgpu.dc=0 plymouth.enable=0"
+elif [ "${raye_gfx_level}" = 1 ]; then
+  if [ "${raye_gfx_amd_dce}" = 1 ]; then set raye_gfx="amdgpu.dc=0 plymouth.enable=0"
+  else set raye_gfx=plymouth.enable=0
+  fi
 else set raye_gfx=
 fi
 # The try is counted when a Raye entry starts, not when the menu is read:

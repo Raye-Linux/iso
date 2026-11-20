@@ -107,7 +107,7 @@ def test_nothing_is_written_where_grub_cannot_save(tmp_path):
 
 def test_two_failed_starts_step_down_and_a_good_one_stays(tmp_path):
     code = ladder_code(tmp_path)
-    env = {"have_grubenv": "true"}
+    env = {"have_grubenv": "true", "raye_gfx_amd_dce": "1"}    # an RX 550
     levels = []
     for reached_desktop in [False, False, False, False, True, True]:
         start_raye(code, env)
@@ -180,7 +180,7 @@ def test_the_menu_shows_after_a_start_that_never_reached_the_desktop(tmp_path):
     env["timeout_style"], env["timeout"] = "hidden", "0"
     start_raye(code, env)
     assert (env["timeout_style"], env["timeout"]) == ("menu", "3")
-    assert env["raye_gfx"].startswith("amdgpu.dc=0")
+    assert env["raye_gfx"] == "plymouth.enable=0"
     # someone signed in: hidden again
     env["raye_gfx_fails"] = "0"
     env["timeout_style"], env["timeout"] = "hidden", "0"
@@ -261,3 +261,26 @@ def test_recordfail_keeps_the_stock_body():
     for line in m.group(1).splitlines():
         if line.strip():
             assert line in ours, line
+
+
+def ladder_levels(tmp_path, env):
+    code = ladder_code(tmp_path)
+    levels = []
+    for _ in range(6):
+        start_raye(code, env)
+        levels.append(env["raye_gfx"])
+    return levels
+
+
+def test_a_newer_amd_card_never_gets_amdgpu_dc_0(tmp_path):
+    # amdgpu.dc=0 on an RX 5700 XT (no display without DC): black for good,
+    # boot and update screens included (2026-11-20). Level 1 there only
+    # takes the boot screen away; level 2 is nomodeset as before.
+    levels = ladder_levels(tmp_path, {"have_grubenv": "true"})
+    assert levels == ["", "", "plymouth.enable=0", "plymouth.enable=0", "nomodeset", "nomodeset"]
+    assert not any("amdgpu.dc" in l for l in levels)
+
+
+def test_older_amd_card_flag_must_be_exactly_one(tmp_path):
+    levels = ladder_levels(tmp_path, {"have_grubenv": "true", "raye_gfx_amd_dce": "0"})
+    assert levels[2] == "plymouth.enable=0"

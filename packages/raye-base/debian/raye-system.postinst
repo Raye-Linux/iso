@@ -100,6 +100,9 @@ if [ "$1" = configure ]; then
         # once, with the AMD RGBA8888 fix: an AMD PC the ladder left on a
         # fallback level tries the normal one again
         /usr/libexec/raye-graphics-retry || true
+        # level 1 writes amdgpu.dc=0 only on an AMD card that has another
+        # display path (09_raye_graphics): say which kind this PC has
+        /usr/libexec/raye-amd-dce --sync || true
         # once: a PC without an AMD card that the old count of the ladder
         # left on level 1 (no boot screen) gets its boot screen back
         /usr/libexec/raye-graphics-retry --no-amd || true

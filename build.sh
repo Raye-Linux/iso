@@ -664,6 +664,11 @@ gather_desktop_pool() {
         -o Dir::Cache::archives="$cache" raye-hyprland
     mv "$root$cache"/*.deb "$pool/"
     rm -rf "${root:?}$cache"
+    # Raye's own packages come from a file: source when LOCAL_REPO=1, and apt
+    # uses such a package where it lies, never copying it to the cache
+    if ! ls "$pool"/raye-hyprland_*.deb >/dev/null 2>&1; then
+        cp "$WORK"/debs/raye-hyprland_*.deb "$pool/"
+    fi
     (cd "$pool" && dpkg-scanpackages --multiversion . /dev/null > Packages 2>/dev/null)
     grep -qx 'Package: raye-hyprland' "$pool/Packages" ||
         die "raye-hyprland is not in the desktop pool: Setup would offer a Hyprland it cannot install offline"

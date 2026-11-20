@@ -20,6 +20,13 @@
 # So gather_desktop_pool must put the build machine's resolver where the
 # link points, inside the chroot's /run (a tmpfs: it goes away with the
 # mounts and never reaches the image), before it runs apt.
+#
+# Second stop, the same day, once the resolver was there: "raye-hyprland is
+# not in the desktop pool". With LOCAL_REPO=1 the image reads Raye's own
+# packages from a file: source, and apt uses a file: package where it lies:
+# --download-only never copies it into the cache. Every Ubuntu package came,
+# raye-hyprland itself did not. The step must take it from the folder of
+# built packages when apt left it out.
 
 set -uo pipefail
 
@@ -57,6 +64,13 @@ check_dns() {
     # dies with the tmpfs and never ends up in the image
     grep -Eq 'mount_chroot;.*gather_desktop_pool;.*umount_chroot' "$script" ||
         err "gather_desktop_pool is not called between mount_chroot and umount_chroot"
+    local cp_line check_line
+    cp_line=$(grep -n 'cp "\$WORK"/debs/raye-hyprland_\*\.deb "\$pool/"' <<<"$corps" | head -1 | cut -d: -f1)
+    check_line=$(grep -n "Package: raye-hyprland" <<<"$corps" | head -1 | cut -d: -f1)
+    [ -n "$cp_line" ] ||
+        err "gather_desktop_pool() never takes raye-hyprland from \$WORK/debs: with a file: source apt leaves it out of the cache"
+    [ -n "$cp_line" ] && [ -n "$check_line" ] && [ "$cp_line" -gt "$check_line" ] &&
+        err "raye-hyprland is copied after the pool is checked"
 }
 
 self_test() {
@@ -75,7 +89,12 @@ self_test() {
     sed 's/mount_chroot; check_image; gather_desktop_pool; umount_chroot/mount_chroot; check_image; umount_chroot; gather_desktop_pool/' "$BUILD" > "$t/dehors.sh"
     (fail=0; check_dns "$t/dehors.sh"; exit $fail) >/dev/null &&
         { echo "self-test: call outside the mounts not caught"; ok=0; }
-    # 4. no function at all
+    # 4. the copy of raye-hyprland from the built packages taken away
+    sed '/cp "\$WORK"\/debs\/raye-hyprland_/d' "$BUILD" > "$t/sans-copie.sh"
+    cmp -s "$BUILD" "$t/sans-copie.sh" && echo "self-test: (copy not in build.sh yet)"
+    (fail=0; check_dns "$t/sans-copie.sh"; exit $fail) >/dev/null &&
+        { echo "self-test: missing raye-hyprland copy not caught"; ok=0; }
+    # 5. no function at all
     printf '#!/bin/sh\necho nothing\n' > "$t/vide.sh"
     (fail=0; check_dns "$t/vide.sh"; exit $fail) >/dev/null &&
         { echo "self-test: script without gather_desktop_pool not flagged"; ok=0; }

@@ -19,8 +19,9 @@ raye-base (1.0~beta2) resolute; urgency=medium
   * A start that reaches the sign-in screen counts as working graphics:
     restarting from the sign-in screen, or after an update, no longer
     turns the boot screen off.
-  * Synaptic is no longer installed by default (one install away in the
-    Store).
+  * Synaptic is no longer installed: the Store does its work, and Raye
+    Update removes the one the 1.0 Beta image brought. A copy you install
+    yourself is no longer hidden from Start.
   * The spell checker's dictionaries plug-in comes with the desktop, so
     Settings can turn spelling on.
   * Windows programs get what they need the first time they start (Visual

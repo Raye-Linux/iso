@@ -18,7 +18,6 @@ HIDDEN = {
     "org.kde.kdeconnect.sms.desktop": "kdeconnect-sms",
     "org.kde.kmenuedit.desktop": "kmenuedit",
     "org.kde.kwalletmanager.desktop": "kwalletmanager5 %F",
-    "synaptic.desktop": "synaptic-pkexec",
     "winetricks.desktop": "winetricks --gui",
     # Settings > Recovery covers it; kept for support from a terminal
     "btrfs-assistant.desktop": "btrfs-assistant-launcher",
@@ -39,6 +38,10 @@ def entry(name):
 
 
 class Entries(unittest.TestCase):
+    def test_synaptic_is_not_put_aside(self):
+        # Beta 2: the image has no Synaptic; one a person installs shows
+        self.assertFalse((APPS / "synaptic.desktop").exists())
+
     def test_nothing_else_is_in_the_folder(self):
         self.assertEqual({p.name for p in APPS.iterdir()}, set(HIDDEN) | set(RENAMED))
 

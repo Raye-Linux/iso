@@ -19,7 +19,8 @@
 # second start) for a black screen, and left such PCs on level 1 for good:
 # no boot screen, an update screen in plain text. amdgpu.dc=0 does nothing
 # on another card, so level 1 there only took the boot screen away. Level 2
-# (nomodeset, reached by two more black starts) is kept. A PC still on
+# (nomodeset, reached by two more black starts) is kept, except on a newer
+# AMD card, where level 1's amdgpu.dc=0 made those starts black. A PC still on
 # level 0 with such tries counted (the update's own start is one) has them
 # forgotten, or the first start of the new system would step down to level 1
 # after this one-time repair has run.
@@ -57,7 +58,11 @@ fails=$(grub-editenv "$ENV" list 2>/dev/null | sed -n 's/^raye_gfx_fails=//p')
 if [ -n "$no_amd" ]; then
     case $level in
     1) ;;
-    2) done_once ;;
+    # nomodeset is kept: two more black starts led there. Not on a newer
+    # AMD card: the two black starts were level 1's amdgpu.dc=0 itself, which
+    # leaves such a card black whatever works, so they prove nothing, and
+    # nomodeset (800x600, no acceleration) would stay for good
+    2) "$AMD_DCE" --newer || done_once ;;
     # still on the normal level, with tries the old count made: the first
     # start of the new system would turn them into level 1
     *) case $fails in '' | 0) done_once ;; esac ;;

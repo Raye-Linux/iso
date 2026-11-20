@@ -68,7 +68,8 @@ raye-base (1.0~beta2) resolute; urgency=medium
     AMD cards (RX 5000 and later, Ryzen graphics since Raven), which left
     them on a black screen with no boot screen, the first update included;
     only cards up to RX 500 and Vega still get it. A PC with a newer AMD
-    card that the fallback had reached goes back to its normal graphics.
+    card that the fallback had reached, the low resolution safe mode
+    included, goes back to its normal graphics.
   * The system calls itself Raye Linux 1.0 Beta Sundog (About, sign-in,
     software sources, Setup, the boot menu); the release is written in one
     place and checked at every build.

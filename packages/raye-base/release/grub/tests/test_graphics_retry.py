@@ -380,3 +380,19 @@ def test_an_older_amd_card_beside_a_newer_one_keeps_level_one(tmp_path):
     fake_card(pc, "0x1002", name="0000:03:00.0", device="0x67DF")   # RX 580, upper case
     run_no_amd(pc)
     assert pc.state()["raye_gfx_level"] == "1"
+
+
+def test_nomodeset_reached_through_amdgpu_dc_0_on_a_newer_card_goes_back(tmp_path):
+    # level 1 left the RX 5700 XT black, so two starts there led to nomodeset:
+    # they prove nothing about the normal level
+    pc = PC(tmp_path, level="2", covered=False)
+    fake_card(pc, "0x1002", device="0x731f")
+    run_no_amd(pc)
+    assert pc.state()["raye_gfx_level"] == "0"
+
+
+def test_nomodeset_on_an_older_amd_card_is_kept(tmp_path):
+    pc = PC(tmp_path, level="2", covered=False)
+    fake_card(pc, "0x1002", device="0x699f")
+    run_no_amd(pc)
+    assert pc.state()["raye_gfx_level"] == "2"

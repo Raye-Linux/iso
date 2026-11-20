@@ -4,6 +4,8 @@
 # to Carrizo and Stoney)?
 #
 #   raye-amd-dce          exit 0 when it does, 1 when it does not
+#   raye-amd-dce --newer  exit 0 when it has an AMD graphics card that is
+#                         NOT of that kind (RX 5000 and later, Ryzen graphics)
 #   raye-amd-dce --sync   write the answer for the boot menu:
 #                         raye_gfx_amd_dce=1 in grubenv, or no such line
 #
@@ -45,7 +47,9 @@ vega12: 69a0 69a1 69a2 69a3 69af
 vega20: 66a0 66a1 66a2 66a3 66a4 66a7 66af
 "
 
+# dce_display: an AMD display device with a DCE id; with "newer": one without
 dce_display() {
+    want=${1-dce}
     for dev in "$SYS"/bus/pci/devices/*; do
         [ -r "$dev/vendor" ] && [ -r "$dev/class" ] && [ -r "$dev/device" ] || continue
         read -r vendor < "$dev/vendor" || continue
@@ -54,16 +58,20 @@ dce_display() {
         [ "$vendor" = 0x1002 ] || continue
         case $class in 0x03*) ;; *) continue ;; esac
         device=$(printf '%s' "${device#0x}" | tr 'A-F' 'a-f')
-        case $DCE_IDS in *" $device "* | *" $device
-"*) return 0 ;; esac
+        case $DCE_IDS in
+        *" $device "* | *" $device
+"*) [ "$want" = dce ] && return 0 ;;
+        *) [ "$want" = newer ] && return 0 ;;
+        esac
     done
     return 1
 }
 
-if [ "${1-}" != --sync ]; then
-    dce_display
-    exit
-fi
+case ${1-} in
+--sync) ;;
+--newer) dce_display newer; exit ;;
+*) dce_display; exit ;;
+esac
 
 [ -e "$ENV" ] || exit 0
 have=$(grub-editenv "$ENV" list 2>/dev/null | sed -n 's/^raye_gfx_amd_dce=//p')

@@ -124,3 +124,11 @@ def test_the_postinst_and_the_package_carry_it():
     deb = GRUB.parents[1] / "debian"
     assert "/usr/libexec/raye-amd-dce --sync || true" in (deb / "raye-system.postinst").read_text()
     assert "release/grub/raye-amd-dce" in (deb / "raye-release-paths").read_text()
+
+
+def test_newer_answers_the_other_way(tmp_path):
+    assert run(pc(tmp_path, [("0x1002", "0x030000", "0x731f")]), "--newer").returncode == 0
+    assert run(pc(tmp_path / "b", [("0x1002", "0x030000", "0x699f")]), "--newer").returncode == 1
+    assert run(pc(tmp_path / "c", [("0x10de", "0x030000", "0x2684")]), "--newer").returncode == 1
+    both = pc(tmp_path / "d", [("0x1002", "0x030000", "0x699f"), ("0x1002", "0x038000", "0x1638")])
+    assert run(both, "--newer").returncode == 0 and run(both).returncode == 0

@@ -1,0 +1,30 @@
+#!/bin/sh
+# Run by apt after each dpkg run (80raye-gpu-driver). When the NVIDIA
+# driver packages changed (installed, removed, switched to another one,
+# updated; from the installer, raye-drivers, Settings > Raye Update >
+# Drivers or apt), the graphics ladder gets its normal level back
+# (raye-graphics-retry --driver): a fallback level chosen while the old
+# driver left the screen black (nomodeset: no acceleration at all) must
+# not stay once a working driver is in. If the screen stays black, the
+# ladder steps down again by itself after two starts.
+#
+# The Flatpak side of a new driver is raye-flatpak-gl, at the next start.
+# A few milliseconds when nothing changed; never fails apt.
+set -u
+state=${RAYE_GPU_DRIVER_STATE:-/var/lib/raye/gpu-driver.state}
+retry=${RAYE_GRAPHICS_RETRY:-/usr/libexec/raye-graphics-retry}
+
+now=$(dpkg-query -W -f='${db:Status-Abbrev} ${Package} ${Version}\n' \
+        'nvidia-driver-*' 'nvidia-utils-*' 2>/dev/null |
+      sed -n 's/^ii  *//p' | sort)
+
+if [ -e "$state" ]; then
+    [ "$now" = "$(cat "$state")" ] && exit 0
+else
+    # the first run on this PC (Raye 1.0 Beta 2): nothing to compare to;
+    # a PC with an NVIDIA driver gets the normal level its driver is owed
+    [ -n "$now" ] || { mkdir -p "${state%/*}" && : > "$state"; exit 0; }
+fi
+mkdir -p "${state%/*}" && printf '%s\n' "$now" > "$state.new" && mv "$state.new" "$state"
+[ -x "$retry" ] && "$retry" --driver
+exit 0

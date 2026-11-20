@@ -1,0 +1,17 @@
+[Unit]
+Description=Add the Flatpak graphics libraries of the NVIDIA driver
+ConditionPathExists=/sys/module/nvidia/version
+After=NetworkManager.service
+
+[Service]
+# Type=exec: the start never waits for this, even when it waits for the
+# network itself; nothing missing skips it at once
+Type=exec
+ExecCondition=/usr/libexec/raye-flatpak-gl --needed
+ExecStart=/usr/libexec/raye-flatpak-gl
+SuccessExitStatus=75
+TimeoutStartSec=30min
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

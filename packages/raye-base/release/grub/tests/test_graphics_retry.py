@@ -51,12 +51,12 @@ class PC:
         p.write_text(text)
         p.chmod(0o755)
 
-    def run(self):
+    def run(self, *args):
         env = {"PATH": f"{self.bin}:/usr/bin:/bin", "RAYE_GRUBENV": str(self.env_file),
                "RAYE_GFX_RETRY_MARK": str(self.mark), "RAYE_GRUB_DEFAULTS": str(self.defaults),
                "RAYE_AMD_CURSOR": str(self.bin / "amd-cursor"),
                "grub_probe": str(self.bin / "grub-probe"), "RAYE_BOOT_DIR": str(self.tmp)}
-        return subprocess.run(["sh", str(RETRY)], env=env, capture_output=True, text=True)
+        return subprocess.run(["sh", str(RETRY), *args], env=env, capture_output=True, text=True)
 
     def state(self):
         out = {}
@@ -168,3 +168,45 @@ def test_a_word_that_only_contains_nomodeset_does_not_count(tmp_path):
     (pc.defaults / "grub").write_text('GRUB_CMDLINE_LINUX_DEFAULT="quiet raye.nomodeset_hint=1"\n')
     pc.run()
     assert pc.state()["raye_gfx_level"] == "0"
+
+
+# --driver: a graphics driver came in or changed (raye-gpu-driver-changed)
+
+def test_driver_change_brings_an_nvidia_pc_back_from_nomodeset(tmp_path):
+    # not an AMD card: the RGBA8888 retry would leave it, a new driver must not
+    pc = PC(tmp_path, level="2", fails="1", covered=False)
+    assert pc.run("--driver").returncode == 0
+    assert pc.state()["raye_gfx_level"] == "0"
+    assert pc.state()["raye_gfx_fails"] == "0"
+
+
+def test_driver_change_works_again_and_again(tmp_path):
+    pc = PC(tmp_path, level="2", covered=False)
+    pc.mark.parent.mkdir(parents=True)
+    pc.mark.write_text("")          # the once-only AMD retry already ran
+    pc.run("--driver")
+    assert pc.state()["raye_gfx_level"] == "0"
+    pc.env_file.write_text("raye_gfx_level=1\nraye_gfx_fails=0\n")
+    pc.run("--driver")
+    assert pc.state()["raye_gfx_level"] == "0"
+
+
+def test_driver_change_leaves_no_mark(tmp_path):
+    pc = PC(tmp_path, level="2", covered=False)
+    pc.run("--driver")
+    assert not pc.mark.exists()     # the AMD retry still runs once later
+
+
+def test_driver_change_keeps_the_users_own_nomodeset(tmp_path):
+    pc = PC(tmp_path, level="2", covered=False)
+    (pc.defaults / "grub.d" / "90-raye-safe-graphics.cfg").write_text(
+        'GRUB_CMDLINE_LINUX_DEFAULT="$GRUB_CMDLINE_LINUX_DEFAULT nomodeset"\n')
+    pc.run("--driver")
+    assert pc.state()["raye_gfx_level"] == "2"
+
+
+def test_driver_change_on_a_normal_pc_changes_nothing(tmp_path):
+    pc = PC(tmp_path, level="0", fails="1", covered=False)
+    before = pc.env_file.read_text()
+    pc.run("--driver")
+    assert pc.env_file.read_text() == before

@@ -6,6 +6,13 @@
 # screens were that bug. If the screen still stays black, the ladder steps
 # down again by itself after two starts.
 #
+# raye-graphics-retry --driver: the same, at once and as often as asked,
+# for any card, when a graphics driver came in or changed
+# (raye-gpu-driver-changed, raye-drivers). The fallback level was chosen
+# while the old driver left the screen black; the new one must get its
+# chance, or a PC with a working NVIDIA driver stays at nomodeset (no
+# acceleration, a few frames per second in games) for good.
+#
 # Only the ladder's own level is touched: nomodeset or amdgpu.dc= written
 # by the user in /etc/default/grub or grub.d stays as it is. Run by
 # raye-system's postinst; the mark makes sure it never runs twice.
@@ -15,8 +22,14 @@ MARK=${RAYE_GFX_RETRY_MARK:-/var/lib/raye-system/gfx-retry-rgba8888}
 DEFAULTS=${RAYE_GRUB_DEFAULTS:-/etc/default}
 AMD_CURSOR=${RAYE_AMD_CURSOR:-/usr/libexec/raye-amd-cursor}
 
-[ -e "$MARK" ] && exit 0
-done_once() { mkdir -p "${MARK%/*}" && : > "$MARK"; exit 0; }
+driver=
+[ "${1-}" = --driver ] && driver=yes
+if [ -n "$driver" ]; then
+    done_once() { exit 0; }
+else
+    [ -e "$MARK" ] && exit 0
+    done_once() { mkdir -p "${MARK%/*}" && : > "$MARK"; exit 0; }
+fi
 
 fs=$(${grub_probe:-grub-probe} --target=fs "${RAYE_BOOT_DIR:-/boot}" 2>/dev/null || true)
 case $fs in
@@ -37,7 +50,7 @@ if cat "$DEFAULTS/grub" "$DEFAULTS"/grub.d/*.cfg 2>/dev/null |
     done_once
 fi
 
-"$AMD_CURSOR" --covered || done_once
+[ -n "$driver" ] || "$AMD_CURSOR" --covered || done_once
 
 # a failed write leaves no mark: the next upgrade tries again
 grub-editenv "$ENV" set raye_gfx_level=0 raye_gfx_fails=0 || exit 0

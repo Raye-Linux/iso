@@ -5,7 +5,9 @@
 # a theme can only show Inter through PNGs (pictures still load).
 #
 #   themes/raye/title.png      "Raye Linux"
-#   themes/raye/release.png    the line under it, from ../../VERSION
+#   themes/raye/release.png    the line under it: the release people read,
+#                              from ../../tools/release_name.py ("1.0 Beta
+#                              Sundog"; VERSION and release-names)
 #   themes/raye/hint.png       how to use the menu
 #   themes/raye/icons/*.png    one picture per menu entry, named after
 #                              its --class in grub.cfg
@@ -20,13 +22,14 @@
 # it again when VERSION or a label changes (tests/test_boot_menu.sh
 # notices a stale release.png).
 
+import importlib.util
 import os
 
 from PIL import Image, ImageDraw, ImageFont, PngImagePlugin
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "themes", "raye")
-VERSION = os.path.join(HERE, "..", "..", "VERSION")
+RELEASE_TOOL = os.path.join(HERE, "..", "..", "tools", "release_name.py")
 INTER = "/usr/share/fonts/opentype/inter"
 
 TEXT = (243, 234, 255)
@@ -92,7 +95,10 @@ def stripe(colour: tuple, alpha: int) -> Image.Image:
 
 def main() -> None:
     os.makedirs(os.path.join(OUT, "icons"), exist_ok=True)
-    release = open(VERSION, encoding="utf-8").read().strip()
+    spec = importlib.util.spec_from_file_location("release_name", RELEASE_TOOL)
+    tool = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(tool)
+    release = tool.release()[2]
 
     line("Raye Linux", "SemiBold", 30, TEXT).save(os.path.join(OUT, "title.png"), optimize=True)
     info = PngImagePlugin.PngInfo()

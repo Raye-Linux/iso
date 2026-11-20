@@ -1,7 +1,7 @@
-PRETTY_NAME="Raye Linux 1.0 Beta 2"
+PRETTY_NAME="Raye Linux 1.0 Beta Sundog"
 NAME="Raye Linux"
 VERSION_ID="1.0"
-VERSION="1.0 Beta 2"
+VERSION="1.0 Beta Sundog"
 VERSION_CODENAME=resolute
 ID=raye
 ID_LIKE="ubuntu debian"

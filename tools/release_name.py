@@ -5,7 +5,9 @@
 The place is two files of this repository:
 
     VERSION         the release as people say it: "1.0 Beta 2"
-    release-names   its name, one line per release: "1.0 Beta 2: Name"
+    release-names   its name, one line per release: "1.0 Beta 2: Sundog"
+                    (shown as "1.0 Beta Sundog": the name takes the place
+                    of the beta's number, see shown())
 
 Everything else that shows the release is derived from them, and this tool
 is what derives it:
@@ -18,7 +20,7 @@ is what derives it:
     installer: branding.desc strings, VERSION    (Raye Setup's own words)
     settings, store, handbook: VERSION           (mirrors of iso/VERSION)
 
-    tools/release_name.py              print the release ("1.0 Beta 2 Name")
+    tools/release_name.py              print the release ("1.0 Beta Sundog")
     tools/release_name.py --name       print the name alone (empty if none yet)
     tools/release_name.py --check      exit 1 and name every file out of step
     tools/release_name.py --write      put every file in step (then commit them)
@@ -75,14 +77,24 @@ def read_names(iso=ISO):
     return names
 
 
+def shown(version, name):
+    """The release as people read it. A name takes the place of the beta's
+    number: "1.0 Beta 2" named Sundog is "1.0 Beta Sundog", as "1.0 Beta"
+    named Brocken was "1.0 Beta Brocken". Without a name the number stays."""
+    if not name:
+        return version
+    without_number = re.sub(r"( Beta) \d+$", r"\1", version)
+    return f"{without_number} {name}"
+
+
 def release(iso=ISO):
-    """(version, name, full): ("1.0 Beta 2", "", "1.0 Beta 2")."""
+    """(version, name, full): ("1.0 Beta 2", "Sundog", "1.0 Beta Sundog")."""
     version = read_version(iso)
     names = read_names(iso)
     if version not in names:
         raise ReleaseError(f"release-names has no line for \"{version}\" (VERSION); add \"{version}:\"")
     name = names[version]
-    return version, name, f"{version} {name}" if name else version
+    return version, name, shown(version, name)
 
 
 def slug(version):
@@ -138,9 +150,9 @@ def derived(iso, version, full):
         ("installer", installer / "VERSION", lambda t: version + "\n"),
         ("installer", installer / "etc/calamares/branding/raye/branding.desc", lambda t: _set_lines(t, [
             (r"^    version:( +).*$", f"    version:             {full}"),
-            (r"^    shortVersion:( +).*$", f"    shortVersion:        {version}"),
+            (r"^    shortVersion:( +).*$", f"    shortVersion:        {full}"),
             (r"^    versionedName:( +).*$", f"    versionedName:       {pretty}"),
-            (r"^    shortVersionedName:( +).*$", f"    shortVersionedName:  {SHORT_PRODUCT} {version}")])),
+            (r"^    shortVersionedName:( +).*$", f"    shortVersionedName:  {SHORT_PRODUCT} {full}")])),
     ]
     for repo in ("settings", "store", "handbook"):
         out.append((repo, iso.parent / repo / "VERSION", lambda t: version + "\n"))

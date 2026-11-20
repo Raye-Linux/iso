@@ -13,7 +13,7 @@
 #  - the theme left dormant in boot/grub/themes/raye stays usable, so that
 #    turning it back on is one line: no font Secure Boot refuses, every
 #    picture it names provided, GRUB's own text invisible, an icon for each
-#    of the four entries, release.png stamped with VERSION;
+#    of the four entries, release.png stamped with the shown release;
 #  - VERSION ("0.5 Beta") and its name in release-names ("Alpenglow")
 #    are what os-release, lsb-release and issue say; the ISO name and
 #    volume label carry VERSION alone, and VERSION_ID is its number.
@@ -103,6 +103,9 @@ note() { echo "note: $*"; }
 full_release() {
     local release=$1 n
     n=$(awk -F: -v v="$release" '!/^#/ { k = $1; sub(/[ \t]+$/, "", k); if (k == v) { n = $2; sub(/#.*/, "", n); gsub(/[ \t]/, "", n); print n; exit } }' "$here/release-names")
+    # a name takes the place of a beta's number ("1.0 Beta 2" named Sundog
+    # is "1.0 Beta Sundog"), as tools/release_name.py shown() says
+    if [ -n "$n" ]; then release=$(sed -E 's/( Beta) [0-9]+$/\1/' <<<"$release"); fi
     printf '%s%s\n' "$release" "${n:+ $n}"
 }
 ok() { echo "ok: $*"; }
@@ -273,7 +276,7 @@ check_theme_dormant() {
             *) [ -f "$dir/$file" ] || grep -q "$file" <<<"$from_image" || err "nothing provides $file" ;;
         esac
     done
-    [ "$(png_text "$dir/release.png" Raye-Release)" = "$(cat "$here/VERSION")" ] ||
+    [ "$(png_text "$dir/release.png" Raye-Release)" = "$(python3 -B "$here/tools/release_name.py")" ] ||
         err "release.png says \"$(png_text "$dir/release.png" Raye-Release)\": run boot/grub/art.py"
 }
 
@@ -429,8 +432,8 @@ check_release() {
         err "release-names has no usable line for \"$version\""
     [ "$(python3 -B "$here/tools/release_name.py")" = "$release" ] ||
         err "release-names and tools/release_name.py disagree on \"$version\""
-    [[ ${release#"$version"} =~ ^(\ [A-Za-z]+)?$ ]] ||
-        err "the release name of $number is not letters only: \"${release#"$version "}\""
+    [[ $release =~ ^$number(\ Beta)?(\ [0-9]+|\ [A-Za-z]+)?$ ]] ||
+        err "the release of $number is not \"<number> [Beta] <number or name>\": \"$release\""
     [ "$(field VERSION_ID "$rel/os-release")" = "$number" ] || err "os-release VERSION_ID is not $number"
     [ "$(field VERSION "$rel/os-release")" = "$release" ] || err "os-release VERSION is not \"$release\""
     [ "$(field PRETTY_NAME "$rel/os-release")" = "Raye Linux $release" ] ||

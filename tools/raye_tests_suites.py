@@ -578,6 +578,8 @@ suite("iso/build-memoire", "iso", ["bash", "tests/test_build_memoire.sh"],
       "tests/test_build_memoire.sh header: everything", count="shell", timeout=300)
 suite("iso/build-pty", "iso", ["bash", "tests/test_build_pty.sh"],
       "tests/test_build_pty.sh header: everything", count="shell", timeout=300)
+suite("iso/desktop-pool-dns", "iso", ["bash", "tests/test_desktop_pool_dns.sh"],
+      "tests/test_desktop_pool_dns.sh header: everything", count="shell", timeout=300)
 suite("iso/desktop-debs", "iso", ["bash", "tests/test_desktop_debs.sh"],
       "tests/test_desktop_debs.sh header: everything", count="shell", timeout=300)
 suite("iso/wine-debs", "iso", ["bash", "tests/test_wine_debs.sh"],

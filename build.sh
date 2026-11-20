@@ -655,6 +655,11 @@ gather_desktop_pool() {
     local pool=$WORK/desktops cache=/var/cache/raye-desktops
     rm -rf "$pool" "${root:?}$cache"
     mkdir -p "$pool" "$root$cache/partial"
+    # /etc/resolv.conf of the image is resolved's stub link by now, and the
+    # chroot's /run is an empty tmpfs: give it this machine's resolver there.
+    # It goes away with the mounts and never reaches the image.
+    mkdir -p "$root/run/systemd/resolve"
+    cp -L /etc/resolv.conf "$root/run/systemd/resolve/stub-resolv.conf"
     in_root apt-get install -q -y --no-install-recommends --download-only \
         -o Dir::Cache::archives="$cache" raye-hyprland
     mv "$root$cache"/*.deb "$pool/"

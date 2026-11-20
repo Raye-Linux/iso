@@ -61,6 +61,19 @@ raye-base (1.0~beta2) resolute; urgency=medium
 
  -- techoraye <190692880+techoraye@users.noreply.github.com>  Thu, 19 Nov 2026 10:00:00 +0000
 
+raye-base (1.0~beta1.3) resolute; urgency=high
+
+  * Games are fast again after an NVIDIA driver is installed, changed or
+    updated: Steam and other Flatpak apps get the NVIDIA libraries made
+    for that driver at the next start (raye-flatpak-gl); without them they
+    drew on the processor.
+  * A graphics driver change gives the PC its normal graphics back when
+    the boot menu had stepped down to a fallback (nomodeset), and the
+    driver check runs again when a new graphics card is put in; a driver
+    picked by hand stays, and nothing is installed on the Raye kernel.
+
+ -- techoraye <190692880+techoraye@users.noreply.github.com>  Fri, 20 Nov 2026 01:15:00 +0000
+
 raye-base (1.0~beta1.2) resolute; urgency=high
 
   * A start that reaches the sign-in screen counts as working graphics, and

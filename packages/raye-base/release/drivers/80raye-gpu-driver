@@ -1,0 +1,3 @@
+// Raye: after each dpkg run, a changed graphics driver resets the graphics
+// ladder (/usr/libexec/raye-gpu-driver-changed). Never stops apt.
+DPkg::Post-Invoke { "if [ -x /usr/libexec/raye-gpu-driver-changed ]; then /usr/libexec/raye-gpu-driver-changed || true; fi"; };

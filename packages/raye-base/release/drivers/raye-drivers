@@ -9,12 +9,66 @@
 # OEM enablement packages are never pulled in.
 #
 # Exit 75 means "try again later" (no network yet).
+#
+# It looks once, and again when the graphics cards of the PC change (a new
+# card, a card moved to another PC): the cards it saw are kept in
+# drivers-hardware. A driver already installed for an NVIDIA card (picked
+# in Settings, say) is kept as it is.
+#
+#   raye-drivers           look, install
+#   raye-drivers --again   look even if done once already (Raye Settings)
+#   raye-drivers --needed  exit 0 when there is something to do at this
+#                          start (raye-drivers.service's ExecCondition)
 
 set -u
-done_file=/var/lib/raye/drivers-done
+state=${RAYE_DRIVERS_STATE:-/var/lib/raye}
+sys=${RAYE_SYS:-/sys}
+done_file=$state/drivers-done
+hardware_file=$state/drivers-hardware
 # set by raye-system's postinst on a PC that has the NVIDIA driver and no
 # NVIDIA Control Panel (installed before the panel was asked for)
-panel_file=/var/lib/raye/drivers-nvidia-panel
+panel_file=$state/drivers-nvidia-panel
+# NVIDIA's signed modules are built for Ubuntu's kernel: on the Raye kernel
+# the card would get none. Nothing is done there; back on Ubuntu's kernel
+# the next start does it.
+release=${RAYE_UNAME_R:-$(uname -r)}
+on_raye_kernel() { case $release in *-raye) return 0 ;; esac; return 1; }
+
+# the graphics cards of this PC, "vendor:device" one per line, sorted
+cards() {
+    for dev in "$sys"/bus/pci/devices/*; do
+        [ -r "$dev/class" ] || continue
+        read -r class < "$dev/class" || continue
+        case $class in 0x03*) ;; *) continue ;; esac
+        read -r vendor < "$dev/vendor" 2>/dev/null || continue
+        read -r device < "$dev/device" 2>/dev/null || continue
+        echo "$vendor:$device"
+    done | sort -u
+}
+
+record_cards() { mkdir -p "$state" && cards > "$hardware_file"; }
+
+cards_changed() {
+    [ -e "$hardware_file" ] || return 1
+    [ "$(cards)" != "$(cat "$hardware_file")" ]
+}
+
+nvidia_driver_installed() {
+    dpkg-query -W -f='${db:Status-Abbrev} ${Package}\n' 'nvidia-driver-*' 2>/dev/null | grep -q '^ii  *nvidia-driver-'
+}
+
+if [ "${1:-}" = --needed ]; then
+    on_raye_kernel && exit 1
+    [ -e "$done_file" ] || exit 0
+    [ -e "$panel_file" ] && exit 0
+    # done before the cards were kept (Raye 1.0 Beta and older): keep them now
+    if [ ! -e "$hardware_file" ]; then
+        record_cards
+        exit 1
+    fi
+    cards_changed && exit 0
+    exit 1
+fi
 
 # the NVIDIA Control Panel only, once
 if [ -e "$panel_file" ] && [ "${1:-}" != --again ]; then
@@ -25,11 +79,24 @@ if [ -e "$panel_file" ] && [ "${1:-}" != --again ]; then
     exit 0
 fi
 
+if on_raye_kernel; then
+    echo "raye-drivers: the Raye kernel is running, nothing done (Ubuntu's kernel next time)" >&2
+    exit 0
+fi
+
+changed=
+cards_changed && changed=yes
 # --again: asked for from Raye Settings, look even if done once already
-[ "${1:-}" = --again ] || { [ -e "$done_file" ] && exit 0; }
+[ "${1:-}" = --again ] || [ -n "$changed" ] || { [ -e "$done_file" ] && exit 0; }
 command -v ubuntu-drivers >/dev/null || exit 0
 
-finish() { mkdir -p "$(dirname "$done_file")"; echo "$1" > "$done_file"; exit 0; }
+finish() { mkdir -p "$state"; echo "$1" > "$done_file"; record_cards; exit 0; }
+
+# new cards on a PC that already has an NVIDIA driver: it stays, whichever
+# one it is (Settings > Raye Update > Drivers changes it)
+if [ -n "$changed" ] && [ "${1:-}" != --again ] && nvidia_driver_installed; then
+    finish "kept the installed NVIDIA driver"
+fi
 
 getent hosts archive.ubuntu.com >/dev/null 2>&1 || exit 75
 

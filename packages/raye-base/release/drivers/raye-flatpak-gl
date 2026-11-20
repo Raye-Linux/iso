@@ -1,0 +1,58 @@
+#!/bin/sh
+# Flatpak apps (Steam above all) bring their own graphics libraries, except
+# NVIDIA's: they need the Flatpak extension made for the exact version of
+# the NVIDIA driver the kernel runs. Without it a Flatpak game draws on the
+# processor (llvmpipe), a few frames per second. Flatpak only fetches that
+# extension when an app is installed or updated, so a driver installed,
+# changed or updated afterwards left Steam without it until the next
+# Flatpak update. This adds what is missing, at each start.
+#
+#   raye-flatpak-gl           add the missing extensions (waits up to a
+#                             minute for the network)
+#   raye-flatpak-gl --needed  exit 0 when one is missing, at once
+#                             (raye-flatpak-gl.service's ExecCondition)
+#
+# Exit 75 means "try again later" (no network).
+set -u
+sys=${RAYE_SYS:-/sys}
+flatpak=${RAYE_FLATPAK:-flatpak}
+nm_online=${RAYE_NM_ONLINE:-nm-online}
+mode=${1:-}
+# nothing to do: --needed says no (1), a run is done (0)
+nothing() { [ "$mode" = --needed ] && exit 1; exit 0; }
+
+ver_file=$sys/module/nvidia/version
+[ -r "$ver_file" ] || nothing
+read -r ver < "$ver_file" || nothing
+case $ver in '' | *[!0-9.]* | .* | *.) nothing ;; esac
+command -v "$flatpak" >/dev/null 2>&1 || nothing
+
+# system-wide apps only: that is where the Store puts them; with no app,
+# the extension comes with the first one
+apps=$("$flatpak" list --system --app --columns=application 2>/dev/null) || nothing
+[ -n "$apps" ] || nothing
+runtimes=$("$flatpak" list --system --runtime --columns=application 2>/dev/null) || nothing
+
+name=nvidia-$(printf '%s' "$ver" | tr . -)
+has() { printf '%s\n' "$runtimes" | grep -qx "$1"; }
+want=
+has "org.freedesktop.Platform.GL.$name" || want=org.freedesktop.Platform.GL.$name
+# 32-bit games (Steam's 32-bit side) need the 32-bit half as well
+if printf '%s\n' "$runtimes" | grep -q '^org\.freedesktop\.Platform\.\(GL32\.\|Compat\.i386$\)'; then
+    has "org.freedesktop.Platform.GL32.$name" || want="$want org.freedesktop.Platform.GL32.$name"
+fi
+
+[ -n "$want" ] || nothing
+[ "$mode" = --needed ] && exit 0
+
+"$nm_online" -q -t 60 >/dev/null 2>&1 || true
+getent hosts dl.flathub.org >/dev/null 2>&1 || exit 75
+
+status=0
+for id in $want; do
+    if ! "$flatpak" install --system --noninteractive -y flathub "runtime/$id/x86_64/1.4"; then
+        echo "raye-flatpak-gl: could not add $id" >&2
+        status=1
+    fi
+done
+exit $status

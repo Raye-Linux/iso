@@ -68,6 +68,10 @@ raye-system  release/drivers/raye-drivers                 usr/libexec/raye-drive
 raye-system  release/drivers/raye-drivers.service         usr/lib/systemd/system/raye-drivers.service
 raye-system  release/drivers/raye-drivers-check.service   usr/lib/systemd/system/raye-drivers-check.service
 raye-system  release/drivers/50-raye-drivers.rules        usr/share/polkit-1/rules.d/50-raye-drivers.rules
+raye-system  release/drivers/raye-flatpak-gl              usr/libexec/raye-flatpak-gl
+raye-system  release/drivers/raye-flatpak-gl.service      usr/lib/systemd/system/raye-flatpak-gl.service
+raye-system  release/drivers/raye-gpu-driver-changed      usr/libexec/raye-gpu-driver-changed
+raye-system  release/drivers/80raye-gpu-driver            etc/apt/apt.conf.d/80raye-gpu-driver
 raye-system  release/dualboot/raye-boot-windows           usr/libexec/raye-boot-windows
 raye-system  release/dualboot/raye-dualboot              usr/libexec/raye-dualboot
 raye-system  release/dualboot/raye-restart-to-windows     usr/bin/raye-restart-to-windows

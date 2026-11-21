@@ -46,14 +46,12 @@ class Entries(unittest.TestCase):
         # Beta 2: the image has no Synaptic; one a person installs shows
         self.assertFalse((APPS / "synaptic.desktop").exists())
 
-    def test_kgpg_never_starts_at_sign_in(self):
-        autostart = IDENTITY.parent / "xdg" / "autostart" / "org.kde.kgpg.desktop"
-        parser = configparser.RawConfigParser(strict=True, interpolation=None)
-        parser.optionxform = str
-        parser.read(autostart, encoding="utf-8")
-        self.assertEqual(parser["Desktop Entry"]["Hidden"], "true")
-        paths = PATHS.read_text(encoding="utf-8")
-        self.assertIn("release/xdg/autostart/org.kde.kgpg.desktop  etc/xdg/autostart/org.kde.kgpg.desktop  divert", paths)
+    def test_kgpg_autostart_is_not_diverted(self):
+        # a conffile diverted before its package is installed reads as
+        # "deleted by you": installing KGpg then stops at a dpkg question.
+        # Its own autostart only runs when KGpg is told to (kgpgrc).
+        self.assertFalse((IDENTITY.parent / "xdg" / "autostart" / "org.kde.kgpg.desktop").exists())
+        self.assertNotIn("autostart/org.kde.kgpg.desktop", PATHS.read_text(encoding="utf-8"))
 
     def test_nothing_else_is_in_the_folder(self):
         self.assertEqual({p.name for p in APPS.iterdir()}, set(HIDDEN) | set(RENAMED))

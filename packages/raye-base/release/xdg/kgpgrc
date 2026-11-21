@@ -1,0 +1,15 @@
+# Raye: KGpg (KDE's key manager) is not part of Raye, but a package a
+# person installs can bring it. Its assistant opened over the desktop at
+# its first start, and again after every sign-in until it was finished,
+# and it offers to start KGpg at each sign-in. These defaults are locked:
+# no assistant, no start at sign-in, and the GnuPG settings file named so
+# KGpg does not ask for it. KGpg still opens by hand from a terminal or
+# from "Open with".
+[General Options]
+First run[$i]=false
+
+[User Interface]
+AutoStart[$i]=false
+
+[GPG Settings]
+gpg_config_path[$e]=$HOME/.gnupg/gpg.conf

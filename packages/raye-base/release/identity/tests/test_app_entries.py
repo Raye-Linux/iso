@@ -53,6 +53,31 @@ class Entries(unittest.TestCase):
         self.assertFalse((IDENTITY.parent / "xdg" / "autostart" / "org.kde.kgpg.desktop").exists())
         self.assertNotIn("autostart/org.kde.kgpg.desktop", PATHS.read_text(encoding="utf-8"))
 
+    def test_kgpg_never_asks_or_starts_by_itself(self):
+        # the owner's photo after Beta 2: the KGpg Assistant open over the
+        # desktop. The assistant shows at KGpg's first start (and again at
+        # every start until it is finished, a restored session included),
+        # and it offers to start KGpg at each sign-in. Raye's defaults,
+        # locked ([$i]) so a kgpgrc of the person's cannot turn them back:
+        # no assistant, no start at sign-in, and the GnuPG config file set
+        # so KGpg does not ask for it either. KGpg still opens by hand.
+        rc = IDENTITY.parent / "xdg" / "kgpgrc"
+        groups, group = {}, None
+        for line in rc.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith("["):
+                group = groups.setdefault(line.strip("[]"), {})
+                continue
+            key, _, value = line.partition("=")
+            group[key] = value
+        self.assertEqual(groups["General Options"]["First run[$i]"], "false")
+        self.assertEqual(groups["User Interface"]["AutoStart[$i]"], "false")
+        self.assertEqual(groups["GPG Settings"]["gpg_config_path[$e]"], "$HOME/.gnupg/gpg.conf")
+        paths = PATHS.read_text(encoding="utf-8")
+        self.assertIn("raye-desktop  release/xdg                     etc/xdg", paths)
+
     def test_nothing_else_is_in_the_folder(self):
         self.assertEqual({p.name for p in APPS.iterdir()}, set(HIDDEN) | set(RENAMED))
 

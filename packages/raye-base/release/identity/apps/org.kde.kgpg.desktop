@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=KGpg
+Comment=Manage encryption keys
+Comment[fr]=Gérer les clés de chiffrement
+Exec=kgpg %U
+TryExec=kgpg
+Icon=kgpg
+Terminal=false
+Categories=Qt;KDE;Utility;
+MimeType=application/pgp-encrypted;application/pgp-signature;application/pgp-keys;
+# Raye never installs it (only kdeutils brings it); kept runnable from a
+# terminal and for "Open with", out of Start and its search.
+NoDisplay=true

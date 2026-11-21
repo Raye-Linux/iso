@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=Qsynth
+Comment=Sound synthesizer settings
+Comment[fr]=Réglages du synthétiseur
+Exec=qsynth
+TryExec=qsynth
+Icon=org.rncbc.qsynth
+Terminal=false
+Categories=Audio;AudioVideo;Midi;
+# Raye Synth plays the music of Windows programs with no window of its
+# own. Qsynth came in on updated PCs as a suggestion of fluidsynth; its
+# window starts on JACK, which Raye does not run, and fails. Out of Start.
+NoDisplay=true

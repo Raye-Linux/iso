@@ -1,3 +1,17 @@
+raye-base (1.0~beta2.1) resolute; urgency=medium
+
+  * Games: Valve's own Steam .deb can take the place of steam-devices. The
+    games part now needs steam-devices or Valve's Steam launcher, which
+    brings the same controller rules.
+  * Qsynth leaves Start: updated PCs got it with Raye Synth's fluidsynth,
+    and its window fails on JACK, which Raye does not run. Raye Synth plays
+    the music of Windows programs through PipeWire with no window.
+  * KGpg never starts at sign-in and stays out of Start: Raye does not
+    install it, but a package that brings it opened its assistant over the
+    desktop.
+
+ -- techoraye <190692880+techoraye@users.noreply.github.com>  Sat, 21 Nov 2026 12:00:00 +0000
+
 raye-base (1.0~beta2) resolute; urgency=medium
 
   * Chromebooks: map the top row of keys through keyd and show where to fix

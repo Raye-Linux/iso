@@ -21,6 +21,10 @@ HIDDEN = {
     "winetricks.desktop": "winetricks --gui",
     # Settings > Recovery covers it; kept for support from a terminal
     "btrfs-assistant.desktop": "btrfs-assistant-launcher",
+    # Raye Synth needs no window; Qsynth's own fails on JACK
+    "org.rncbc.qsynth.desktop": "qsynth",
+    # KDE's key manager: its assistant popped up over the desktop
+    "org.kde.kgpg.desktop": "kgpg %U",
 }
 RENAMED = {
     "org.kde.kdeconnect.app.desktop": ("Your Phone", "Votre téléphone", "kdeconnect-app"),
@@ -41,6 +45,15 @@ class Entries(unittest.TestCase):
     def test_synaptic_is_not_put_aside(self):
         # Beta 2: the image has no Synaptic; one a person installs shows
         self.assertFalse((APPS / "synaptic.desktop").exists())
+
+    def test_kgpg_never_starts_at_sign_in(self):
+        autostart = IDENTITY.parent / "xdg" / "autostart" / "org.kde.kgpg.desktop"
+        parser = configparser.RawConfigParser(strict=True, interpolation=None)
+        parser.optionxform = str
+        parser.read(autostart, encoding="utf-8")
+        self.assertEqual(parser["Desktop Entry"]["Hidden"], "true")
+        paths = PATHS.read_text(encoding="utf-8")
+        self.assertIn("release/xdg/autostart/org.kde.kgpg.desktop  etc/xdg/autostart/org.kde.kgpg.desktop  divert", paths)
 
     def test_nothing_else_is_in_the_folder(self):
         self.assertEqual({p.name for p in APPS.iterdir()}, set(HIDDEN) | set(RENAMED))

@@ -142,9 +142,12 @@ Package: raye-gaming
 Architecture: all
 Depends: raye-windows-apps, winetricks, cabextract,
          gamemode, mangohud, gamescope, vulkan-tools,
-         steam-devices, libgdk-pixbuf-2.0-0,
+         steam-devices | steam-launcher, libgdk-pixbuf-2.0-0,
          raye-scx,
          ${misc:Depends}
+# Valve's own Steam .deb (steam-launcher) conflicts with steam-devices and
+# brings the same rules itself: either one is fine, so installing it only
+# swaps the two (release/gaming/tests/test_third_party_debs.py).
 # Minecraft's official .deb still depends on the library's pre-24.04 name,
 # which no package has anymore, so it could not be installed at all.
 Provides: libgdk-pixbuf2.0-0 (= 2.44.5)

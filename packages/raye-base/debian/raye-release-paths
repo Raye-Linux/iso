@@ -294,6 +294,7 @@ raye-desktop  release/tuning/sddm-wayland-raye.conf  etc/sddm.conf.d/sddm-waylan
 raye-desktop  release/tuning/raye-amd-cursor-guard  usr/libexec/raye-amd-cursor-guard
 raye-desktop  release/xdg/autostart/org.kde.kdeconnect.daemon.desktop  etc/xdg/autostart/org.kde.kdeconnect.daemon.desktop  divert
 raye-desktop  release/xdg/autostart/org.kde.kclockd-autostart.desktop  etc/xdg/autostart/org.kde.kclockd-autostart.desktop  divert
+raye-desktop  release/xdg/autostart/org.kde.kgpg.desktop  etc/xdg/autostart/org.kde.kgpg.desktop  divert
 raye-desktop  release/tuning/user/speech-dispatcher.service.d/raye-idle.conf  usr/lib/systemd/user/speech-dispatcher.service.d/raye-idle.conf
 raye-desktop  release/tuning/user/plasma-gmenudbusmenuproxy.service.d/raye-idle.conf  usr/lib/systemd/user/plasma-gmenudbusmenuproxy.service.d/raye-idle.conf
 raye-desktop  release/tuning/user/plasma-xembedsniproxy.service.d/raye-idle.conf  usr/lib/systemd/user/plasma-xembedsniproxy.service.d/raye-idle.conf

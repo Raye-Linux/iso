@@ -1,1 +1,3 @@
 usr/libexec/raye-amd-cursor-guard usr/lib/systemd/user-environment-generators/90-raye-amd-cursor
+usr/libexec/raye-light-mode usr/lib/systemd/system-generators/raye-light-mode
+usr/libexec/raye-light-mode usr/lib/systemd/user-generators/raye-light-mode

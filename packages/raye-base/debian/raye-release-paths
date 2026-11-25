@@ -283,6 +283,12 @@ raye-desktop  release/skel                    etc/skel
 raye-desktop  release/xdg/user-dirs.defaults  etc/xdg/user-dirs.defaults  divert
 # Light at idle (helpers that start only when they have something to do).
 raye-desktop  release/tuning/raye-start-if-needed  usr/libexec/raye-start-if-needed
+# Light mode on a PC with little memory (2 to 4 GB): effects and the file
+# index off at an account's first sign-in, and the Store and the Windows
+# space wait at start; raye-desktop.links makes it a system and a user
+# generator too. Nothing happens with 4 GB or more.
+raye-desktop  release/lightmode/raye-light-mode          usr/libexec/raye-light-mode
+raye-desktop  release/lightmode/raye-light-mode.service  usr/lib/systemd/user/raye-light-mode.service
 # A visible mouse pointer in a virtual machine: the desktop draws it
 # itself, because a virtual GPU's cursor plane is not shown in a console
 # or over SPICE. Read by the user manager, inherited by the session.

@@ -198,6 +198,8 @@ raye-kernel  release/kernel/raye-kernel-finish.service  usr/lib/systemd/system/r
 raye-kernel  release/kernel/raye-tpm-status.service     usr/lib/systemd/system/raye-tpm-status.service
 raye-kernel  release/kernel/org.raye.kernel.policy      usr/share/polkit-1/actions/org.raye.kernel.policy
 raye-kernel  release/kernel/raye-boot.der               usr/share/raye/kernel/raye-boot.der
+raye-kernel  release/kernel/62-raye-eac.cfg             etc/default/grub.d/62-raye-eac.cfg
+raye-kernel  release/kernel/raye-eac-status            usr/bin/raye-eac-status
 
 # ---------------------------------------------------------------- Windows programs
 raye-windows-apps  release/windows/raye-run-windows                 usr/bin/raye-run-windows

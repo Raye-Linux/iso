@@ -23,7 +23,15 @@
 #                               (raye-kernel-finish.service)
 #   raye-kernel-setup rebind    disk password on stdin: let the TPM open
 #                               the disk again with the running kernel
-#   raye-kernel-setup remove    back to Ubuntu's kernel only
+#   raye-kernel-setup remove    back to Ubuntu's kernel only (installs it
+#                               again first if it was retired)
+#
+# Once the Raye kernel has started once and is kept, Ubuntu's kernel is
+# removed (V1: Raye runs its own kernel only). Every Raye kernel build has
+# a release of its own, so apt keeps the previous Raye kernel to fall
+# back to. On a PC with NVIDIA's driver this happens only when the Raye
+# kernel's own NVIDIA modules for that driver exist; otherwise nothing
+# changes and the status says nvidia.
 #
 # The kernel is installed only after the key is enrolled, and becomes the
 # default only after it has really started once: GRUB tries it for one
@@ -80,11 +88,43 @@ secure_boot() { mokutil --sb-state 2>/dev/null | grep -q "SecureBoot enabled"; }
 enrolled() { mokutil --test-key "$cert" 2>&1 | grep -q "already enrolled"; }
 
 # NVIDIA's driver as raye-drivers installs it: modules Ubuntu built and
-# signed for its own kernel, which the Raye kernel cannot load. Until the
-# Raye kernel ships its own NVIDIA modules, switching would leave the PC on
-# the fallback driver, and the trial boot would keep it ("it started").
+# signed for its own kernel, which the Raye kernel cannot load. Switching
+# without the Raye kernel's own modules for the same driver would leave
+# the PC on the fallback driver, and the trial boot would keep it ("it
+# started").
 nvidia_prebuilt() {
-    ls "$R"/var/lib/dpkg/info/linux-modules-nvidia-*.list >/dev/null 2>&1
+    for f in "$R"/var/lib/dpkg/info/linux-modules-nvidia-*.list; do
+        case $f in *-raye.list) continue ;; esac
+        [ -e "$f" ] && return 0
+    done
+    return 1
+}
+
+# the driver branches those modules are for: 580, 580-open, 580-server...
+nvidia_branches() {
+    for f in "$R"/var/lib/dpkg/info/linux-modules-nvidia-*.list; do
+        [ -e "$f" ] || continue
+        f=${f##*/linux-modules-nvidia-}
+        case $f in *-raye.list) continue ;; esac
+        printf '%s\n' "$f" | sed -n 's/^\([0-9][0-9]*\(-server\)\{0,1\}\(-open\)\{0,1\}\)-.*/\1/p'
+    done | sort -u
+}
+
+# the Raye kernel's NVIDIA modules for branch $1, shipped next to it
+raye_nvidia_debs() {
+    ls "$debs"/linux-modules-nvidia-"$1"-*-raye_*.deb 2>/dev/null
+}
+
+# true when NVIDIA's driver is installed and the Raye kernel has no
+# modules for it: the switch would lose the driver
+nvidia_blocks() {
+    nvidia_prebuilt || return 1
+    b=$(nvidia_branches)
+    [ -n "$b" ] || return 0
+    for x in $b; do
+        [ -n "$(raye_nvidia_debs "$x")" ] || return 0
+    done
+    return 1
 }
 
 # ------------------------------------------------------------- packages
@@ -94,6 +134,7 @@ in_archive() { apt-cache show linux-image-raye >/dev/null 2>&1; }
 # through DKMS) follow the new kernel
 shipped_debs() {
     ls "$debs"/linux-image-*-raye_*.deb "$debs"/linux-headers-*-raye_*.deb 2>/dev/null
+    for x in $(nvidia_branches); do raye_nvidia_debs "$x"; done
 }
 
 # from the Raye archive, or shipped next to this script
@@ -294,6 +335,44 @@ tpm_needs_password() {
     [ "$(cached_tpm_state)" = stale ]
 }
 
+# ------------------------------------------------------ Ubuntu's kernel
+# Ubuntu's kernel packages installed here: the metapackages, every
+# version's image, modules and headers, and the NVIDIA modules Ubuntu
+# built for them
+ubuntu_kernel_pkgs() {
+    dpkg-query -W -f='${db:Status-Abbrev} ${Package}\n' 'linux-generic*' \
+        'linux-image-*generic*' 'linux-headers-*generic*' 'linux-modules-*generic*' \
+        'linux-tools-*generic*' 'linux-objects-nvidia-*generic*' \
+        'linux-signatures-nvidia-*generic*' 2>/dev/null |
+        awk '$1 ~ /^[ih]i/ { print $2 }'
+}
+
+# after the Raye kernel was kept: Ubuntu's kernel goes. Only from the Raye
+# kernel, and only when that kernel's own package is installed (it is
+# what boots next); a failure leaves everything as it was.
+retire_ubuntu() {
+    case "$(uname -r)" in *-raye) ;; *) return 1 ;; esac
+    [ -e "$R/var/lib/dpkg/info/linux-image-$(uname -r).list" ] || {
+        note "the running kernel is not a package: Ubuntu's kernel stays"
+        return 1
+    }
+    pkgs=$(ubuntu_kernel_pkgs)
+    [ -n "$pkgs" ] || return 0
+    # shellcheck disable=SC2086  # one package per word
+    if quietly env DEBIAN_FRONTEND=noninteractive apt-get purge -y -q $pkgs; then
+        note "Ubuntu's kernel removed: $(echo $pkgs)"
+        return 0
+    fi
+    warn "could not remove Ubuntu's kernel: it stays as the fallback"
+    return 1
+}
+
+# remove: Ubuntu's kernel back first, when it was retired
+ubuntu_kernel_back() {
+    [ -n "$(ls "$R"/boot/vmlinuz-*-generic 2>/dev/null)" ] && return 0
+    quietly env DEBIAN_FRONTEND=noninteractive apt-get install -y -q linux-generic-hwe-26.04
+}
+
 # ---------------------------------------------------------------- steps
 # Ubuntu's kernel stays the default; the Raye kernel gets one boot
 try_once() {
@@ -337,7 +416,7 @@ status)
     if [ -f "$trial" ]; then echo trial
     elif [ -f "$failed" ]; then echo failed
     elif tpm_needs_password; then echo tpm-needs-password
-    elif [ ! -f "$pending" ] && nvidia_prebuilt; then echo nvidia
+    elif [ ! -f "$pending" ] && nvidia_blocks; then echo nvidia
     elif ! secure_boot; then echo no-secure-boot
     # enrolled: the key is in and the kernel goes in at the next boot.
     # A key left in the firmware with nothing queued is not that.
@@ -350,8 +429,8 @@ tpm-status)
     ;;
 enroll)
     root_only enroll
-    if nvidia_prebuilt; then
-        warn "the Raye kernel is not available with the NVIDIA driver yet: nothing changed"
+    if nvidia_blocks; then
+        warn "the Raye kernel is not available with this NVIDIA driver yet: nothing changed"
         exit 1
     fi
     mkdir -p "$state"
@@ -429,10 +508,16 @@ finish)
                 [ -n "$sub" ] && [ -n "$id" ] && quietly grub-set-default "$sub>$id"
             fi
             rebind_tpm
-            # the bindings no kernel uses any more go; Ubuntu's kernel
-            # keeps one (raye-tpm does nothing when it already has it)
-            tpm prune
-            tpm bind-next --kernel ubuntu
+            if retire_ubuntu; then
+                # only Raye kernels left: the first line starts the newest
+                quietly grub-set-default 0
+                tpm prune
+            else
+                # the bindings no kernel uses any more go; Ubuntu's kernel
+                # keeps one (raye-tpm does nothing when it already has it)
+                tpm prune
+                tpm bind-next --kernel ubuntu
+            fi
             say "Raye kernel kept"
             ;;
         *)
@@ -458,6 +543,11 @@ finish)
     ;;
 remove)
     root_only remove
+    # never remove the last kernel: Ubuntu's comes back first
+    if ! ubuntu_kernel_back; then
+        warn "could not install Ubuntu's kernel: the Raye kernel stays"
+        exit 1
+    fi
     # leaving the Raye kernel: Ubuntu's must open the disk alone next boot
     case "$(uname -r)" in
     *-raye) tpm bind-next --kernel ubuntu ;;

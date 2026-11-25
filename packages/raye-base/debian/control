@@ -35,7 +35,7 @@ Description: Raye Linux release files
 Package: raye-system
 Architecture: amd64
 Depends: raye-release,
-         linux-generic-hwe-26.04,
+         linux-generic-hwe-26.04 | raye-kernel-image,
          linux-firmware, intel-microcode, amd64-microcode,
          shim-signed, grub-efi-amd64-signed, grub-efi-amd64-bin, grub-pc-bin, efibootmgr, os-prober,
          grub-theme-raye, raye-kernel (>= ${source:Version}),

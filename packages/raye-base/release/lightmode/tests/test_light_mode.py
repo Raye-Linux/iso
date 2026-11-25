@@ -130,19 +130,20 @@ class Session(unittest.TestCase):
 class Generator(unittest.TestCase):
     def test_a_slow_pc_defers_the_store_at_boot(self):
         with tempfile.TemporaryDirectory() as d:
-            self.assertEqual(sorted(lm.generate("system", d, 2 * GIB_KIB)),
-                             ["raye-store-autoupdate.timer", "raye-store-catalog.timer"])
+            self.assertEqual(lm.generate("system", d, 2 * GIB_KIB), ["raye-store-catalog.timer"])
             text = pathlib.Path(d, "raye-store-catalog.timer.d", lm.DROPIN).read_text()
             # the stock 2 min is reset, not added to
             self.assertIn("OnBootSec=\nOnBootSec=20min", text)
-            upd = pathlib.Path(d, "raye-store-autoupdate.timer.d", lm.DROPIN).read_text()
-            self.assertIn("Persistent=false", upd)
 
     def test_a_slow_pc_defers_the_windows_space_after_sign_in(self):
         with tempfile.TemporaryDirectory() as d:
-            self.assertEqual(lm.generate("user", d, 2 * GIB_KIB), ["raye-windows-prepare.timer"])
+            self.assertEqual(sorted(lm.generate("user", d, 2 * GIB_KIB)),
+                             ["raye-store-autoupdate.timer", "raye-windows-prepare.timer"])
             text = pathlib.Path(d, "raye-windows-prepare.timer.d", lm.DROPIN).read_text()
             self.assertIn("OnStartupSec=\nOnStartupSec=20min", text)
+            # the Store's app updates are a user timer (store CMakeLists: store_user_units)
+            upd = pathlib.Path(d, "raye-store-autoupdate.timer.d", lm.DROPIN).read_text()
+            self.assertIn("Persistent=false", upd)
 
     def test_a_normal_pc_gets_no_drop_in(self):
         with tempfile.TemporaryDirectory() as d:

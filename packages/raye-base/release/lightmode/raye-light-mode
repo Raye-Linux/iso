@@ -35,10 +35,11 @@ DROPIN = "50-raye-light-mode.conf"
 SYSTEM_DROPINS = {
     # refreshed 2 min after boot otherwise; downloads and parses feeds
     "raye-store-catalog.timer": "[Timer]\nOnBootSec=\nOnBootSec=20min\n",
-    # Persistent=true runs a missed day's Flatpak update right at boot
-    "raye-store-autoupdate.timer": "[Timer]\nPersistent=false\nOnBootSec=30min\n",
 }
 USER_DROPINS = {
+    # the Store's app updates (a user timer): Persistent=true runs a missed
+    # day's update right at sign-in
+    "raye-store-autoupdate.timer": "[Timer]\nPersistent=false\nOnStartupSec=30min\n",
     # creates the Windows space (a Wine prefix) 2 min after sign-in otherwise
     "raye-windows-prepare.timer": "[Timer]\nOnStartupSec=\nOnStartupSec=20min\n",
 }

@@ -409,6 +409,15 @@ def test_staged_packages_are_not_also_active():
             assert name not in active, (name, para.splitlines()[0])
 
 
+def test_system_switches_usb_adapters_out_of_their_driver_disc_mode():
+    # many USB Wi-Fi adapters (AC1300 and the like) first show up as a CD
+    # with the Windows driver on it, and only become a network card once
+    # usb_modeswitch tells them to
+    para = next(p for p in control_paragraphs((TOP / "debian/control").read_text())
+                if p.startswith("Package: raye-system"))
+    assert "usb-modeswitch" in depends_of(para)
+
+
 def test_desktop_never_pulls_both_sides_of_a_replacement():
     para = next(p for p in control_paragraphs((TOP / "debian/control").read_text())
                 if p.startswith("Package: raye-desktop"))

@@ -89,6 +89,8 @@ class Session(unittest.TestCase):
         self.assertIn("notify-send", self.calls())
         self.assertIn("2 GB of memory", self.calls())
         self.assertIn("raye-settings --page system/performance", self.calls())
+        # not while the desktop is still starting
+        self.assertIn("systemd-run --user --quiet --collect --on-active=60s", self.calls())
         # the second sign-in changes nothing, even if the person turned things back on
         self.store.unlink()
         self.log.unlink()

@@ -785,6 +785,9 @@ check '[ "$(eac_line 1 "quiet")" = "quiet lockdown=integrity sysctl.kernel.kexec
 check '[ "$(eac_line 1 "lockdown=none")" = "lockdown=none" ]' "a lockdown chosen by hand is left alone"
 check '[ "$(eac_line 0 "quiet")" = "quiet" ]' "Secure Boot off: nothing"
 check '[ "$(eac_line none "quiet")" = "quiet" ]' "no EFI variable: nothing"
+# the real variable: SecureBoot in EFI_GLOBAL_VARIABLE (UEFI spec), the one mokutil reads
+check 'grep -q "/sys/firmware/efi/efivars/SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c" "$eac_cfg"' "the snippet reads the global SecureBoot variable"
+check 'grep -q "SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c" "$here/../raye-eac-status"' "raye-eac-status reads the same variable"
 teardown
 
 setup "EAC: raye-eac-status"
@@ -792,7 +795,7 @@ st=$here/../raye-eac-status
 E=$T/eac
 mkdir -p "$E/sys/firmware/efi/efivars" "$E/sys/class/tpm/tpm0" "$E/sys/kernel/security/tpm0" \
     "$E/sys/kernel/iommu_groups/0" "$E/proc/sys/kernel"
-printf '\007\000\000\000\001' > "$E/sys/firmware/efi/efivars/SecureBoot-8be4df61-93ca-11d2-aa0d-e2ce86b45a5e"
+printf '\007\000\000\000\001' > "$E/sys/firmware/efi/efivars/SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c"
 echo 2 > "$E/sys/class/tpm/tpm0/tpm_version_major"
 : > "$E/sys/kernel/security/tpm0/binary_bios_measurements"
 echo "none [integrity] confidentiality" > "$E/sys/kernel/security/lockdown"

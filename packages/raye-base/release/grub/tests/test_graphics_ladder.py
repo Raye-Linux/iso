@@ -137,12 +137,16 @@ def fake_loginctl(tmp_path, sessions):
                   + 'exit 0\nfi\ncase $2 in\n' + body + "\nesac\n")
     lc.chmod(0o755)
     edit = tmp_path / "grub-editenv"
-    edit.write_text(f'#!/bin/sh\necho "$@" > {tmp_path}/written\n')
+    # only what is written counts; a listing (raye-graphics-ok reads grubenv) is not
+    edit.write_text(f'#!/bin/sh\n[ "$2" = list ] && exit 0\necho "$@" > {tmp_path}/written\n')
     edit.chmod(0o755)
     env_file = tmp_path / "grubenv"
     env_file.write_text("# GRUB Environment Block\n")
+    cmdline = tmp_path / "cmdline"
+    cmdline.write_text("BOOT_IMAGE=/vmlinuz quiet splash\n")
     return {"PATH": f"{tmp_path}:/usr/bin:/bin", "LOGINCTL": str(lc), "RAYE_GRUBENV": str(env_file),
-            "RAYE_GFX_TRIES": "2", "RAYE_GFX_WAIT": "0"}
+            "RAYE_GFX_TRIES": "2", "RAYE_GFX_WAIT": "0", "RAYE_CMDLINE": str(cmdline),
+            "RAYE_GFX_SEEN": str(tmp_path / "seen"), "RAYE_AMD_DCE": "/bin/false"}
 
 
 def test_a_desktop_session_clears_the_try(tmp_path):

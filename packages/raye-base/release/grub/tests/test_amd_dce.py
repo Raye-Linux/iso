@@ -117,7 +117,7 @@ def test_the_boot_menu_check_runs_it_at_every_start():
     ok = (GRUB / "raye-graphics-ok").read_text()
     assert "raye-amd-dce}" in ok and "--sync" in ok
     # before the wait for a session: a start that stays black syncs too
-    assert ok.index("--sync") < ok.index("while ")
+    assert ok.index("--sync") < ok.index('while [ "$i"')
 
 
 def test_the_postinst_and_the_package_carry_it():

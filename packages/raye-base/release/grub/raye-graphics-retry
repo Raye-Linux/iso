@@ -90,6 +90,12 @@ elif [ -z "$driver" ]; then
     "$AMD_CURSOR" --covered || done_once
 fi
 
-# a failed write leaves no mark: the next upgrade tries again
-grub-editenv "$ENV" set raye_gfx_level=0 raye_gfx_fails=0 || exit 0
+# a failed write leaves no mark: the next upgrade tries again. A new
+# driver also gets its own trials of the better level (raye-graphics-ok)
+if [ -n "$driver" ]; then
+    grub-editenv "$ENV" set raye_gfx_level=0 raye_gfx_fails=0 raye_gfx_try= raye_gfx_trying= \
+        raye_gfx_try_fails=0 raye_gfx_tried= raye_gfx_tried1= || exit 0
+else
+    grub-editenv "$ENV" set raye_gfx_level=0 raye_gfx_fails=0 || exit 0
+fi
 done_once

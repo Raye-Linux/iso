@@ -3,29 +3,156 @@
 # this start works. Clears the try the boot menu counted (09_raye_graphics)
 # once a graphical session is open (the sign-in screen's or a person's),
 # within an hour.
+#
+# A level of the ladder that reached the desktop used to be kept for good:
+# a PC that had stepped down to nomodeset (800x600, no acceleration: low
+# resolution and a few frames per second in games) or to amdgpu.dc=0 never
+# went back to its full driver, even once the cause of the black screen was
+# gone (an RX 550 left on the fallback, 2026-11). So, once per new kernel,
+# the ladder tries the better level again, in one start:
+#
+#   raye-graphics-ok --arm   at shutdown (raye-graphics-trial.service), when
+#                            this start reached the desktop on a fallback
+#                            level: the next start tries level 0, with the
+#                            newest kernel (raye_gfx_try=0 in grubenv). On
+#                            level 2 with an older AMD card whose level 0
+#                            already failed with that kernel, it tries
+#                            level 1 (amdgpu.dc=0: full resolution and
+#                            acceleration) instead.
+#   raye-graphics-ok         at every start. In the trial start (the boot
+#                            menu writes raye.gfx_try=N on the kernel line)
+#                            a graphical session within 3 minutes keeps the
+#                            tried level; none, and the PC restarts by itself
+#                            on the level that worked. A trial cut short by
+#                            a forced restart is dropped by the boot menu.
+#
+# Never armed in or before an offline update, never when the person wrote
+# nomodeset or amdgpu.dc= themselves, and never again after two trials that
+# failed: a card that really needs the fallback costs at most two short
+# black starts, each ended by an automatic restart. A graphics driver change
+# (raye-graphics-retry --driver) starts the count again.
 set -u
 ENV=${RAYE_GRUBENV:-/boot/grub/grubenv}
 LOGINCTL=${LOGINCTL:-loginctl}
 TRIES=${RAYE_GFX_TRIES:-720}
+TRIAL_TRIES=${RAYE_GFX_TRIAL_TRIES:-36}
+CMDLINE=${RAYE_CMDLINE:-/proc/cmdline}
+SEEN=${RAYE_GFX_SEEN:-/run/raye-graphics-ok.seen}
+BOOT=${RAYE_BOOT_DIR:-/boot}
+DEFAULTS=${RAYE_GRUB_DEFAULTS:-/etc/default}
+AMD_DCE=${RAYE_AMD_DCE:-/usr/libexec/raye-amd-dce}
+UPDATE=${RAYE_SYSTEM_UPDATE:-/system-update}
+MAX_FAILED_TRIALS=2
 [ -e "$ENV" ] || exit 0
+
+envvar() {
+    grub-editenv "$ENV" list 2>/dev/null | sed -n "s/^$1=//p"
+}
+
+# a graphical session of the sign-in screen or of a person is up
+session_up() {
+    # the subshell answers 0 only when such a session was found
+    "$LOGINCTL" list-sessions --no-legend 2>/dev/null | {
+        while read -r id _; do
+            [ -n "$id" ] || continue
+            info=$("$LOGINCTL" show-session "$id" -p Class -p Type -p State 2>/dev/null)
+            # the sign-in screen drawing proves the graphics work, like a desktop
+            case $info in *Class=user*|*Class=greeter*) ;; *) continue ;; esac
+            case $info in *Type=wayland*|*Type=x11*) ;; *) continue ;; esac
+            case $info in *State=active*|*State=online*) exit 0 ;; esac
+        done
+        exit 1
+    }
+}
+
+# nomodeset or amdgpu.dc= written by the person: the ladder leaves it alone
+users_own_words() {
+    cat "$DEFAULTS/grub" "$DEFAULTS"/grub.d/*.cfg 2>/dev/null |
+        grep -v '^[[:space:]]*#' |
+        grep -q -E '(^|[^[:alnum:]_.])(nomodeset([^[:alnum:]_.]|$)|amdgpu\.dc=)'
+}
+
+# the kernel the boot menu starts by default: the newest one
+newest_kernel() {
+    ls "$BOOT"/vmlinuz-* 2>/dev/null | sed 's|.*/vmlinuz-||' | sort -V | tail -n 1
+}
+
+arm() {
+    # only after a start whose graphics drew on a fallback level
+    [ -e "$SEEN" ] || exit 0
+    # an offline update comes next: never a trial in an update start
+    [ -e "$UPDATE" ] && exit 0
+    fs=$(${grub_probe:-grub-probe} --target=fs "$BOOT" 2>/dev/null || true)
+    case $fs in ext2|ext3|ext4|fat) ;; *) exit 0 ;; esac
+    level=$(envvar raye_gfx_level)
+    case $level in 1|2) ;; *) exit 0 ;; esac
+    case $(envvar raye_gfx_fails) in ''|0) ;; *) exit 0 ;; esac
+    [ -z "$(envvar raye_gfx_try)" ] || exit 0
+    [ -z "$(envvar raye_gfx_trying)" ] || exit 0
+    failed=$(envvar raye_gfx_try_fails)
+    [ "${failed:-0}" -lt "$MAX_FAILED_TRIALS" ] 2>/dev/null || exit 0
+    users_own_words && exit 0
+    kernel=$(newest_kernel)
+    [ -n "$kernel" ] || exit 0
+    if [ "$(envvar raye_gfx_tried)" != "$kernel" ]; then
+        grub-editenv "$ENV" set raye_gfx_try=0 raye_gfx_tried="$kernel" || true
+    elif [ "$level" = 2 ] && [ "$(envvar raye_gfx_tried1)" != "$kernel" ] && "$AMD_DCE"; then
+        grub-editenv "$ENV" set raye_gfx_try=1 raye_gfx_tried1="$kernel" || true
+    fi
+    exit 0
+}
+
+[ "${1-}" = --arm ] && arm
+
 # first, whatever this start shows: tell the boot menu whether the AMD
 # card (if any) may take amdgpu.dc=0 at level 1 of the ladder. A start that
 # stays black runs this too, so the step down already knows.
-"${RAYE_AMD_DCE:-/usr/libexec/raye-amd-dce}" --sync >/dev/null 2>&1 || true
+"$AMD_DCE" --sync >/dev/null 2>&1 || true
+
+# a trial the boot menu saw cut short (a forced restart): count it
+if [ "$(envvar raye_gfx_trying)" = failed ]; then
+    failed=$(envvar raye_gfx_try_fails)
+    grub-editenv "$ENV" set raye_gfx_trying= raye_gfx_try_fails=$(( ${failed:-0} + 1 )) || true
+fi
+
+cmdline=" $(cat "$CMDLINE" 2>/dev/null) "
+tried=
+case $cmdline in
+*" raye.gfx_try=0 "*) tried=0 ;;
+*" raye.gfx_try=1 "*) tried=1 ;;
+esac
+# "Raye Linux (safe graphics)" picked from the menu: nomodeset on the line,
+# so nothing was tried. The trial waits for the next start.
+if [ -n "$tried" ]; then
+    case $cmdline in
+    *" nomodeset "*)
+        grub-editenv "$ENV" set raye_gfx_trying= || true
+        tried= ;;
+    esac
+fi
+
+if [ -n "$tried" ]; then
+    i=0
+    while [ "$i" -lt "$TRIAL_TRIES" ]; do
+        if session_up; then
+            exec grub-editenv "$ENV" set raye_gfx_level="$tried" raye_gfx_fails=0 \
+                raye_gfx_try= raye_gfx_trying= raye_gfx_try_fails=0
+        fi
+        i=$((i + 1))
+        sleep "${RAYE_GFX_WAIT:-5}"
+    done
+    # nothing drew: back to the level that works, at once
+    failed=$(envvar raye_gfx_try_fails)
+    grub-editenv "$ENV" set raye_gfx_fails=0 raye_gfx_try= raye_gfx_trying= \
+        raye_gfx_try_fails=$(( ${failed:-0} + 1 )) || exit 0
+    exec ${RAYE_REBOOT:-systemctl reboot --check-inhibitors=no}
+fi
+
 i=0
 while [ "$i" -lt "$TRIES" ]; do
-    # the subshell answers 0 only when such a session was found
-    if "$LOGINCTL" list-sessions --no-legend 2>/dev/null | {
-            while read -r id _; do
-                [ -n "$id" ] || continue
-                info=$("$LOGINCTL" show-session "$id" -p Class -p Type -p State 2>/dev/null)
-                # the sign-in screen drawing proves the graphics work, like a desktop
-                case $info in *Class=user*|*Class=greeter*) ;; *) continue ;; esac
-                case $info in *Type=wayland*|*Type=x11*) ;; *) continue ;; esac
-                case $info in *State=active*|*State=online*) exit 0 ;; esac
-            done
-            exit 1
-        }; then
+    if session_up; then
+        # a start that drew on a fallback level: the shutdown may arm a trial
+        : > "$SEEN" 2>/dev/null || true
         exec grub-editenv "$ENV" set raye_gfx_fails=0
     fi
     i=$((i + 1))

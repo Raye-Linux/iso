@@ -25,6 +25,14 @@
 # desktop is kept. The words land on the normal entries through $raye_gfx,
 # written into the kernel command line by 50-raye.cfg.
 #
+# A level kept that way is tried again once per new kernel: the shutdown
+# after a start on a fallback level arms raye_gfx_try=<better level>
+# (raye-graphics-ok --arm), the next Raye start uses it with
+# raye.gfx_try=<level> on the kernel line, and raye-graphics-ok keeps it
+# when a graphical session comes up, or restarts on the old level when none
+# does. A trial start that ends any other way (a forced restart) is dropped
+# here: raye_gfx_trying=1 is still set when the menu is read again.
+#
 # GRUB can only write its state on a plain /boot (ext4, FAT): elsewhere
 # (btrfs, LVM, a RAID) nothing is printed here and every start is level 0,
 # as before.
@@ -45,6 +53,14 @@ if [ "${raye_gfx_fails}" = 2 ]; then
   set timeout_style=menu
   if [ "${timeout}" = 0 ]; then set timeout=3; fi
 fi
+# a trial of a better level that never reached the desktop: dropped, the
+# level that works stays, and the failed start counts no try
+if [ "${raye_gfx_trying}" = 1 ]; then
+  set raye_gfx_trying=failed
+  set raye_gfx_try=
+  set raye_gfx_fails=0
+  if [ "${have_grubenv}" = true ]; then save_env raye_gfx_trying raye_gfx_try raye_gfx_fails; fi
+fi
 if [ "${raye_gfx_fails}" = 2 ]; then
   if [ "${raye_gfx_level}" = 1 ]; then set raye_gfx_level=2
   elif [ "${raye_gfx_level}" != 2 ]; then set raye_gfx_level=1
@@ -52,7 +68,12 @@ if [ "${raye_gfx_fails}" = 2 ]; then
   set raye_gfx_fails=0
   if [ "${have_grubenv}" = true ]; then save_env raye_gfx_level raye_gfx_fails; fi
 fi
-if [ "${raye_gfx_level}" = 2 ]; then set raye_gfx=nomodeset
+if [ "${raye_gfx_try}" = 0 ]; then set raye_gfx=raye.gfx_try=0
+elif [ "${raye_gfx_try}" = 1 ]; then
+  if [ "${raye_gfx_amd_dce}" = 1 ]; then set raye_gfx="amdgpu.dc=0 plymouth.enable=0 raye.gfx_try=1"
+  else set raye_gfx="plymouth.enable=0 raye.gfx_try=1"
+  fi
+elif [ "${raye_gfx_level}" = 2 ]; then set raye_gfx=nomodeset
 elif [ "${raye_gfx_level}" = 1 ]; then
   if [ "${raye_gfx_amd_dce}" = 1 ]; then set raye_gfx="amdgpu.dc=0 plymouth.enable=0"
   else set raye_gfx=plymouth.enable=0
@@ -68,5 +89,9 @@ function recordfail {
   if [ -n "${have_grubenv}" ]; then if [ -z "${boot_once}" ]; then save_env recordfail; fi; fi
   if [ "${raye_gfx_fails}" = 1 ]; then set raye_gfx_fails=2; else set raye_gfx_fails=1; fi
   if [ "${have_grubenv}" = true ]; then save_env raye_gfx_fails; fi
+  if [ -n "${raye_gfx_try}" ]; then
+    set raye_gfx_trying=1
+    if [ "${have_grubenv}" = true ]; then save_env raye_gfx_trying; fi
+  fi
 }
 GRUB

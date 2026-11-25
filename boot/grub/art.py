@@ -45,7 +45,6 @@ LINE_W = 480
 TIMER_H = 28       # the height GRUB gives the progress bar
 ENTRIES = {
     "raye-install": "Install Raye Linux",
-    "raye-french": "Installer Raye Linux",
     "raye-safe": "Safe graphics",
     "raye-firmware": "UEFI firmware settings",
 }

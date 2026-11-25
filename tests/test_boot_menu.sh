@@ -91,8 +91,8 @@ ISO=
 
 # the entries of the live menu, and the icon each one would need the day
 # the theme is turned back on (the two "Try" entries have none drawn yet)
-ENTRIES=$'This USB stick was not written correctly\nInstall Raye Linux\nInstaller Raye Linux\nTry Raye Linux without installing\nEssayer Raye Linux sans l\'installer\nSafe graphics\nCheck the USB stick for errors\nUEFI firmware settings'
-ICONS="raye-install raye-french raye-safe raye-firmware"
+ENTRIES=$'This USB stick was not written correctly\nTry Raye Linux without installing\nInstall Raye Linux\nSafe graphics\nCheck the USB stick for errors\nUEFI firmware settings'
+ICONS="raye-install raye-safe raye-firmware"
 
 fail=0
 err() { echo "FAIL: $*"; fail=1; }
@@ -208,6 +208,10 @@ check_menu() {
     [ "$entries" = "$ENTRIES" ] || err "menu entries are: $(tr '\n' '|' <<<"$entries")"
     grep -q 'GNU GRUB' "$cfg" && err "grub.cfg names GNU GRUB"
     check_try_entries "$cfg"
+    # the stick opens on the Try desktop: entry 0 of the working menu
+    grep -q '^set default=0$' "$cfg" || err "grub.cfg: default is not entry 0"
+    awk '/^[[:space:]]*menuentry[[:space:]]+"/ {n++; if (n==2 && index($0,"Try Raye Linux")==0) bad=1} END {exit bad}' "$cfg" ||
+        err "the second entry (first of the working menu) is not Try: the stick must open on the desktop to try"
     # the menu stays plain text: the graphical theme restarted a Dell
     # Latitude 5420 before the menu showed. If this fires, someone turned the
     # theme back on -- which is allowed, but only after a real-hardware test,
@@ -231,7 +235,7 @@ check_try_entries() {
     local cfg=$1 title line tries=0
     while IFS='|' read -r title line; do
         case $title in
-            Try*|Essayer*)
+            Try*)
                 tries=$((tries + 1))
                 [[ " $line " == *" raye.try "* ]] || err "\"$title\" does not pass raye.try"
                 [[ " $line " == *" nopersistent "* ]] || err "\"$title\" does not pass nopersistent"
@@ -241,13 +245,9 @@ check_try_entries() {
                 [[ " $line " == *" raye.try "* ]] && err "\"$title\" passes raye.try: it would not open Setup"
                 ;;
         esac
-        case $title in
-            Essayer*|Installer*)
-                [[ " $line " == *" locale=fr_CA.UTF-8 "* ]] || err "\"$title\" is not in French"
-                ;;
-        esac
+        [[ " $line " == *" locale=fr_CA"* ]] && err "\"$title\" forces French: the menu is English only"
     done < <(entry_lines "$cfg")
-    [ "$tries" = 2 ] || err "$tries \"Try\" entries, expected 2 (English and French)"
+    [ "$tries" = 1 ] || err "$tries \"Try\" entries, expected 1"
     return 0
 }
 
@@ -498,7 +498,7 @@ self_test() {
     sed '/Try Raye Linux without installing/,/initrd/ s/ raye\.try//' "$CFG" > "$t/cfg-try"
     (fail=0; check_menu "$t/cfg-try"; exit $fail) >/dev/null &&
         { echo "self-test: Try entry without raye.try not caught"; ok=0; }
-    sed '/Essayer Raye Linux/,/initrd/ s/ nopersistent//' "$CFG" > "$t/cfg-try2"
+    sed '/Try Raye Linux without installing/,/initrd/ s/ nopersistent//' "$CFG" > "$t/cfg-try2"
     (fail=0; check_menu "$t/cfg-try2"; exit $fail) >/dev/null &&
         { echo "self-test: Try entry without nopersistent not caught"; ok=0; }
     sed '0,/noprompt quiet splash/ s/noprompt quiet splash/noprompt raye.try quiet splash/' "$CFG" > "$t/cfg-try3"

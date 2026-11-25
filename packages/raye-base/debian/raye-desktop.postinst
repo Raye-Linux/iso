@@ -13,6 +13,8 @@ PROFILES_PRIVATE=/var/lib/raye-desktop/firewall-profiles-private
 CUPS_ON_DEMAND=/var/lib/raye-desktop/cups-on-demand
 # set once fluidsynth's own unit has been turned off
 SYNTH_OFF=/var/lib/raye-desktop/fluidsynth-off
+# set once the Store's Steam may see the other drives
+STEAM_DRIVES=/var/lib/raye-desktop/steam-drives
 
 if [ "$1" = configure ]; then
     # A file this version no longer replaces gets its stock one back.
@@ -29,6 +31,19 @@ if [ "$1" = configure ]; then
     # going through the X11 layer.
     if command -v flatpak >/dev/null 2>&1; then
         flatpak override --system --env=ELECTRON_OZONE_PLATFORM_HINT=auto || true
+    fi
+
+    # The Store's Steam is a Flatpak: it only sees the home folder, so a
+    # library on a second disk could not be added. Disks are mounted under
+    # /media, /run/media (the file manager) or /mnt (the fstab). Set once,
+    # in new installs and updates alike, so a path someone takes away in
+    # the app's permissions stays away. Works before Steam is installed.
+    if [ ! -e "$DPKG_ROOT$STEAM_DRIVES" ] && command -v flatpak >/dev/null 2>&1; then
+        if flatpak override --system --filesystem=/media --filesystem=/run/media \
+                --filesystem=/mnt com.valvesoftware.Steam; then
+            mkdir -p "$DPKG_ROOT${STEAM_DRIVES%/*}"
+            : > "$DPKG_ROOT$STEAM_DRIVES"
+        fi
     fi
 
     # Pairing with a phone and finding shared folders work on private

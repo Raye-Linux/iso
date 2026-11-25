@@ -604,6 +604,51 @@ def test_desktop_postinst_sets_the_app_defaults(tmp_path):
     assert not any(l.startswith("ufw allow") for l in log)
 
 
+STEAM_DRIVES = ("flatpak override --system --filesystem=/media --filesystem=/run/media "
+                "--filesystem=/mnt com.valvesoftware.Steam")
+
+
+def test_desktop_postinst_lets_steam_see_the_other_drives_once(tmp_path):
+    # the Store's Steam is a Flatpak: without these it cannot add a
+    # library on a second disk, mounted under /media, /run/media or /mnt
+    script, bin_dir = maintscript(tmp_path, "raye-desktop.postinst", {"RAYE_DIVERT": ""})
+    fake(bin_dir, "dpkg-divert")
+    fake(bin_dir, "flatpak")
+    fake(bin_dir, "deb-systemd-helper")
+    proc, log = run(script, bin_dir, tmp_path, "configure", "")
+    assert proc.returncode == 0, proc.stderr
+    assert STEAM_DRIVES in log
+    assert (tmp_path / "root/var/lib/raye-desktop/steam-drives").exists()
+    # an update from a version without it gets it as well, once: a path
+    # someone takes away afterwards stays away
+    (tmp_path / "root/var/lib/raye-desktop/steam-drives").unlink()
+    proc, log = run(script, bin_dir, tmp_path, "configure", "1.0~beta2.1")
+    assert proc.returncode == 0, proc.stderr
+    assert STEAM_DRIVES in log
+    proc, log = run(script, bin_dir, tmp_path, "configure", "1.0")
+    assert not any("com.valvesoftware.Steam" in l for l in log)
+
+
+def test_desktop_postrm_takes_back_only_the_steam_drives(tmp_path):
+    override = write(tmp_path / "root/var/lib/flatpak/overrides/com.valvesoftware.Steam",
+                     "[Context]\nfilesystems=/media;xdg-download;/run/media;/mnt;\n"
+                     "[Environment]\nA=1\n")
+    script, bin_dir = maintscript(tmp_path, "raye-desktop.postrm", {})
+    fake(bin_dir, "dpkg-divert")
+    fake(bin_dir, "flatpak")
+    proc, log = run(script, bin_dir, tmp_path, "upgrade", "1.0")
+    assert proc.returncode == 0, proc.stderr
+    assert "/run/media" in override.read_text()
+    proc, log = run(script, bin_dir, tmp_path, "remove")
+    assert proc.returncode == 0, proc.stderr
+    assert override.read_text() == "[Context]\nfilesystems=xdg-download;\n[Environment]\nA=1\n"
+    # nothing else in it: the file goes
+    write(override, "[Context]\nfilesystems=/media;/run/media;/mnt;\n")
+    proc, log = run(script, bin_dir, tmp_path, "remove")
+    assert proc.returncode == 0, proc.stderr
+    assert not override.exists()
+
+
 def test_desktop_postinst_closes_the_profiles_opened_to_every_network_once(tmp_path):
     # private networks reach the phone and discovery ports; a rule open to
     # any network would reach them from a public one too

@@ -1,0 +1,100 @@
+#!/bin/sh
+# Installs the driver of a device the Raye kernel has none for in its
+# tree: some Broadcom Wi-Fi cards today, more as Raye builds them.
+#
+# The drivers are out-of-tree modules Raye builds for each Raye kernel and
+# signs with the Raye module key (kernel/oot), packaged as
+# linux-modules-<name>-raye. The index says which devices need which:
+#
+#   <modalias pattern> TAB <package> TAB <module>
+#
+# It is a list of devices, not "no module of the tree matches": a bus
+# driver (bcma, ssb) does match these Broadcom cards, and gives no Wi-Fi.
+# Never a DKMS package: a module built and signed on the computer is
+# refused by Easy Anti-Cheat Linux v2 and needs a key enrolment screen.
+#
+#   raye-hw-drivers            install what the devices of this PC need
+#   raye-hw-drivers --again    the same, retrying what failed (Settings)
+#   raye-hw-drivers --needed   exit 0 when there is something to install
+#                              (raye-hw-drivers.service's ExecCondition)
+#   raye-hw-drivers --list     print "package TAB module TAB device"
+#                              for every device of the index found here
+#
+# Exit 75 means "try again later" (no network yet).
+set -u
+index=${RAYE_HW_INDEX:-/usr/share/raye/drivers/raye-modules.index}
+sys=${RAYE_SYS:-/sys}
+state=${RAYE_DRIVERS_STATE:-/var/lib/raye}
+tried=$state/hw-drivers-tried
+release=${RAYE_UNAME_R:-$(uname -r)}
+
+# the out-of-tree modules are built for the Raye kernel only
+case $release in *-raye) ;; *) [ "${1:-}" = --list ] || exit 1 ;; esac
+[ -r "$index" ] || exit 1
+
+# every device: "modalias TAB sysfs path" (PCI, USB interfaces, SDIO)
+devices() {
+    for f in "$sys"/bus/pci/devices/*/modalias "$sys"/bus/usb/devices/*/modalias \
+             "$sys"/bus/sdio/devices/*/modalias; do
+        [ -r "$f" ] || continue
+        read -r alias < "$f" || continue
+        [ -n "$alias" ] && printf '%s\t%s\n' "$alias" "${f%/modalias}"
+    done
+}
+
+# the index lines matching the devices of this PC: "package TAB module TAB device"
+matches() {
+    devices | while IFS='	' read -r alias dev; do
+        grep -v '^#' "$index" | while IFS='	' read -r pattern pkg module; do
+            [ -n "$pattern" ] || continue
+            # shellcheck disable=SC2254  # the pattern is a glob on purpose
+            case $alias in $pattern) printf '%s\t%s\t%s\n' "$pkg" "$module" "${dev##*/}"; break ;; esac
+        done
+    done
+}
+
+installed() {
+    dpkg-query -W -f='${db:Status-Abbrev}\n' "$1" 2>/dev/null | grep -q '^ii'
+}
+
+# the packages to install now, one per line; only Raye's signed modules
+wanted() {
+    matches | cut -f 1 | sort -u | while read -r pkg; do
+        case $pkg in linux-modules-*-raye) ;; *) continue ;; esac
+        case $pkg in *dkms*) continue ;; esac
+        installed "$pkg" && continue
+        if [ "${again:-}" != yes ] && [ -e "$tried" ] && grep -qx "$pkg" "$tried"; then continue; fi
+        echo "$pkg"
+    done
+}
+
+case ${1:-} in
+    --list) matches; exit 0 ;;
+    --needed) [ -n "$(wanted)" ] && exit 0; exit 1 ;;
+    --again) again=yes ;;
+esac
+
+pkgs=$(wanted)
+[ -n "$pkgs" ] || exit 0
+getent hosts archive.ubuntu.com >/dev/null 2>&1 || exit 75
+apt-get update -q || exit 75
+mkdir -p "$state"
+rc=0
+for pkg in $pkgs; do
+    # one at a time: a package Raye has not built yet for this kernel
+    # must not keep the others out
+    # shellcheck disable=SC2086
+    if DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends "$pkg"; then
+        echo "raye-hw-drivers: installed $pkg" >&2
+        module=$(matches | awk -F '\t' -v p="$pkg" '$1 == p { print $2; exit }')
+        # the blacklist of the tree's drivers it ships takes effect at the
+        # next start; loading now gives the device a driver at once when
+        # nothing else holds it
+        [ -n "$module" ] && modprobe "$module" 2>/dev/null
+    else
+        echo "raye-hw-drivers: $pkg could not be installed" >&2
+        grep -qx "$pkg" "$tried" 2>/dev/null || echo "$pkg" >> "$tried"
+        rc=1
+    fi
+done
+exit $rc

@@ -79,6 +79,10 @@ raye-system  release/drivers/raye-flatpak-gl              usr/libexec/raye-flatp
 raye-system  release/drivers/raye-flatpak-gl.service      usr/lib/systemd/system/raye-flatpak-gl.service
 raye-system  release/drivers/raye-gpu-driver-changed      usr/libexec/raye-gpu-driver-changed
 raye-system  release/drivers/80raye-gpu-driver            etc/apt/apt.conf.d/80raye-gpu-driver
+raye-system  release/drivers/raye-hw-drivers              usr/libexec/raye-hw-drivers
+raye-system  release/drivers/raye-hw-drivers.service      usr/lib/systemd/system/raye-hw-drivers.service  no-start
+raye-system  release/drivers/70-raye-hw-drivers.rules     usr/lib/udev/rules.d/70-raye-hw-drivers.rules
+raye-system  release/drivers/raye-modules.index           usr/share/raye/drivers/raye-modules.index
 # Chromebooks: the top row through keyd, which only starts when a config
 # exists, and the Pixelbook's Search key. Nothing happens on other machines.
 raye-system  release/chromebook/raye-chromebook               usr/libexec/raye-chromebook

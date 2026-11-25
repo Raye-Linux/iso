@@ -1,0 +1,12 @@
+# Raye Linux: devices whose driver is a Raye-built out-of-tree module.
+# Made by kernel/oot/make-index.sh; do not edit by hand.
+pci:v000014E4d00004313sv*sd*bc*sc*i*	linux-modules-broadcom-sta-raye	wl
+pci:v000014E4d0000432Asv*sd*bc*sc*i*	linux-modules-broadcom-sta-raye	wl
+pci:v000014E4d0000432Bsv*sd*bc*sc*i*	linux-modules-broadcom-sta-raye	wl
+pci:v000014E4d0000432Dsv*sd*bc*sc*i*	linux-modules-broadcom-sta-raye	wl
+pci:v000014E4d00004358sv*sd*bc*sc*i*	linux-modules-broadcom-sta-raye	wl
+pci:v000014E4d00004359sv*sd*bc*sc*i*	linux-modules-broadcom-sta-raye	wl
+pci:v000014E4d00004365sv*sd*bc*sc*i*	linux-modules-broadcom-sta-raye	wl
+pci:v000014E4d000043A0sv*sd*bc*sc*i*	linux-modules-broadcom-sta-raye	wl
+pci:v000014E4d000043B1sv*sd*bc*sc*i*	linux-modules-broadcom-sta-raye	wl
+pci:v000014E4d00004727sv*sd*bc*sc*i*	linux-modules-broadcom-sta-raye	wl

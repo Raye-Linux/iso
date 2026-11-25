@@ -1,0 +1,4 @@
+# A device plugged in while Raye runs (a USB Wi-Fi stick, say): look at
+# once whether it needs a driver Raye builds; the service's condition makes
+# this a quick no for every device it does not know.
+ACTION=="add", SUBSYSTEM=="pci|usb|sdio", ENV{MODALIAS}=="?*", TAG+="systemd", ENV{SYSTEMD_WANTS}+="raye-hw-drivers.service"

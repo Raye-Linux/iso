@@ -1,9 +1,12 @@
 [Unit]
-Description=Look again for the graphics driver this computer needs
+Description=Look again for the drivers this computer needs
 Wants=network-online.target
 After=network-online.target
 
 [Service]
 Type=oneshot
 ExecStart=/usr/libexec/raye-drivers --again
+# then the devices whose driver Raye builds (Wi-Fi cards); never fails
+# the graphics check above
+ExecStart=-/usr/libexec/raye-hw-drivers --again
 TimeoutStartSec=20min

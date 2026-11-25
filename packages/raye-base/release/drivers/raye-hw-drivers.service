@@ -1,0 +1,16 @@
+[Unit]
+Description=Install the driver a device of this computer needs
+# raye-drivers.service's reasons: no network-online.target, it waits itself
+After=NetworkManager.service
+
+[Service]
+Type=oneshot
+# nothing to install skips the unit at once, without the network
+ExecCondition=/usr/libexec/raye-hw-drivers --needed
+ExecStartPre=-/usr/bin/nm-online -q -t 60
+ExecStart=/usr/libexec/raye-hw-drivers
+SuccessExitStatus=75
+TimeoutStartSec=20min
+
+[Install]
+WantedBy=multi-user.target

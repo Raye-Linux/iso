@@ -2,6 +2,8 @@
 Description=Add the Flatpak graphics libraries of the NVIDIA driver
 ConditionPathExists=/sys/module/nvidia/version
 After=NetworkManager.service
+# the tries below are 5 minutes apart: never stopped by the start limit
+StartLimitIntervalSec=0
 
 [Service]
 # Type=exec: the start never waits for this, even when it waits for the
@@ -10,6 +12,11 @@ Type=exec
 ExecCondition=/usr/libexec/raye-flatpak-gl --needed
 ExecStart=/usr/libexec/raye-flatpak-gl
 SuccessExitStatus=75
+# 75 = no network yet: a Wi-Fi network kept in the person's wallet only
+# connects after sign-in, so try again every 5 minutes until it is there
+# (ExecCondition skips the tries once nothing is missing)
+RestartForceExitStatus=75
+RestartSec=5min
 TimeoutStartSec=30min
 Nice=10
 

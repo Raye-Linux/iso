@@ -85,6 +85,9 @@ else
 	want net.core.default_qdisc fq
 	want net.ipv4.tcp_congestion_control bbr
 	want kernel.printk '3 4 1 3'
+	# the 32-bit DMA zone's guard grows with the RAM (54 MiB at 16 GB,
+	# ~240 MiB at 64 GB) and is counted as used memory at idle
+	want vm.lowmem_reserve_ratio '256 1024 32 0 0'
 
 	# Ubuntu's procps already sets it (55-map-count.conf): one owner only
 	[ -z "$(value_of vm.max_map_count)" ] && pass "vm.max_map_count left to Ubuntu" \

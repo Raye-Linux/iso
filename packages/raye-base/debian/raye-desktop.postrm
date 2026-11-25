@@ -15,6 +15,14 @@ case "$1" in
         if command -v flatpak >/dev/null 2>&1; then
             flatpak override --system --unset-env=ELECTRON_OZONE_PLATFORM_HINT || true
         fi
+        # the drives Steam was given; whatever else is in its override stays
+        steam=$DPKG_ROOT/var/lib/flatpak/overrides/com.valvesoftware.Steam
+        if [ -f "$steam" ]; then
+            sed -i -e '/^filesystems=/{s#\([=;]\)/media;#\1#;s#\([=;]\)/run/media;#\1#;s#\([=;]\)/mnt;#\1#;/^filesystems=$/d}' "$steam"
+            if ! grep -qv -e '^\[Context\]$' -e '^$' "$steam"; then
+                rm -f "$steam"
+            fi
+        fi
         ;;
 esac
 

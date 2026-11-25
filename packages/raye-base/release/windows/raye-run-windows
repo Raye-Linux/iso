@@ -34,6 +34,7 @@
 #
 #   raye-run-windows program.exe|setup.msi [--args ARGS]
 #   raye-run-windows --space SPACE --run 'C:\path\program.exe' [--args ARGS]
+#   raye-run-windows --space SPACE --run 'C:\path\program.exe' --prepare
 #   raye-run-windows --space SPACE --uninstall 'COMMAND' [--name N] [--icon I]
 #   raye-run-windows --space SPACE --open FILE|LINK
 #
@@ -41,6 +42,11 @@
 # "Uninstall") call: they run in a space that already exists. --open is
 # what a file or link the program's profile names (opens=) is handed to.
 # --args after a setup gives it switches, the quiet ones the Store passes.
+# --prepare does everything a start does but the start itself: the Store
+# runs it once a program is installed, so what the program needs is
+# fetched under its progress bar and not at the first start. It ends 0
+# when the program is ready, 4 when a piece could not be fetched (a
+# later start tries again, as it does offline).
 #
 # After a setup the space is left to settle, at most RAYE_WINDOWS_SETTLE
 # seconds (60). With RAYE_WINDOWS_SETTLE_END=stop, what still runs after
@@ -51,11 +57,13 @@ set -u
 usage() {
     echo "usage: raye-run-windows program.exe [--args ARGS]" >&2
     echo "       raye-run-windows --space SPACE (--run TARGET [--args ARGS] | --uninstall COMMAND | --open FILE|LINK)" >&2
+    echo "       raye-run-windows --space SPACE --run TARGET --prepare" >&2
     exit 2
 }
-file="" space="" target="" targs="" uninstall="" open="" setup_args=""
+file="" space="" target="" targs="" uninstall="" open="" setup_args="" only_prepare=""
 if [ "${1:-}" = --space ]; then
     while [ $# -gt 0 ]; do
+        if [ "$1" = --prepare ]; then only_prepare=1; shift; continue; fi
         [ $# -ge 2 ] || usage
         case $1 in
             --space) space=$2 ;;
@@ -70,6 +78,8 @@ if [ "${1:-}" = --space ]; then
     done
     case $space in ""|*/*|.*) usage ;; esac
     [ -n "$target" ] || [ -n "$uninstall" ] || [ -n "$open" ] || usage
+    # getting ready is for a program, not for an uninstall or a file
+    [ -z "$only_prepare" ] || { [ -n "$target" ] && [ -z "$uninstall$open" ]; } || usage
 else
     file=${1:-}
     [ -f "$file" ] || usage
@@ -319,6 +329,8 @@ noticed="" notice_id=""
 notice() {
     [ -z "$noticed" ] || return 0
     noticed=1
+    # the Store shows its own progress while it gets a program ready
+    [ -z "$only_prepare" ] || return 0
     { [ -n "${DISPLAY:-}" ] || [ -n "${WAYLAND_DISPLAY:-}" ]; } || return 0
     command -v notify-send >/dev/null || return 0
     label=${pname:-${name%.*}}
@@ -395,6 +407,7 @@ if [ -z "$target" ] && [ -n "$file" ]; then
     case $lname in *.msi) ;; *) prog=$(realpath "$file") ;; esac
 fi
 tried=$WINEPREFIX/.raye-needs-tried
+needs_rc=0
 if [ -n "$prog" ] && [ -f "$prog" ] && [ -x "$needs_tool" ] &&
    [ -z "$(find "$tried" -mmin -10 2>/dev/null)" ]; then
     needs=$("$needs_tool" "$prog" "$WINEPREFIX" 2>/dev/null)
@@ -408,7 +421,7 @@ if [ -n "$needs" ]; then
     else
         hidden timeout 20m winetricks -q $needs </dev/null
     fi
-    if [ $? -eq 0 ]; then rm -f "$tried"; else : > "$tried"; fi
+    if [ $? -eq 0 ]; then rm -f "$tried"; else : > "$tried"; needs_rc=4; fi
 fi
 
 # the set-up processes have no display: let them all end, so the program
@@ -418,6 +431,7 @@ fi
 # kept every Start entry of the space from opening
 [ -n "${settle:-}" ] && [ -n "${WINESERVER:-}" ] && "$WINESERVER" -w
 end_notice
+[ -z "$only_prepare" ] || exit "$needs_rc"
 
 # what Game Mode's watcher reads from the program's processes: the space,
 # whether its profile calls it a game (yes) or a game launcher (launcher,

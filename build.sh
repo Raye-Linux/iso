@@ -591,6 +591,19 @@ install_system() {
         done
     fi
 
+    # old PCs: Setup puts grub-pc in on a PC started in BIOS mode, so GRUB
+    # updates reach the start of its disk (installer raye-bios-grub). It
+    # travels as files at the version of the GRUB already in the image: in
+    # the image itself it would ask where to install GRUB on UEFI PCs too.
+    local grub_version
+    grub_version=$(in_root dpkg-query -W -f='${Version}' grub-pc-bin) ||
+        die "grub-pc-bin is missing from the image: no BIOS install"
+    install -d "$root/usr/share/raye/grub-pc"
+    in_root sh -c "cd /usr/share/raye/grub-pc && apt-get download -q grub-pc=$grub_version grub-gfxpayload-lists" ||
+        die "cannot fetch grub-pc $grub_version for BIOS installs"
+    ls "$root"/usr/share/raye/grub-pc/grub-pc_*.deb "$root"/usr/share/raye/grub-pc/grub-gfxpayload-lists_*.deb >/dev/null ||
+        die "grub-pc is not in the image: BIOS installs would never update GRUB"
+
     install -m644 "$here/config/casper.conf" "$root/etc/casper.conf"
     in_root locale-gen en_US.UTF-8 fr_CA.UTF-8 fr_FR.UTF-8 >/dev/null
     printf 'LANG=en_US.UTF-8\n' > "$root/etc/default/locale"

@@ -165,15 +165,49 @@ def test_the_panel_file_still_brings_the_panel_alone(tmp_path):
     assert install.endswith("nvidia-settings")
 
 
-def test_nothing_on_the_raye_kernel_until_back_on_ubuntu_s(tmp_path):
+RAYE = "7.0.14-44r4-raye"
+
+
+def raye_archive(pc, *packages):
+    # apt-cache show: only the packages named here are in the archive
+    names = " ".join(packages)
+    pc.stub("apt-cache", "#!/bin/sh\n" f'echo "$(basename "$0") $*" >> {pc.log}\n'
+            f'for n in {names}; do [ "$2" = "$n" ] && exit 0; done\nexit 100\n')
+
+
+def test_on_the_raye_kernel_nvidia_comes_with_the_raye_kernel_s_own_modules(tmp_path):
+    # V1: Ubuntu's kernel is gone, so the driver installs on the Raye
+    # kernel, with the modules Raye built and signed for it (never DKMS,
+    # never Ubuntu's modules, which do not load on this kernel)
     pc = PC(tmp_path)
-    assert pc.drivers("--needed", release="7.0.14-raye").returncode == 1
-    assert pc.drivers(release="7.0.14-raye").returncode == 0
+    raye_archive(pc, "linux-modules-nvidia-595-raye")
+    assert pc.drivers("--needed", release=RAYE).returncode == 0
+    assert pc.drivers(release=RAYE).returncode == 0
+    [install] = pc.apt_installs()
+    assert "nvidia-driver-595 linux-modules-nvidia-595-raye nvidia-settings" in install
+    assert "generic" not in install and "dkms" not in install
+    assert (pc.state / "drivers-done").exists()
+    assert pc.calls("ubuntu-drivers") == ["ubuntu-drivers devices"]
+
+
+def test_on_the_raye_kernel_without_its_modules_nothing_yet(tmp_path):
+    pc = PC(tmp_path)
+    raye_archive(pc, "linux-modules-nvidia-580-raye")
+    assert pc.drivers(release=RAYE).returncode == 0
     assert pc.apt_installs() == []
+    # looked at again at the next start, once Raye has built them
     assert not (pc.state / "drivers-done").exists()
-    assert pc.drivers("--needed").returncode == 0
-    pc.drivers()
-    assert len(pc.apt_installs()) == 1
+    assert pc.drivers("--needed", release=RAYE).returncode == 0
+
+
+def test_on_the_raye_kernel_a_dkms_only_driver_is_left_alone(tmp_path):
+    pc = PC(tmp_path)
+    raye_archive(pc)
+    (tmp_path / "devices").write_text(DEVICES.replace(
+        "driver   : nvidia-driver-595 - distro non-free recommended",
+        "driver   : bcmwl-kernel-source - distro non-free recommended"))
+    assert pc.drivers(release=RAYE).returncode == 0
+    assert pc.apt_installs() == []
 
 
 def test_service_runs_the_check_before_waiting_for_the_network():

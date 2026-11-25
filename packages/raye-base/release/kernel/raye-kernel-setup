@@ -25,6 +25,12 @@
 #                               the disk again with the running kernel
 #   raye-kernel-setup remove    back to Ubuntu's kernel only (installs it
 #                               again first if it was retired)
+#   raye-kernel-setup switch-due
+#                               yes (exit 0) when this computer has not
+#                               switched to the current Raye kernel yet
+#                               and nothing stands in the way; no (exit 1)
+#                               otherwise. Raye Update and the installer
+#                               ask it before running enroll
 #
 # Once the Raye kernel has started once and is kept, Ubuntu's kernel is
 # removed (V1: Raye runs its own kernel only). Every Raye kernel build has
@@ -115,6 +121,10 @@ raye_nvidia_debs() {
     ls "$debs"/linux-modules-nvidia-"$1"-*-raye_*.deb 2>/dev/null
 }
 
+# the same from the archive: the package that follows the newest kernel
+nvidia_meta() { echo "linux-modules-nvidia-$1-raye"; }
+nvidia_in_archive() { apt-cache show "$(nvidia_meta "$1")" >/dev/null 2>&1; }
+
 # true when NVIDIA's driver is installed and the Raye kernel has no
 # modules for it: the switch would lose the driver
 nvidia_blocks() {
@@ -122,13 +132,23 @@ nvidia_blocks() {
     b=$(nvidia_branches)
     [ -n "$b" ] || return 0
     for x in $b; do
-        [ -n "$(raye_nvidia_debs "$x")" ] || return 0
+        [ -n "$(raye_nvidia_debs "$x")" ] || nvidia_in_archive "$x" || return 0
     done
     return 1
 }
 
 # ------------------------------------------------------------- packages
-in_archive() { apt-cache show linux-image-raye >/dev/null 2>&1; }
+# linux-raye follows the newest Raye kernel (image and headers): once it
+# is installed, kernel updates come with apt like any other update
+in_archive() { apt-cache show linux-raye >/dev/null 2>&1; }
+
+archive_packages() {
+    echo linux-raye
+    for x in $(nvidia_branches); do
+        nvidia_in_archive "$x" && nvidia_meta "$x"
+    done
+}
+
 
 # the image, and the headers so drivers built on the computer (NVIDIA
 # through DKMS) follow the new kernel
@@ -139,7 +159,7 @@ shipped_debs() {
 
 # from the Raye archive, or shipped next to this script
 kernel_packages() {
-    if in_archive; then echo linux-image-raye; else shipped_debs; fi
+    if in_archive; then echo $(archive_packages); else shipped_debs; fi
 }
 
 # true when apt still has something to download for these packages
@@ -153,12 +173,13 @@ needs_download() {
 # does the job.
 boot_packages() {
     if in_archive; then
-        if ! needs_download linux-image-raye; then
-            echo linux-image-raye
+        pkgs=$(echo $(archive_packages))
+        if ! needs_download "$pkgs"; then
+            echo "$pkgs"
             return
         fi
         if ! command -v nm-online >/dev/null 2>&1 || quietly nm-online -q -t 60; then
-            echo linux-image-raye
+            echo "$pkgs"
             return
         fi
         note "no network after 60 s"
@@ -358,6 +379,16 @@ retire_ubuntu() {
     }
     pkgs=$(ubuntu_kernel_pkgs)
     [ -n "$pkgs" ] || return 0
+    # only these: a purge that would take anything else along (NVIDIA's
+    # driver, when nothing else stands in for Ubuntu's modules) is not done
+    # shellcheck disable=SC2086  # one package per word
+    more=$(apt-get -s purge $pkgs 2>&3 | awk '/^(Purg|Remv) / { print $2 }' |
+        grep -vxF "$(printf '%s\n' $pkgs)")
+    if [ -n "$more" ]; then
+        note "removing Ubuntu's kernel would also remove: $(echo $more)"
+        warn "Ubuntu's kernel stays: removing it would take other packages along"
+        return 1
+    fi
     # shellcheck disable=SC2086  # one package per word
     if quietly env DEBIAN_FRONTEND=noninteractive apt-get purge -y -q $pkgs; then
         note "Ubuntu's kernel removed: $(echo $pkgs)"
@@ -380,7 +411,14 @@ try_once() {
     printf 'GRUB_DEFAULT=saved\n' > "$grubcfg"
     quietly update-grub
     sub=$(submenu_id)
-    old=$(entry_id "$(newest generic)")
+    # the way back is the kernel that runs now (Ubuntu's, or a Raye kernel
+    # of the beta signed with the earlier key); Ubuntu's newest otherwise
+    run=$(uname -r)
+    old=
+    if [ -e "$R/boot/vmlinuz-$run" ] && [ "$run" != "$(newest raye)" ]; then
+        old=$(entry_id "$run")
+    fi
+    [ -n "$old" ] || old=$(entry_id "$(newest generic)")
     new=$(entry_id "$(newest raye)")
     if [ -z "$sub" ] || [ -z "$old" ] || [ -z "$new" ]; then
         warn "the start menu has no entry for both kernels: nothing tried"
@@ -426,6 +464,27 @@ status)
     ;;
 tpm-status)
     tpm_status_now
+    ;;
+switch-due)
+    # read-only: any user may ask
+    due=yes
+    if [ -f "$pending" ] || [ -f "$trial" ] || [ -f "$failed" ] ||
+        tpm_needs_password || nvidia_blocks; then
+        due=no
+    else
+        case "$(uname -r)" in
+        *-raye)
+            # done when the key that signs the current kernel is in (or no
+            # Secure Boot) and kernel updates already come with apt
+            if { ! secure_boot || enrolled; } &&
+                { [ -e "$R/var/lib/dpkg/info/linux-raye.list" ] || ! in_archive; }; then
+                due=no
+            fi
+            ;;
+        esac
+    fi
+    echo "$due"
+    [ "$due" = yes ]
     ;;
 enroll)
     root_only enroll
@@ -562,7 +621,7 @@ remove)
     quietly update-grub
     ;;
 *)
-    echo "usage: raye-kernel-setup status|tpm-status|enroll|finish|rebind|remove" >&2
+    echo "usage: raye-kernel-setup status|tpm-status|switch-due|enroll|finish|rebind|remove" >&2
     exit 2
     ;;
 esac

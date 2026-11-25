@@ -1,0 +1,9 @@
+[Unit]
+Description=Offer Raye Proton in the Store's Steam too
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/raye-proton-setup
+
+[Install]
+WantedBy=default.target

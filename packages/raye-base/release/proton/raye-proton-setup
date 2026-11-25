@@ -1,0 +1,42 @@
+#!/bin/sh
+# Puts Raye Proton in the Store's Steam (Flatpak) as well: Steam from the
+# archive finds it in /usr/share/steam/compatibilitytools.d by itself, the
+# Flatpak only looks in its own folder. That copy hands each game over to
+# the computer, where raye-wine is (flatpak-spawn --host), which the
+# Flatpak may do only once it is allowed to talk to Flatpak's own service:
+# this asks for that, for this person's Steam only. Nothing happens while
+# the Store's Steam is not installed. raye-proton-setup --remove undoes it.
+set -u
+src=${RAYE_PROTON_SRC:-/usr/share/steam/compatibilitytools.d/raye-proton}
+app=com.valvesoftware.Steam
+dest="$HOME/.var/app/$app/.local/share/Steam/compatibilitytools.d/raye-proton"
+mark="$HOME/.var/app/$app/.local/share/Steam/compatibilitytools.d/.raye-proton-override"
+
+steam_flatpak() { flatpak info "$app" >/dev/null 2>&1; }
+
+if [ "${1:-}" = --remove ]; then
+    rm -rf "$dest"
+    if [ -e "$mark" ]; then
+        flatpak override --user --no-talk-name=org.freedesktop.Flatpak "$app" 2>/dev/null
+        rm -f "$mark"
+    fi
+    exit 0
+fi
+
+steam_flatpak || exit 0
+[ -d "$src" ] || exit 0
+same=yes
+for f in proton compatibilitytool.vdf toolmanifest.vdf; do
+    cmp -s "$src/$f" "$dest/$f" || same=
+done
+if [ -z "$same" ]; then
+    mkdir -p "$dest.new" &&
+        cp "$src/proton" "$src/compatibilitytool.vdf" "$src/toolmanifest.vdf" "$dest.new/" &&
+        chmod 755 "$dest.new/proton" || exit 1
+    rm -rf "$dest"
+    mv "$dest.new" "$dest"
+fi
+if ! flatpak override --user --show "$app" 2>/dev/null | grep -q 'org.freedesktop.Flatpak=talk'; then
+    flatpak override --user --talk-name=org.freedesktop.Flatpak "$app" && : > "$mark"
+fi
+exit 0

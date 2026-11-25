@@ -1,0 +1,17 @@
+[Unit]
+Description=Let the next start try the full graphics driver again
+Documentation=file:///usr/libexec/raye-graphics-ok
+ConditionPathExists=/boot/grub/grubenv
+# stopped at shutdown before /boot goes away
+RequiresMountsFor=/boot
+After=local-fs.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/true
+ExecStop=/usr/libexec/raye-graphics-ok --arm
+TimeoutStopSec=15
+
+[Install]
+WantedBy=graphical.target

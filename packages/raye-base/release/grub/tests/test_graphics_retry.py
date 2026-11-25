@@ -396,3 +396,15 @@ def test_nomodeset_on_an_older_amd_card_is_kept(tmp_path):
     fake_card(pc, "0x1002", device="0x699f")
     run_no_amd(pc)
     assert pc.state()["raye_gfx_level"] == "2"
+
+
+def test_driver_change_also_starts_the_trial_count_again(tmp_path):
+    # two failed trials of the old driver stopped the ladder from trying
+    # (raye-graphics-ok --arm); a new driver gets its own chances
+    pc = PC(tmp_path, level="2")
+    pc.env_file.write_text("raye_gfx_level=2\nraye_gfx_fails=0\nraye_gfx_try_fails=2\n"
+                           "raye_gfx_tried=7.0.0-44-generic\nraye_gfx_try=0\n")
+    pc.run("--driver")
+    s = pc.state()
+    assert s["raye_gfx_level"] == "0"
+    assert s["raye_gfx_try_fails"] == "0" and s["raye_gfx_tried"] == "" and s["raye_gfx_try"] == ""

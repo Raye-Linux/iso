@@ -193,6 +193,19 @@ watch
 expect "roblox: ... but its player is found while Quadra's Flatpak runs" registered 404
 expect "roblox: Quadra's Flatpak is a launcher, not a game" eval '! registered 405'
 gone 404
+# the running watcher (not --once): a process it saw as a shell or a
+# wrapper naming the player keeps its number when it becomes Rosemary
+printf 'Quadra on /tmp/.mount_QuadraAbC123 type fuse.Quadra (ro,nosuid,nodev)\n' > "$proc/mounts"
+process 406 /bin/sh -c "exec rosemary /home/u/.local/share/quadra/roblox/RobloxPlayer.app --x"
+: > "$log"
+RAYE_GAME_INTERVAL=0.2 sh "$gaming/raye-game-watch" & watcher=$!
+sleep 1
+process 406 /home/u/.local/share/quadra/rosemary/bin/rosemary /home/u/.local/share/quadra/roblox/RobloxPlayer.app
+sleep 1.5
+kill "$watcher"; wait "$watcher" 2>/dev/null || true
+expect "roblox: a player that became Rosemary after a first look is handed over" registered 406
+gone 406
+rm "$proc/mounts"
 
 # --------------------------------------------------------- your choices
 printf 'on=windows:notepad-plus-plus\n' > "$conf"

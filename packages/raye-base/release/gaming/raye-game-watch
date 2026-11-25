@@ -191,14 +191,16 @@ natives() {
         pid=${f%/cmdline}; pid=${pid##*/}
         listed "$known" "$pid" && continue
         mine_has "$pid" && continue
-        look "$pid"
         a=$(args_of "$pid") found=""
         set -f; ifs=$IFS; IFS=$nl
         for w in $a; do
             case $w in */RobloxPlayer.app|*/RobloxPlayer.app/) found=1 ;; esac
         done
         IFS=$ifs; set +f
+        # not remembered before it is the player: a shell or a wrapper that
+        # names it keeps its number when it becomes Rosemary
         [ -n "$found" ] || continue
+        look "$pid"
         wanted "app:com.roblox.RobloxPlayer" "" || continue
         handover "$pid" "app:com.roblox.RobloxPlayer" "" "Roblox" || known=${known% "$pid"}
     done

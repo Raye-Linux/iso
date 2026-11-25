@@ -1,0 +1,4 @@
+# Plugging or unplugging the charger lets the PC rest its idle devices on
+# battery and puts them back on the charger (raye-power-tune). A laptop
+# only: the program does nothing on any other PC.
+SUBSYSTEM=="power_supply", ATTR{type}=="Mains", ACTION=="add|change", TAG+="systemd", ENV{SYSTEMD_WANTS}+="raye-power-tune.service"

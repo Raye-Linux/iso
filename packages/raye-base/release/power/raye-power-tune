@@ -1,0 +1,253 @@
+#!/usr/bin/python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Longer battery life on a laptop, without touching what could break.
+
+Run by udev when the charger is plugged or unplugged, and once at boot
+(raye-power-tune.service):
+
+    raye-power-tune apply     put the PC in the right state for its power source
+    raye-power-tune status    what it would do, and what it did, changing nothing
+
+On battery it lets idle PCI devices, the internal USB devices and the SATA
+links sleep, and turns Wi-Fi power saving on when it was off. On the
+charger it puts back exactly what it changed, and nothing else: it keeps
+what it wrote, and what each setting was, in /run/raye-power-tune/state.json,
+and leaves a setting alone that something else has changed since.
+
+What it never touches: graphics cards, audio (clicks and pops), USB
+controllers, keyboards and mice, storage and printers on USB, Bluetooth,
+anything that can be unplugged, and every PC that is not a laptop.
+/etc/raye/power-tune.off (an empty file) turns all of it off.
+"""
+import json
+import os
+import subprocess
+import sys
+
+ROOT = os.environ.get("RAYE_POWER_ROOT", "/")
+RUN_DIR = "run/raye-power-tune"
+OFF_FILE = "etc/raye/power-tune.off"
+
+# SMBIOS chassis types: portable, laptop, notebook, sub notebook, tablet,
+# convertible, detachable (the same list as the laptop wake rule)
+LAPTOP_CHASSIS = {8, 9, 10, 14, 30, 31, 32}
+# PCI classes left alone: display controllers, audio, USB controllers
+PCI_KEEP_PREFIX = ("0x03", "0x0403", "0x0c03")
+# USB interface classes of devices left awake: audio, communications
+# (modems, network adapters), HID, printer, mass storage, hub is fine,
+# smart card is fine, vendor specific (fingerprint readers and the like)
+USB_KEEP_CLASSES = {0x01, 0x02, 0x03, 0x07, 0x08, 0x0A, 0xE0, 0xFF}
+
+
+def path(*parts):
+    return os.path.join(ROOT, *parts)
+
+
+def read(*parts):
+    try:
+        with open(path(*parts)) as f:
+            return f.read().strip()
+    except OSError:
+        return None
+
+
+def read_abs(target):
+    try:
+        with open(target) as f:
+            return f.read().strip()
+    except OSError:
+        return None
+
+
+def write(target, value):
+    try:
+        with open(target, "w") as f:
+            f.write(value)
+        return True
+    except OSError:
+        return False
+
+
+def is_laptop():
+    chassis = read("sys/class/dmi/id/chassis_type")
+    try:
+        return int(chassis) in LAPTOP_CHASSIS
+    except (TypeError, ValueError):
+        return False
+
+
+def on_battery():
+    """True only when a battery exists and no charger is plugged in."""
+    base = path("sys/class/power_supply")
+    try:
+        names = sorted(os.listdir(base))
+    except OSError:
+        return False
+    batteries, mains = [], []
+    for name in names:
+        kind = read("sys/class/power_supply", name, "type")
+        if kind == "Battery":
+            batteries.append(name)
+        elif kind == "Mains":
+            mains.append(name)
+    if not batteries:
+        return False
+    if mains:
+        return not any(read("sys/class/power_supply", m, "online") == "1" for m in mains)
+    return any(read("sys/class/power_supply", b, "status") == "Discharging" for b in batteries)
+
+
+def usb_interface_classes(device):
+    classes = set()
+    try:
+        entries = os.listdir(device)
+    except OSError:
+        return classes
+    for entry in entries:
+        if ":" not in entry:
+            continue
+        value = read_abs(os.path.join(device, entry, "bInterfaceClass"))
+        try:
+            classes.add(int(value, 16))
+        except (TypeError, ValueError):
+            pass
+    return classes
+
+
+def wanted_changes(run=subprocess.run):
+    """[(key, setting file or command, current, wanted)], what battery mode sets."""
+    changes = []
+    pci = path("sys/bus/pci/devices")
+    for name in sorted(os.listdir(pci)) if os.path.isdir(pci) else []:
+        control = os.path.join(pci, name, "power/control")
+        pci_class = read_abs(os.path.join(pci, name, "class")) or ""
+        if pci_class.startswith(PCI_KEEP_PREFIX) or not os.path.exists(control):
+            continue
+        current = read_abs(control)
+        if current == "on":
+            changes.append(("file", control, "on", "auto"))
+
+    scsi = path("sys/class/scsi_host")
+    for name in sorted(os.listdir(scsi)) if os.path.isdir(scsi) else []:
+        policy = os.path.join(scsi, name, "link_power_management_policy")
+        if os.path.exists(policy) and read_abs(policy) == "max_performance":
+            changes.append(("file", policy, "max_performance", "med_power_with_dipm"))
+
+    usb = path("sys/bus/usb/devices")
+    for name in sorted(os.listdir(usb)) if os.path.isdir(usb) else []:
+        if ":" in name:
+            continue
+        device = os.path.join(usb, name)
+        control = os.path.join(device, "power/control")
+                # a device soldered in: the only ones that never get unplugged
+        if read_abs(os.path.join(device, "removable")) != "fixed" or read_abs(control) != "on":
+            continue
+        classes = usb_interface_classes(device)
+        if not classes or classes & USB_KEEP_CLASSES:
+            continue
+        changes.append(("file", control, "on", "auto"))
+
+    net = path("sys/class/net")
+    for name in sorted(os.listdir(net)) if os.path.isdir(net) else []:
+        if not os.path.isdir(os.path.join(net, name, "wireless")):
+            continue
+        shown = run(["iw", "dev", name, "get", "power_save"], capture_output=True, text=True).stdout \
+            if _have("iw") else ""
+        if "Power save: off" in shown:
+            changes.append(("wifi", name, "off", "on"))
+    return changes
+
+
+def _have(program):
+    for directory in os.environ.get("PATH", "").split(os.pathsep):
+        if os.access(os.path.join(directory, program), os.X_OK):
+            return True
+    return False
+
+
+def load_state():
+    try:
+        with open(path(RUN_DIR, "state.json")) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {"changed": []}
+
+
+def save_state(state):
+    os.makedirs(path(RUN_DIR), exist_ok=True)
+    target = path(RUN_DIR, "state.json")
+    with open(target + ".part", "w") as f:
+        json.dump(state, f)
+    os.replace(target + ".part", target)
+
+
+def set_wifi(name, value, run=subprocess.run):
+    return run(["iw", "dev", name, "set", "power_save", value], capture_output=True).returncode == 0
+
+
+def go_battery(run=subprocess.run):
+    state = load_state()
+    done = {(c["kind"], c["target"]) for c in state["changed"]}
+    for kind, target, before, after in wanted_changes(run):
+        if (kind, target) in done:
+            continue
+        ok = set_wifi(target, after, run) if kind == "wifi" else write(target, after)
+        if ok:
+            state["changed"].append({"kind": kind, "target": target, "before": before, "after": after})
+            print(f"battery: {target} {before} -> {after}")
+        else:
+            print(f"battery: {target} refused, left as it was")
+    save_state(state)
+    return state
+
+
+def go_charger(run=subprocess.run):
+    state = load_state()
+    for change in reversed(state["changed"]):
+        target, before, after = change["target"], change["before"], change["after"]
+        if change["kind"] == "wifi":
+            if set_wifi(target, before, run):
+                print(f"charger: {target} power save back {before}")
+            continue
+        # something else set it since: not ours to put back
+        if read_abs(target) != after:
+            print(f"charger: {target} changed by something else, left alone")
+            continue
+        if write(target, before):
+            print(f"charger: {target} {after} -> {before}")
+    save_state({"changed": []})
+
+
+def apply(run=subprocess.run):
+    switched_off = os.path.exists(path(OFF_FILE))
+    if not is_laptop() or switched_off or not on_battery():
+        go_charger(run)
+        return "charger"
+    go_battery(run)
+    return "battery"
+
+
+def status(run=subprocess.run):
+    print("laptop:", "yes" if is_laptop() else "no")
+    print("power: ", "battery" if on_battery() else "charger or no battery")
+    print("off switch:", "present" if os.path.exists(path(OFF_FILE)) else "absent")
+    for change in wanted_changes(run):
+        print("would set:", change[1], change[2], "->", change[3])
+    for change in load_state()["changed"]:
+        print("set:", change["target"], change["before"], "->", change["after"])
+
+
+def main(argv):
+    command = argv[1] if len(argv) > 1 else "status"
+    if command == "apply":
+        apply()
+    elif command == "status":
+        status()
+    else:
+        print("usage: raye-power-tune apply|status", file=sys.stderr)
+        return 2
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

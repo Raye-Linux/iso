@@ -52,7 +52,10 @@ class Machine:
             self.put("sys/class/power_supply/BAT0/status", "Discharging" if on_battery else "Charging")
             self.put("sys/class/power_supply/AC/type", "Mains")
             self.put("sys/class/power_supply/AC/online", "0" if on_battery else "1")
-        self.pci("0000:00:14.0", "0x020000")  # the network card
+        self.pci("0000:00:14.0", "0x020000")  # the network card (Wi-Fi or Ethernet)
+        self.pci("0000:01:00.0", "0x010802")  # the NVMe disk
+        self.pci("0000:00:1c.0", "0x060400")  # a PCIe port
+        self.pci("0000:00:16.0", "0x078000")  # the management engine
         self.pci("0000:00:02.0", "0x030000")  # graphics
         self.pci("0000:00:1f.3", "0x040300")  # audio
         self.pci("0000:00:14.1", "0x0c0330")  # a USB controller
@@ -106,13 +109,16 @@ class PowerTune(unittest.TestCase):
     def test_battery_rests_what_can_rest_and_only_that(self):
         m = Machine()
         self.assertEqual(m.apply(), "battery")
-        self.assertEqual(m.get("sys/bus/pci/devices/0000:00:14.0/power/control"), "auto")
+        self.assertEqual(m.get("sys/bus/pci/devices/0000:01:00.0/power/control"), "auto")
         self.assertEqual(m.get("sys/bus/usb/devices/1-5/power/control"), "auto")
         self.assertEqual(m.get("sys/class/scsi_host/host0/link_power_management_policy"), "med_power_with_dipm")
         self.assertEqual(m.wifi, "on")
-        # never: graphics, audio, USB controllers, soldered keyboards,
-        # Bluetooth, and whatever is plugged in
+        # never: graphics, audio, USB controllers, network cards (some Wi-Fi
+        # and Ethernet chips stop seeing the network once asleep), PCIe
+        # ports, the management engine, soldered keyboards, Bluetooth, and
+        # whatever is plugged in
         for kept in ("pci/devices/0000:00:02.0", "pci/devices/0000:00:1f.3", "pci/devices/0000:00:14.1",
+                     "pci/devices/0000:00:14.0", "pci/devices/0000:00:1c.0", "pci/devices/0000:00:16.0",
                      "usb/devices/1-6", "usb/devices/1-7", "usb/devices/1-8"):
             self.assertEqual(m.get(f"sys/bus/{kept}/power/control"), "on", kept)
 
@@ -121,7 +127,7 @@ class PowerTune(unittest.TestCase):
         m.apply()
         m.plug(True)
         self.assertEqual(m.apply(), "charger")
-        self.assertEqual(m.get("sys/bus/pci/devices/0000:00:14.0/power/control"), "on")
+        self.assertEqual(m.get("sys/bus/pci/devices/0000:01:00.0/power/control"), "on")
         self.assertEqual(m.get("sys/bus/usb/devices/1-5/power/control"), "on")
         self.assertEqual(m.get("sys/class/scsi_host/host0/link_power_management_policy"), "max_performance")
         self.assertEqual(m.wifi, "off")
@@ -133,7 +139,7 @@ class PowerTune(unittest.TestCase):
     def test_a_setting_changed_by_someone_else_is_left_alone(self):
         m = Machine()
         m.apply()
-        m.put("sys/bus/pci/devices/0000:00:14.0/power/control", "on")  # the owner turned it back on
+        m.put("sys/bus/pci/devices/0000:01:00.0/power/control", "on")  # the owner turned it back on
         m.put("sys/class/scsi_host/host0/link_power_management_policy", "min_power")
         m.plug(True)
         m.apply()
@@ -147,6 +153,23 @@ class PowerTune(unittest.TestCase):
         m.apply()
         self.assertEqual(m.wifi, "on")
         self.assertEqual([c for c in m.iw_calls if c[3] == "set"], [])
+
+    def test_wifi_power_saving_turned_off_on_purpose_stays_off(self):
+        # someone who told the network manager to keep Wi-Fi awake (it
+        # drops on their card otherwise) keeps it awake on battery too
+        for folder in ("etc/NetworkManager/conf.d", "usr/lib/NetworkManager/conf.d"):
+            m = Machine()
+            m.put(f"{folder}/wifi-powersave-off.conf", "[connection]\nwifi.powersave = 2")
+            self.assertEqual(m.apply(), "battery")
+            self.assertEqual(m.wifi, "off", folder)
+            self.assertEqual([c for c in m.iw_calls if c[3] == "set"], [], folder)
+
+    def test_the_last_network_manager_file_says_it(self):
+        m = Machine()
+        m.put("usr/lib/NetworkManager/conf.d/10-off.conf", "[connection]\nwifi.powersave=2")
+        m.put("etc/NetworkManager/conf.d/90-on.conf", "[connection]\nwifi.powersave=3")
+        m.apply()
+        self.assertEqual(m.wifi, "on")
 
     def test_a_desktop_is_never_touched(self):
         m = Machine(chassis="3")

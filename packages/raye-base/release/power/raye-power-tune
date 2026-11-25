@@ -15,8 +15,10 @@ what it wrote, and what each setting was, in /run/raye-power-tune/state.json,
 and leaves a setting alone that something else has changed since.
 
 What it never touches: graphics cards, audio (clicks and pops), USB
-controllers, keyboards and mice, storage and printers on USB, Bluetooth,
-anything that can be unplugged, and every PC that is not a laptop.
+controllers, network cards, PCIe ports, keyboards and mice, storage and
+printers on USB, Bluetooth, anything that can be unplugged, Wi-Fi power
+saving that NetworkManager is told to keep off, and every PC that is not a
+laptop.
 /etc/raye/power-tune.off (an empty file) turns all of it off.
 """
 import json
@@ -31,8 +33,13 @@ OFF_FILE = "etc/raye/power-tune.off"
 # SMBIOS chassis types: portable, laptop, notebook, sub notebook, tablet,
 # convertible, detachable (the same list as the laptop wake rule)
 LAPTOP_CHASSIS = {8, 9, 10, 14, 30, 31, 32}
-# PCI classes left alone: display controllers, audio, USB controllers
-PCI_KEEP_PREFIX = ("0x03", "0x0403", "0x0c03")
+# PCI classes left alone: display controllers, audio, USB controllers,
+# network cards (some Wi-Fi and Ethernet chips stop seeing the network or
+# the cable once asleep), PCI bridges and PCIe ports (a sleeping port takes
+# what is behind it along), and the management engine
+PCI_KEEP_PREFIX = ("0x02", "0x03", "0x0403", "0x0604", "0x0780", "0x0c03")
+# where NetworkManager reads its settings, the last file read winning
+NM_CONF_DIRS = ("usr/lib/NetworkManager/conf.d", "etc/NetworkManager/conf.d")
 # USB interface classes of devices left awake: audio, communications
 # (modems, network adapters), HID, printer, mass storage, hub is fine,
 # smart card is fine, vendor specific (fingerprint readers and the like)
@@ -114,6 +121,30 @@ def usb_interface_classes(device):
     return classes
 
 
+def wifi_kept_awake():
+    """True when NetworkManager is told to keep Wi-Fi power saving off
+    (wifi.powersave = 2): someone did it on purpose, often because their
+    card drops otherwise."""
+    value = None
+    files = []
+    for folder in NM_CONF_DIRS:
+        try:
+            files += [(name, os.path.join(path(folder), name)) for name in os.listdir(path(folder))]
+        except OSError:
+            pass
+    # files of /etc replace those of /usr/lib with the same name; then by name
+    chosen = {}
+    for name, target in files:
+        if name.endswith(".conf"):
+            chosen[name] = target
+    for name in sorted(chosen):
+        for line in (read_abs(chosen[name]) or "").splitlines():
+            key, _, rest = line.partition("=")
+            if key.strip() == "wifi.powersave":
+                value = rest.strip()
+    return value == "2"
+
+
 def wanted_changes(run=subprocess.run):
     """[(key, setting file or command, current, wanted)], what battery mode sets."""
     changes = []
@@ -148,7 +179,7 @@ def wanted_changes(run=subprocess.run):
         changes.append(("file", control, "on", "auto"))
 
     net = path("sys/class/net")
-    for name in sorted(os.listdir(net)) if os.path.isdir(net) else []:
+    for name in sorted(os.listdir(net)) if os.path.isdir(net) and not wifi_kept_awake() else []:
         if not os.path.isdir(os.path.join(net, name, "wireless")):
             continue
         shown = run(["iw", "dev", name, "get", "power_save"], capture_output=True, text=True).stdout \

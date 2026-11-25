@@ -60,14 +60,16 @@ class TheTree(unittest.TestCase):
         drift = rn.run(ISO, stream=out)
         self.assertEqual(drift, [], out.getvalue())
 
-    def test_the_release_is_beta_sundog(self):
-        """The owner named Beta 2 "1.0 Beta Sundog" (2026-11-20): the name
-        takes the place of the beta's number, as "1.0 Beta Brocken" did."""
+    def test_the_release_is_raye_linux_1_0(self):
+        """The stable V1 is "Raye Linux 1.0", without a name: none was
+        decided (retours-proprietaire), and a stable release has no beta
+        number for a name to replace."""
         version, name, full = rn.release()
-        self.assertEqual(version, "1.0 Beta 2")
-        self.assertEqual(name, "Sundog")
-        self.assertEqual(full, "1.0 Beta Sundog")
-        self.assertNotIn("Brocken", full)
+        self.assertEqual(version, "1.0")
+        self.assertEqual(name, "")
+        self.assertEqual(full, "1.0")
+        self.assertNotIn("Beta", full)
+        self.assertNotIn("Sundog", (ISO / rn.RELEASE_DIR / "os-release").read_text())
 
     def test_no_name_is_left_to_give(self):
         self.assertNotIn("TODO-NAME", (ISO / "release-names").read_text())
@@ -86,6 +88,9 @@ class TheTool(unittest.TestCase):
         self.tmp = pathlib.Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tmp)
         self.iso = copy_tree(self.tmp)
+        # the mechanics are checked on a beta, where a name replaces a number
+        (self.iso / "VERSION").write_text("1.0 Beta 2\n")
+        rn.run(self.iso, write=True, stream=io.StringIO())
 
     def name(self, line):
         names = self.iso / "release-names"

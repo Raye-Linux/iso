@@ -13,7 +13,7 @@ BaseURI-amd64: http://archive.ubuntu.com/ubuntu/
 MatchURI-amd64: archive.ubuntu.com/ubuntu
 MirrorsFile: raye.mirrors
 MirrorsFile-amd64: raye.mirrors
-Description: Raye Linux 1.0 Beta Sundog
+Description: Raye Linux 1.0
 Component: main
 CompDescription: Supported software
 CompDescriptionLong: Free and open-source software, kept up to date
@@ -91,7 +91,7 @@ Suite: resolute
 RepositoryType: deb
 BaseURI: mirror+file:/etc/apt/mirrors/raye.list
 MatchURI: dl\.rayelinux\.com/apt|raye-linux\.github\.io/packages|mirror\+file:/etc/apt/mirrors/raye\.list
-Description: Raye Linux 1.0 Beta Sundog
+Description: Raye Linux 1.0
 Component: main
 CompDescription: Made for Raye Linux
 CompDescriptionLong: The programs, settings and look that make Raye Linux

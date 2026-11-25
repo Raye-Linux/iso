@@ -933,6 +933,19 @@ check 'called "grub-set-default gnulinux-advanced-$uuid>gnulinux-$old-advanced-$
 check 'called "grub-reboot gnulinux-advanced-$uuid>gnulinux-$raye-advanced-$uuid"' "one trial boot of the new one"
 teardown
 
+setup "finish: Ubuntu's own extra kernel modules go with it"
+# measured in VM 130 (Beta 2 install): apt also removes
+# linux-main-modules-zfs-7.0.0-44-generic and the v4l2loopback one. They
+# are pieces of Ubuntu's kernel, not something else: the purge goes on.
+kernel_installed; raye_is_a_package; ubuntu_installed
+echo "$raye" > "$CTL/uname"
+mkdir -p "$R/var/lib/raye-kernel"; : > "$(state trial)"
+echo linux-main-modules-zfs-$ubuntu > "$CTL/sim-extra"
+run finish
+check 'grep -q "^apt-get purge -y -q " "$CALLS"' "Ubuntu's kernel purged"
+check '! called "raye-tpm bind-next --kernel ubuntu"' "no binding kept for a kernel that is gone"
+teardown
+
 setup "finish: Ubuntu's kernel stays when removing it would take more"
 kernel_installed; raye_is_a_package; ubuntu_installed
 echo "$raye" > "$CTL/uname"

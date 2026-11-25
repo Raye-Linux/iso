@@ -384,8 +384,10 @@ retire_ubuntu() {
     # only these: a purge that would take anything else along (NVIDIA's
     # driver, when nothing else stands in for Ubuntu's modules) is not done
     # shellcheck disable=SC2086  # one package per word
+    # (pieces of Ubuntu's kernel itself, like linux-main-modules-zfs-*-generic,
+    # are not "anything else")
     more=$(apt-get -s purge $pkgs 2>&3 | awk '/^(Purg|Remv) / { print $2 }' |
-        grep -vxF "$(printf '%s\n' $pkgs)")
+        grep -vxF "$(printf '%s\n' $pkgs)" | grep -v '^linux-.*generic')
     if [ -n "$more" ]; then
         note "removing Ubuntu's kernel would also remove: $(echo $more)"
         warn "Ubuntu's kernel stays: removing it would take other packages along"

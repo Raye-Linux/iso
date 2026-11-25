@@ -255,6 +255,8 @@ raye-gaming  release/proton/compatibilitytool.vdf              usr/share/steam/c
 raye-gaming  release/proton/toolmanifest.vdf                   usr/share/steam/compatibilitytools.d/raye-proton/toolmanifest.vdf
 raye-gaming  release/proton/raye-proton-setup                  usr/libexec/raye-proton-setup
 raye-gaming  release/proton/raye-proton-setup.service          usr/lib/systemd/user/raye-proton-setup.service
+raye-gaming  release/proton/raye-proton-bench                  usr/bin/raye-proton-bench
+raye-gaming  release/proton/tools.tsv                          usr/share/raye/proton-bench/tools.tsv
 
 # ---------------------------------------------------------------- desktop
 # System notices in Raye words (GP-26). raye-restart-notice is the helper

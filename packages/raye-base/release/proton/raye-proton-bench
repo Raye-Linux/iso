@@ -1,0 +1,344 @@
+#!/usr/bin/python3
+"""raye-proton-bench: runs the same Windows programs or games with several
+Steam compatibility tools (Raye Proton, GE-Proton, Proton-CachyOS...) on
+the same computer, and writes down what it measured, nothing more.
+
+  raye-proton-bench fetch DIR
+      downloads the other tools listed in tools.tsv into DIR, each checked
+      against the SHA-512 written there (the sum its authors publish)
+  raye-proton-bench run --tool NAME=DIR ... --program NAME=FILE.exe ... --out DIR
+      [--runs N] [--timeout S] [--expect C:\\path] [--mangohud S]
+      [--runtime ENTRY-POINT] [--dry-run]
+
+Each tool gets its own fresh game folder (STEAM_COMPAT_DATA_PATH) per
+program: run 1 includes making the Windows space, the others reuse it.
+For every run it records whether the program started and finished well
+(exit code 0, and the file given with --expect exists in the space), the
+wall time, and the CPU time of everything the run started (wineserver
+included: the run is put in its own control group when systemd allows it).
+With --mangohud S, MangoHud logs S seconds of frames and the run is ended
+afterwards: average FPS, 1 % low and stutters come from that log.
+--runtime runs every tool through the same Steam Linux Runtime entry
+point Steam would use (for example .../SteamLinuxRuntime_sniper/
+_v2-entry-point), so that no tool is measured outside the place it was
+built for.
+
+The summary gives medians, the spread and the number of runs: it never
+says which tool is better.
+"""
+import argparse
+import hashlib
+import json
+import os
+import shutil
+import signal
+import statistics
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.request
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+TOOLS_TSV = Path(os.environ.get("RAYE_PROTON_BENCH_TOOLS",
+                                "/usr/share/raye/proton-bench/tools.tsv"))
+if not TOOLS_TSV.exists() and (HERE / "tools.tsv").exists():
+    TOOLS_TSV = HERE / "tools.tsv"
+
+
+# ---- MangoHud log -------------------------------------------------------
+def read_mangohud(path):
+    """Frame times (ms) of a MangoHud CSV log: a system block, then a
+    header line that starts with fps,frametime and one row per frame."""
+    times, col = [], None
+    for line in Path(path).read_text(errors="replace").splitlines():
+        cells = [c.strip() for c in line.split(",")]
+        if col is None:
+            if "frametime" in cells and "fps" in cells:
+                col = cells.index("frametime")
+            continue
+        try:
+            t = float(cells[col])
+        except (IndexError, ValueError):
+            continue
+        if t > 0:
+            times.append(t)
+    return times
+
+
+def frame_stats(times):
+    """avg FPS = frames / time; 1 % low = FPS of the 99th percentile frame
+    time; a stutter = a frame that took more than twice the median."""
+    if not times:
+        return None
+    srt = sorted(times)
+    p99 = srt[min(len(srt) - 1, int(len(srt) * 0.99))]
+    med = statistics.median(srt)
+    return {
+        "frames": len(times),
+        "avg_fps": round(1000.0 * len(times) / sum(times), 2),
+        "low1_fps": round(1000.0 / p99, 2),
+        "stutters": sum(1 for t in times if t > 2 * med),
+        "max_frametime_ms": round(srt[-1], 2),
+    }
+
+
+# ---- fetching the other tools ---------------------------------------------
+def read_tools(path=TOOLS_TSV):
+    out = []
+    for line in Path(path).read_text().splitlines():
+        if not line.strip() or line.startswith("#"):
+            continue
+        name, url, want = line.split("\t")[:3]
+        out.append((name, url, want.lower()))
+    return out
+
+
+def sha512_of(file):
+    h = hashlib.sha512()
+    with open(file, "rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
+def fetch(dest):
+    dest = Path(dest)
+    dest.mkdir(parents=True, exist_ok=True)
+    for name, url, want in read_tools():
+        archive = dest / url.rsplit("/", 1)[-1]
+        if not archive.exists() or sha512_of(archive) != want:
+            print(f"downloading {name}: {url}", file=sys.stderr)
+            urllib.request.urlretrieve(url, archive)
+        if sha512_of(archive) != want:
+            archive.unlink()
+            sys.exit(f"{name}: SHA-512 is not the one in {TOOLS_TSV}")
+        tooldir = dest / name
+        if not (tooldir / "proton").exists():
+            tmp = Path(tempfile.mkdtemp(dir=dest))
+            subprocess.run(["tar", "-xf", str(archive), "-C", str(tmp)], check=True)
+            inner = next(p.parent for p in tmp.glob("*/proton"))
+            shutil.rmtree(tooldir, ignore_errors=True)
+            inner.rename(tooldir)
+            shutil.rmtree(tmp)
+        print(f"{name}={tooldir}")
+
+
+# ---- one run ------------------------------------------------------------------
+CPU_WRAP = r'''"$@"; rc=$?
+cg=$(sed -n 's/^0:://p' /proc/self/cgroup)
+sed -n 's/^usage_usec //p' "/sys/fs/cgroup$cg/cpu.stat" > "$RAYE_BENCH_CPU" 2>/dev/null
+exit $rc'''
+
+
+def scope_ok():
+    if os.environ.get("RAYE_BENCH_NO_SCOPE"):
+        return False
+    return subprocess.run(["systemd-run", "--user", "--scope", "--quiet", "true"],
+                          capture_output=True).returncode == 0
+
+
+def command(tool_dir, program, args, runtime):
+    cmd = [str(Path(tool_dir) / "proton"), "waitforexitandrun", str(program), *args]
+    if runtime:
+        cmd = [runtime, "--verb=waitforexitandrun", "--", *cmd]
+    return cmd
+
+
+def environment(data, client, mangohud, logdir):
+    env = dict(os.environ)
+    env.update({
+        "STEAM_COMPAT_DATA_PATH": str(data),
+        "STEAM_COMPAT_CLIENT_INSTALL_PATH": str(client),
+        "SteamAppId": env.get("SteamAppId", "0"),
+        "SteamGameId": env.get("SteamGameId", "0"),
+    })
+    if mangohud:
+        env["MANGOHUD"] = "1"
+        env["MANGOHUD_CONFIG"] = (f"autostart_log=1,log_duration={mangohud},"
+                                  f"output_folder={logdir},no_display")
+    return env
+
+
+def run_once(tool, tool_dir, prog, path, args, run, out, opts, scope):
+    data = out / "work" / tool / prog
+    data.mkdir(parents=True, exist_ok=True)
+    client = out / "work" / "steam-client"
+    client.mkdir(parents=True, exist_ok=True)
+    logdir = out / "mangohud" / tool / prog / str(run)
+    logdir.mkdir(parents=True, exist_ok=True)
+    cpu_file = logdir / "cpu_usec"
+    cmd = command(tool_dir, path, args, opts.runtime)
+    env = environment(data, client, opts.mangohud, logdir)
+    env["RAYE_BENCH_CPU"] = str(cpu_file)
+    if scope:
+        cmd = ["systemd-run", "--user", "--scope", "--quiet", "--collect",
+               "sh", "-c", CPU_WRAP, "sh", *cmd]
+    limit = opts.mangohud + 30 if opts.mangohud else opts.timeout
+    start = time.monotonic()
+    proc = subprocess.Popen(cmd, env=env, stdout=subprocess.DEVNULL,
+                            stderr=open(logdir / "stderr", "w"), start_new_session=True)
+    ended_by_us = False
+    try:
+        rc = proc.wait(timeout=limit)
+    except subprocess.TimeoutExpired:
+        ended_by_us = True
+        os.killpg(proc.pid, signal.SIGTERM)
+        try:
+            rc = proc.wait(timeout=15)
+        except subprocess.TimeoutExpired:
+            os.killpg(proc.pid, signal.SIGKILL)
+            rc = proc.wait()
+    wall = time.monotonic() - start
+    cpu = None
+    try:
+        cpu = round(int(cpu_file.read_text().strip()) / 1e6, 3)
+    except (OSError, ValueError):
+        pass
+    expect_ok = True
+    if opts.expect:
+        rel = opts.expect.replace("\\", "/")
+        if rel[1:3] == ":/":
+            rel = f"drive_{rel[0].lower()}/{rel[3:]}"
+        expect_ok = (data / "pfx" / rel).exists()
+    frames = None
+    if opts.mangohud:
+        logs = sorted(logdir.glob("*.csv"))
+        frames = frame_stats(read_mangohud(logs[-1])) if logs else None
+    if opts.mangohud:
+        ok = frames is not None
+    else:
+        ok = rc == 0 and expect_ok and not ended_by_us
+    return {"tool": tool, "program": prog, "run": run, "first": run == 1, "ok": ok,
+            "rc": rc, "timed_out": ended_by_us and not opts.mangohud,
+            "wall_s": round(wall, 3), "cpu_s": cpu, "frames": frames}
+
+
+# ---- summary --------------------------------------------------------------------
+def summary(results):
+    rows = ["| tool | program | runs | launched | first start (s) | wall median (s) [min-max] "
+            "| CPU median (s) | avg FPS | 1 % low | stutters |",
+            "|---|---|---|---|---|---|---|---|---|---|"]
+    keys = []
+    for r in results:
+        if (r["tool"], r["program"]) not in keys:
+            keys.append((r["tool"], r["program"]))
+    for tool, prog in keys:
+        rs = [r for r in results if r["tool"] == tool and r["program"] == prog]
+        ok = [r for r in rs if r["ok"]]
+        first = [r["wall_s"] for r in rs if r["first"] and r["ok"]]
+        warm = [r["wall_s"] for r in ok if not r["first"]] or [r["wall_s"] for r in ok]
+        cpu = [r["cpu_s"] for r in ok if r["cpu_s"] is not None and not r["first"]]
+        fr = [r["frames"] for r in ok if r["frames"]]
+
+        def med(v, f="{:.2f}"):
+            return f.format(statistics.median(v)) if v else "-"
+        spread = f" [{min(warm):.2f}-{max(warm):.2f}]" if warm else ""
+        rows.append(f"| {tool} | {prog} | {len(rs)} | {len(ok)}/{len(rs)} | {med(first)} "
+                    f"| {med(warm)}{spread} | {med(cpu)} "
+                    f"| {med([f['avg_fps'] for f in fr])} | {med([f['low1_fps'] for f in fr])} "
+                    f"| {med([f['stutters'] for f in fr], '{:.0f}')} |")
+    return "\n".join(rows) + "\n"
+
+
+def machine():
+    def out(*c):
+        try:
+            return subprocess.run(c, capture_output=True, text=True, timeout=10).stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            return ""
+    cpu = next((l.split(":", 1)[1].strip() for l in Path("/proc/cpuinfo").read_text().splitlines()
+                if l.startswith("model name")), "")
+    gpus = [l for l in out("lspci").splitlines() if "VGA" in l or "3D controller" in l]
+    return {"kernel": os.uname().release, "cpu": cpu, "gpu": gpus,
+            "ntsync": os.access("/dev/ntsync", os.R_OK | os.W_OK),
+            "date": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
+
+
+def tool_version(d):
+    v = Path(d) / "version"
+    return v.read_text().strip() if v.exists() else ""
+
+
+def pair(text, what):
+    if "=" not in text:
+        sys.exit(f"--{what} wants NAME=PATH, not {text}")
+    name, path = text.split("=", 1)
+    return name, path
+
+
+def run(opts):
+    tools = [pair(t, "tool") for t in opts.tool]
+    progs = []
+    for p in opts.program:
+        name, rest = pair(p, "program")
+        path, *args = rest.split("::")
+        progs.append((name, path, args))
+    problems = [f"{n}: no proton in {d}" for n, d in tools
+                if not os.access(Path(d) / "proton", os.X_OK)]
+    problems += [f"{n}: {p} not found" for n, p, _ in progs if not Path(p).is_file()]
+    if opts.runtime and not os.access(opts.runtime, os.X_OK):
+        problems.append(f"runtime {opts.runtime} is not executable")
+    out = Path(opts.out)
+    if opts.dry_run:
+        print("machine:", json.dumps(machine()))
+        for n, d in tools:
+            for pn, p, a in progs:
+                print(f"{n} x {pn}: {opts.runs} runs:", " ".join(command(d, p, a, opts.runtime)))
+        for p in problems:
+            print("problem:", p)
+        return 1 if problems else 0
+    if problems:
+        sys.exit("\n".join(problems))
+    out.mkdir(parents=True, exist_ok=True)
+    meta = {"machine": machine(), "tools": {n: {"dir": d, "version": tool_version(d)}
+                                            for n, d in tools},
+            "runs": opts.runs, "expect": opts.expect, "mangohud": opts.mangohud,
+            "runtime": opts.runtime}
+    (out / "machine.json").write_text(json.dumps(meta, indent=1) + "\n")
+    scope = scope_ok()
+    results = []
+    with open(out / "results.jsonl", "a") as f:
+        # tools take turns run by run, so that a computer warming up or a
+        # cache filling up does not favour the tool measured last
+        for run_n in range(1, opts.runs + 1):
+            for pn, p, a in progs:
+                for n, d in tools:
+                    r = run_once(n, d, pn, p, a, run_n, out, opts, scope)
+                    results.append(r)
+                    f.write(json.dumps(r) + "\n")
+                    f.flush()
+                    print(json.dumps(r), file=sys.stderr)
+    text = summary(results)
+    if not scope:
+        text += "\nCPU time not measured: no per-run control group (systemd --user).\n"
+    (out / "summary.md").write_text(text)
+    print(text)
+    return 0
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(prog="raye-proton-bench")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    f = sub.add_parser("fetch")
+    f.add_argument("dest")
+    r = sub.add_parser("run")
+    r.add_argument("--tool", action="append", required=True)
+    r.add_argument("--program", action="append", required=True)
+    r.add_argument("--out", required=True)
+    r.add_argument("--runs", type=int, default=5)
+    r.add_argument("--timeout", type=int, default=300)
+    r.add_argument("--expect")
+    r.add_argument("--mangohud", type=int, default=0)
+    r.add_argument("--runtime")
+    r.add_argument("--dry-run", action="store_true")
+    opts = ap.parse_args(argv)
+    if opts.cmd == "fetch":
+        fetch(opts.dest)
+        return 0
+    return run(opts)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

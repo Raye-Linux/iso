@@ -1,3 +1,9 @@
+raye-base (1.0~rc2) resolute; urgency=medium
+
+  * The system now calls itself Raye Linux 1.0.
+
+ -- techoraye <190692880+techoraye@users.noreply.github.com>  Wed, 25 Nov 2026 19:30:00 +0000
+
 raye-base (1.0~rc1) resolute; urgency=medium
 
   * Steam from the Store can now add a game library on another drive

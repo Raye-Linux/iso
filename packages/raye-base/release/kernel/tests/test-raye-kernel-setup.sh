@@ -880,6 +880,18 @@ run switch-due
 check '[ $rc = 1 ] && out_is no' "not due while the disk asks its password"
 teardown
 
+setup "switch-due: the trial boot was set up on this start"
+# after the blue screen the kernel goes in at this start (finish): one
+# more restart and it runs. Raye Update restarts right away.
+mkdir -p "$R/var/lib/raye-kernel"
+cat "$R/proc/sys/kernel/random/boot_id" > "$(state trial)"
+run switch-due
+check '[ $rc = 2 ] && out_is restart' "restart expected right after the kernel went in"
+echo 99999999-0000-0000-0000-000000000000 > "$(state trial)"
+run switch-due
+check '[ $rc = 1 ] && out_is no' "an older trial (the restart did not take it): no loop of restarts"
+teardown
+
 setup "switch-due: already on the Raye kernel"
 # after a switch, status still says not-enrolled: switch-due must not
 echo "$raye" > "$CTL/uname"

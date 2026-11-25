@@ -29,8 +29,10 @@
 #                               yes (exit 0) when this computer has not
 #                               switched to the current Raye kernel yet
 #                               and nothing stands in the way; no (exit 1)
-#                               otherwise. Raye Update and the installer
-#                               ask it before running enroll
+#                               otherwise; restart (exit 2) when the
+#                               kernel went in on this start and its trial
+#                               boot is the next one. Raye Update and the
+#                               installer ask it before running enroll
 #
 # Once the Raye kernel has started once and is kept, Ubuntu's kernel is
 # removed (V1: Raye runs its own kernel only). Every Raye kernel build has
@@ -467,6 +469,12 @@ tpm-status)
     ;;
 switch-due)
     # read-only: any user may ask
+    t=$(cat "$trial" 2>/dev/null)
+    if [ -n "$t" ] && [ "$t" = "$(boot_id)" ]; then
+        # the kernel went in on this start: its trial boot is the next one
+        echo restart
+        exit 2
+    fi
     due=yes
     if [ -f "$pending" ] || [ -f "$trial" ] || [ -f "$failed" ] ||
         tpm_needs_password || nvidia_blocks; then

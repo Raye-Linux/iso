@@ -1,3 +1,21 @@
+raye-base (1.0~rc1) resolute; urgency=medium
+
+  * Steam from the Store can now add a game library on another drive
+    (/media, /run/media, /mnt).
+  * After an NVIDIA driver update, the matching Flatpak graphics libraries
+    are added as soon as the network is up, even when Wi-Fi only connects
+    after you sign in.
+  * Less memory shows as used at idle on PCs with a lot of RAM (about 40 MB
+    less at 16 GB, more above).
+  * USB Wi-Fi adapters that first show up as a driver CD now switch to a
+    network card by themselves.
+  * A PC the boot menu had put on a safe graphics level (low resolution, no
+    graphics acceleration) tries its full graphics driver again after each
+    new kernel. If the screen stays black, it restarts by itself on the
+    level that worked; after two tries that fail, it stops trying.
+
+ -- techoraye <190692880+techoraye@users.noreply.github.com>  Wed, 25 Nov 2026 12:00:00 +0000
+
 raye-base (1.0~beta2.1) resolute; urgency=medium
 
   * Games: Valve's own Steam .deb can take the place of steam-devices. The

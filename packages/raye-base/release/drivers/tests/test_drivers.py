@@ -288,6 +288,17 @@ def test_flatpak_service_never_holds_the_start():
     assert "SuccessExitStatus=75" in unit
 
 
+def test_flatpak_service_tries_again_when_the_network_came_late():
+    # a Wi-Fi network saved in the person's wallet only connects after
+    # sign-in, long after the minute the script waits: without a second
+    # try, Steam on an updated NVIDIA driver stayed without its graphics
+    # libraries (nothing on screen) until the next start
+    unit = (DRIVERS / "raye-flatpak-gl.service").read_text()
+    assert "RestartForceExitStatus=75" in unit
+    assert "RestartSec=5min" in unit
+    assert "StartLimitIntervalSec=0" in unit
+
+
 # -------------------------------------------------- raye-gpu-driver-changed
 
 class Apt:

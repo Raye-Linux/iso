@@ -134,3 +134,13 @@ plasma-desktop as Raye ships them: Ubuntu's source, the Raye series as
 quilt patches `debian/patches/raye-*`, and the Raye changelog entry of
 the shipped binary. `COMPARE=source=<build tree>` refuses to write one
 that does not unpack to the tree its binaries were built from.
+
+## Raye Insider channels
+
+One tree, one suite per update channel: `resolute` (Stable), `resolute-public-beta`,
+`resolute-beta`, `resolute-dev`. `publish-repo --suite <suite> --debs <dir>` writes one
+of them and carries the others over unchanged (signed indexes and every file they name),
+so publishing Stable never removes a channel. Each suite gets its full set of .debs.
+A channel suite that has never been published makes `apt update` fail on the PCs
+that chose it: publish all four suites (the same set to start with) before Settings
+offers the channels.

@@ -1,0 +1,17 @@
+[Unit]
+Description=Turn Energy saver on by itself on battery
+Documentation=https://github.com/Raye-Linux/handbook
+# a laptop: it has a battery
+ConditionPathExistsGlob=/sys/class/power_supply/BAT*
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+Type=exec
+ExecStart=/usr/libexec/raye-energy-saver
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=graphical-session.target

@@ -664,6 +664,9 @@ suite("iso/raye-base-windows", RB,
 suite("iso/raye-base-crash", RB,
       ["python3", "-I", "-B", "-m", "unittest", "discover", "-s", "release/crash/tests"],
       "release/crash/tests/test_crash_notice.py docstring", count="unittest", timeout=600)
+suite("iso/raye-base-power", RB,
+      ["python3", "-I", "-B", "-m", "unittest", "discover", "-s", "release/power/tests"],
+      "release/power/tests/test_power_tune.py docstring", count="unittest", timeout=600)
 suite("iso/raye-base-skel", RB,
       ["python3", "-m", "pytest", "-q", "-p", "no:cacheprovider", "release/skel/tests"],
       "release/skel/tests/test_first_desktop.py docstring", count="pytest", timeout=600)

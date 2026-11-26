@@ -121,6 +121,14 @@ raye-system  release/sleep/raye-sleep-guard.service  usr/lib/systemd/system/raye
 raye-system  release/sleep/no-sleep.list             usr/share/raye/sleep-guard/no-sleep.list
 raye-system  release/sleep/org.raye.sleep-guard.policy  usr/share/polkit-1/actions/org.raye.sleep-guard.policy
 
+# Longer battery life on a laptop: devices rest on battery and wake on the
+# charger (system), and Energy saver turns itself on and off (session).
+raye-system  release/power/raye-power-tune          usr/libexec/raye-power-tune
+raye-system  release/power/raye-power-tune.service  usr/lib/systemd/system/raye-power-tune.service
+raye-system  release/power/60-raye-power-source.rules  usr/lib/udev/rules.d/60-raye-power-source.rules
+raye-desktop  release/power/raye-energy-saver          usr/libexec/raye-energy-saver
+raye-desktop  release/power/raye-energy-saver.service  usr/lib/systemd/user/raye-energy-saver.service
+
 # GRUB of the installed system (IN-12). The wrapper takes the place of
 # update-grub (the stock one stays as update-grub.ubuntu); once
 # 30_raye_windows ships, the stock 30_os-prober is turned off by a

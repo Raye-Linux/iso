@@ -1,0 +1,14 @@
+[Unit]
+Description=Rest idle devices on battery, wake them on the charger
+Documentation=https://github.com/Raye-Linux/handbook
+# a laptop: it has a battery; any other PC skips this
+ConditionPathExistsGlob=/sys/class/power_supply/BAT*
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/raye-power-tune apply
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

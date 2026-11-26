@@ -1,0 +1,224 @@
+#!/usr/bin/python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Energy saver, by itself: on when the charger comes out, off when it goes in.
+
+A session service (raye-energy-saver.service). It follows the battery and
+the setting of Settings > System > Power & battery,
+~/.config/raye-settingsrc [EnergySaver]:
+
+    TurnOnAt=100        percent; 0 never, 100 whenever on battery (the default),
+                        10..50 only once the battery is down to that level
+    LowerBrightness=true   a little dimmer while it is on
+
+Energy saver is the power-saver profile of the power daemon. The service
+puts it on once for each time on battery, and puts back the mode the person
+had when the charger goes in. It never fights the person: when they turn it
+off, or pick another mode, while on battery, it says nothing more until the
+charger has been plugged in again. A person who chose Best performance is
+not moved to Energy saver by the plain "on battery" rule, only by a low
+battery.
+
+    raye-energy-saver            run until the session ends
+    raye-energy-saver --once     decide once and exit (for the tests)
+"""
+import configparser
+import os
+import select
+import subprocess
+import sys
+import time
+
+ROOT = os.environ.get("RAYE_POWER_ROOT", "/")
+SAVER = "power-saver"
+POLL_SECONDS = 60
+DIM_TO = 0.6  # of the maximum, never raised
+
+
+def sysfs(*parts):
+    return os.path.join(ROOT, "sys/class", *parts)
+
+
+def read_file(target):
+    try:
+        with open(target) as f:
+            return f.read().strip()
+    except OSError:
+        return None
+
+
+def battery():
+    """(on_battery, level or None) from the power supplies."""
+    base = sysfs("power_supply")
+    try:
+        names = sorted(os.listdir(base))
+    except OSError:
+        return False, None
+    levels, mains = [], []
+    discharging = False
+    for name in names:
+        kind = read_file(os.path.join(base, name, "type"))
+        if kind == "Battery":
+            capacity = read_file(os.path.join(base, name, "capacity"))
+            if capacity and capacity.isdigit():
+                levels.append(int(capacity))
+            discharging = discharging or read_file(os.path.join(base, name, "status")) == "Discharging"
+        elif kind == "Mains":
+            mains.append(read_file(os.path.join(base, name, "online")))
+    if not levels:
+        return False, None
+    level = min(levels)
+    if mains:
+        return all(m != "1" for m in mains), level
+    return discharging, level
+
+
+def settings(home=None):
+    """(turn_on_at, dims) from raye-settingsrc, with the defaults."""
+    config = configparser.ConfigParser(strict=False, interpolation=None)
+    config.optionxform = str
+    home = home or os.environ.get("XDG_CONFIG_HOME") or os.path.join(os.path.expanduser("~"), ".config")
+    try:
+        config.read(os.path.join(home, "raye-settingsrc"), encoding="utf-8")
+    except (configparser.Error, OSError):
+        pass
+    section = config["EnergySaver"] if config.has_section("EnergySaver") else {}
+    try:
+        at = max(0, min(100, int(section.get("TurnOnAt", 100))))
+    except ValueError:
+        at = 100
+    dims = str(section.get("LowerBrightness", "true")).strip().lower() not in ("false", "0", "no", "off")
+    return at, dims
+
+
+class Saver:
+    def __init__(self, run=subprocess.run):
+        self.run = run
+        self.owned = False       # we put it on, and it is still ours to take off
+        self.prior = "balanced"  # the mode to go back to
+        self.engaged = False     # already decided for this stay on battery
+        self.dimmed = None       # (device, before, set) while we dim
+
+    # --- the power daemon -------------------------------------------------
+    def profile(self):
+        done = self.run(["powerprofilesctl", "get"], capture_output=True, text=True)
+        return done.stdout.strip() if done.returncode == 0 else None
+
+    def set_profile(self, name):
+        return self.run(["powerprofilesctl", "set", name], capture_output=True).returncode == 0
+
+    # --- the backlight, through the session (no root needed) --------------
+    def backlight(self):
+        base = sysfs("backlight")
+        try:
+            names = sorted(os.listdir(base))
+        except OSError:
+            return None
+        for name in names:
+            current = read_file(os.path.join(base, name, "brightness"))
+            maximum = read_file(os.path.join(base, name, "max_brightness"))
+            if current and maximum and current.isdigit() and maximum.isdigit() and int(maximum) > 0:
+                return name, int(current), int(maximum)
+        return None
+
+    def set_brightness(self, name, value):
+        done = self.run(["busctl", "call", "org.freedesktop.login1", "/org/freedesktop/login1/session/auto",
+                         "org.freedesktop.login1.Session", "SetBrightness", "ssu", "backlight", name, str(value)],
+                        capture_output=True)
+        return done.returncode == 0
+
+    def dim(self):
+        found = self.backlight()
+        if not found or self.dimmed:
+            return
+        name, current, maximum = found
+        target = int(maximum * DIM_TO)
+        if current > target and self.set_brightness(name, target):
+            self.dimmed = (name, current, target)
+
+    def undim(self):
+        if not self.dimmed:
+            return
+        name, before, target = self.dimmed
+        self.dimmed = None
+        found = self.backlight()
+        # the person changed it meanwhile: not ours to put back
+        if found and found[0] == name and abs(found[1] - target) <= 1:
+            self.set_brightness(name, before)
+
+    # --- the decision -----------------------------------------------------
+    def step(self, home=None):
+        on_battery, level = battery()
+        turn_on_at, dims = settings(home)
+        current = self.profile()
+        if current is None:
+            return "no power daemon"
+
+        if not on_battery:
+            # the charger is in: take back what we did, and start over
+            if self.owned and current == SAVER:
+                self.set_profile(self.prior)
+            self.undim()
+            self.owned = False
+            self.engaged = False
+            return "charger"
+
+        # the person moved away from Energy saver while on battery: theirs now
+        if self.owned and current != SAVER:
+            self.owned = False
+            self.undim()
+
+        low = level is not None and 0 < turn_on_at < 100 and level <= turn_on_at
+        always = turn_on_at >= 100
+        if self.owned and not (always or low):
+            # the person switched the automatic rule off: give the mode back
+            if current == SAVER:
+                self.set_profile(self.prior)
+            self.owned = False
+            self.undim()
+            return "battery"
+        if (always or low) and not self.engaged and not self.owned and current != SAVER:
+            # Best performance is a choice: the plain rule respects it, a flat battery does not
+            if not (always and current == "performance"):
+                self.prior = current
+                if self.set_profile(SAVER):
+                    self.owned = True
+                    self.engaged = True
+                    if dims:
+                        self.dim()
+                    return "saver on"
+            self.engaged = True
+        elif (always or low) and current == SAVER and not self.owned:
+            self.engaged = True
+        if self.owned and not dims:
+            self.undim()
+        return "battery"
+
+
+def watch(saver):
+    """Decide again at every power event, and at least once a minute."""
+    monitor = subprocess.Popen(["udevadm", "monitor", "--udev", "--subsystem-match=power_supply"],
+                               stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+    try:
+        while True:
+            saver.step()
+            ready, _, _ = select.select([monitor.stdout], [], [], POLL_SECONDS)
+            if ready:
+                if not monitor.stdout.readline():
+                    time.sleep(POLL_SECONDS)  # the monitor ended: the minute poll goes on
+                else:
+                    time.sleep(1)  # an event comes in bursts
+    finally:
+        monitor.terminate()
+
+
+def main(argv):
+    saver = Saver()
+    if "--once" in argv:
+        print(saver.step())
+        return 0
+    watch(saver)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

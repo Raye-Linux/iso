@@ -17,7 +17,9 @@ import sys
 
 ROOT = os.environ.get("RAYE_EARLIER_ROOT", "")
 LIB = os.environ.get("RAYE_EARLIER_LIB", "/usr/share/grub/grub-mkconfig_lib")
-TITLES = {"en": "Raye Linux, earlier states", "fr": "Raye Linux, états précédents"}
+TITLES = {"en": "Raye Linux, earlier states", "fr": "Raye Linux, états précédents",
+          "es": "Raye Linux, estados anteriores", "de": "Raye Linux, frühere Zustände",
+          "pt": "Raye Linux, estados anteriores", "it": "Raye Linux, stati precedenti"}
 # the names Settings gives the points (settings recovery.cpp, its .po)
 WORDS = {
     "en": {"update": "Before installing updates", "daily": "Daily restore point",
@@ -28,6 +30,18 @@ WORDS = {
            "apt": "Avant l'installation de mises à jour ou d'applications",
            "timeline": "Point de restauration automatique",
            "boot": "Au démarrage de l'ordinateur", "": "Point de restauration"},
+    "es": {"update": "Antes de instalar actualizaciones", "daily": "Punto de restauración diario",
+           "apt": "Antes de instalar actualizaciones o aplicaciones", "timeline": "Punto de restauración automático",
+           "boot": "Cuando se inició el equipo", "": "Punto de restauración"},
+    "de": {"update": "Vor der Installation von Updates", "daily": "Täglicher Wiederherstellungspunkt",
+           "apt": "Vor der Installation von Updates oder Apps", "timeline": "Automatischer Wiederherstellungspunkt",
+           "boot": "Beim Start des Computers", "": "Wiederherstellungspunkt"},
+    "pt": {"update": "Antes de instalar atualizações", "daily": "Ponto de restauração diário",
+           "apt": "Antes de instalar atualizações ou aplicativos", "timeline": "Ponto de restauração automático",
+           "boot": "Quando o computador iniciou", "": "Ponto de restauração"},
+    "it": {"update": "Prima di installare gli aggiornamenti", "daily": "Punto di ripristino giornaliero",
+           "apt": "Prima di installare aggiornamenti o app", "timeline": "Punto di ripristino automatico",
+           "boot": "All'avvio del computer", "": "Punto di ripristino"},
 }
 MAX_POINTS = 30
 # one-time words of this boot, never carried into another

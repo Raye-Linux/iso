@@ -608,7 +608,7 @@ install_system() {
         die "grub-pc is not in the image: BIOS installs would never update GRUB"
 
     install -m644 "$here/config/casper.conf" "$root/etc/casper.conf"
-    in_root locale-gen en_US.UTF-8 fr_CA.UTF-8 fr_FR.UTF-8 >/dev/null
+    in_root locale-gen en_US.UTF-8 fr_CA.UTF-8 fr_FR.UTF-8 es_ES.UTF-8 de_DE.UTF-8 pt_BR.UTF-8 it_IT.UTF-8 >/dev/null
     printf 'LANG=en_US.UTF-8\n' > "$root/etc/default/locale"
     echo raye > "$root/etc/hostname"
 

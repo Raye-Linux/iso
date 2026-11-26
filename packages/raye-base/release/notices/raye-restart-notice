@@ -32,10 +32,46 @@ REASONS = {
         "language": "Redémarrez votre PC pour terminer le changement de langue.",
         "app": "Redémarrez votre PC pour terminer la configuration de {app}.",
     },
+    "es": {
+        "updates": "Reinicia el PC para terminar de instalar las actualizaciones.",
+        "drivers": "Reinicia el PC para terminar de configurar los controladores.",
+        "kernel": "Reinicia el PC para empezar a usar el nuevo núcleo del sistema.",
+        "firmware": "Reinicia el PC para terminar de actualizar su firmware.",
+        "language": "Reinicia el PC para terminar de cambiar el idioma.",
+        "app": "Reinicia el PC para terminar de configurar {app}.",
+    },
+    "de": {
+        "updates": "Starten Sie den PC neu, um die Installation der Updates abzuschließen.",
+        "drivers": "Starten Sie den PC neu, um die Einrichtung der Treiber abzuschließen.",
+        "kernel": "Starten Sie den PC neu, um den neuen Systemkern zu verwenden.",
+        "firmware": "Starten Sie den PC neu, um das Firmwareupdate abzuschließen.",
+        "language": "Starten Sie den PC neu, um den Sprachwechsel abzuschließen.",
+        "app": "Starten Sie den PC neu, um die Einrichtung von {app} abzuschließen.",
+    },
+    "pt": {
+        "updates": "Reinicie o PC para concluir a instalação das atualizações.",
+        "drivers": "Reinicie o PC para concluir a configuração dos drivers.",
+        "kernel": "Reinicie o PC para começar a usar o novo núcleo do sistema.",
+        "firmware": "Reinicie o PC para concluir a atualização do firmware.",
+        "language": "Reinicie o PC para concluir a mudança de idioma.",
+        "app": "Reinicie o PC para concluir a configuração de {app}.",
+    },
+    "it": {
+        "updates": "Riavvia il PC per completare l'installazione degli aggiornamenti.",
+        "drivers": "Riavvia il PC per completare la configurazione dei driver.",
+        "kernel": "Riavvia il PC per iniziare a usare il nuovo nucleo del sistema.",
+        "firmware": "Riavvia il PC per completare l'aggiornamento del firmware.",
+        "language": "Riavvia il PC per completare il cambio di lingua.",
+        "app": "Riavvia il PC per completare la configurazione di {app}.",
+    },
 }
 WORDS = {
     "en": {"app": "System", "title": "Restart required", "now": "Restart now", "later": "Later"},
     "fr": {"app": "Système", "title": "Redémarrage requis", "now": "Redémarrer maintenant", "later": "Plus tard"},
+    "es": {"app": "Sistema", "title": "Es necesario reiniciar", "now": "Reiniciar ahora", "later": "Más tarde"},
+    "de": {"app": "System", "title": "Neustart erforderlich", "now": "Jetzt neu starten", "later": "Später"},
+    "pt": {"app": "Sistema", "title": "Reinicialização necessária", "now": "Reiniciar agora", "later": "Mais tarde"},
+    "it": {"app": "Sistema", "title": "Riavvio necessario", "now": "Riavvia ora", "later": "Più tardi"},
 }
 RESTART = ["sh", "-c", "busctl --user call org.kde.Shutdown /Shutdown org.kde.Shutdown logoutAndReboot"
                        " || systemctl reboot"]
@@ -45,7 +81,8 @@ def language(env=os.environ):
     for key in ("LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"):
         value = env.get(key, "")
         if value:
-            return "fr" if value.split(":")[0].lower().startswith("fr") else "en"
+            return next((code for code in ("fr", "es", "de", "pt", "it")
+                         if value.split(":")[0].lower().startswith(code)), "en")
     return "en"
 
 

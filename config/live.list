@@ -9,6 +9,24 @@ language-pack-kde-en
 language-pack-kde-fr
 language-pack-gnome-fr
 hunspell-fr
+# Spanish, German, Brazilian Portuguese and Italian: Raye is written in
+# them, so Setup offers them, and an install has no network to fetch them
+language-pack-es
+language-pack-kde-es
+language-pack-gnome-es
+hunspell-es
+language-pack-de
+language-pack-kde-de
+language-pack-gnome-de
+hunspell-de-de
+language-pack-pt
+language-pack-kde-pt
+language-pack-gnome-pt
+hunspell-pt-br
+language-pack-it
+language-pack-kde-it
+language-pack-gnome-it
+hunspell-it
 
 # Everyday tools, asked for by name (2026-11-03/04). The sizes are what
 # each one really costs here, dependencies included, measured against the

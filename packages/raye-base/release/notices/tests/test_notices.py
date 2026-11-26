@@ -50,7 +50,9 @@ class Words(unittest.TestCase):
         self.assertEqual(rn.language({"LANG": "fr_CA.UTF-8"}), "fr")
         self.assertEqual(rn.language({"LANGUAGE": "fr:en", "LANG": "en_US.UTF-8"}), "fr")
         self.assertEqual(rn.language({"LANG": "en_CA.UTF-8"}), "en")
-        self.assertEqual(rn.language({"LANG": "de_DE.UTF-8"}), "en")
+        self.assertEqual(rn.language({"LANG": "nl_NL.UTF-8"}), "en")
+        self.assertEqual(rn.language({"LANG": "de_DE.UTF-8"}), "de")
+        self.assertEqual(rn.language({"LANG": "pt_BR.UTF-8"}), "pt")
         self.assertEqual(rn.language({}), "en")
 
 

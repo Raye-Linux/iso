@@ -136,7 +136,8 @@ class FileNames(unittest.TestCase):
     def test_language(self):
         self.assertEqual(save.language({"LANG": "fr_CA.UTF-8"}), "fr")
         self.assertEqual(save.language({"LANGUAGE": "fr:en", "LANG": "en_US.UTF-8"}), "fr")
-        self.assertEqual(save.language({"LANG": "de_DE.UTF-8"}), "en")
+        self.assertEqual(save.language({"LANG": "nl_NL.UTF-8"}), "en")
+        self.assertEqual(save.language({"LANG": "it_IT.UTF-8"}), "it")
         self.assertEqual(save.language({}), "en")
 
     def test_words(self):

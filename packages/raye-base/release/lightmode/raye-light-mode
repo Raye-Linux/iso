@@ -76,6 +76,30 @@ WORDS = {
                 "performances.",
         "open": "Options de performances",
     },
+    "es": {
+        "title": "El modo ligero está activado",
+        "body": "Este PC tiene {gb} GB de memoria, así que Raye desactivó los efectos visuales y la "
+                "indexación de archivos para que siga rápido. Puedes volver a activarlos en Opciones de rendimiento.",
+        "open": "Opciones de rendimiento",
+    },
+    "de": {
+        "title": "Der Sparmodus ist aktiviert",
+        "body": "Dieser PC hat {gb} GB Arbeitsspeicher, daher hat Raye die visuellen Effekte und die "
+                "Dateiindizierung deaktiviert, damit er schnell bleibt. Sie können sie unter Leistungsoptionen wieder aktivieren.",
+        "open": "Leistungsoptionen",
+    },
+    "pt": {
+        "title": "O modo leve está ativado",
+        "body": "Este PC tem {gb} GB de memória, então o Raye desativou os efeitos visuais e a "
+                "indexação de arquivos para mantê-lo rápido. Você pode reativá-los em Opções de desempenho.",
+        "open": "Opções de desempenho",
+    },
+    "it": {
+        "title": "La modalità leggera è attiva",
+        "body": "Questo PC ha {gb} GB di memoria, quindi Raye ha disattivato gli effetti visivi e "
+                "l'indicizzazione dei file per mantenerlo veloce. Puoi riattivarli in Opzioni prestazioni.",
+        "open": "Opzioni prestazioni",
+    },
 }
 
 
@@ -104,7 +128,8 @@ def language(env):
     for key in ("LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"):
         value = env.get(key, "")
         if value:
-            return "fr" if value.split(":")[0].lower().startswith("fr") else "en"
+            return next((code for code in ("fr", "es", "de", "pt", "it")
+                         if value.split(":")[0].lower().startswith(code)), "en")
     return "en"
 
 

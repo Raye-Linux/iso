@@ -6,8 +6,16 @@
   <action id="org.raye.encryption">
     <description>Turn disk encryption on or off</description>
     <description xml:lang="fr">Activer ou désactiver le chiffrement du disque</description>
+    <description xml:lang="es">Activar o desactivar el cifrado del disco</description>
+    <description xml:lang="de">Datenträgerverschlüsselung aktivieren oder deaktivieren</description>
+    <description xml:lang="pt_BR">Ativar ou desativar a criptografia do disco</description>
+    <description xml:lang="it">Attiva o disattiva la crittografia del disco</description>
     <message>Changing disk encryption needs your sudo password</message>
     <message xml:lang="fr">Modifier le chiffrement du disque demande votre mot de passe sudo</message>
+    <message xml:lang="es">Para cambiar el cifrado del disco se necesita tu contraseña de sudo</message>
+    <message xml:lang="de">Zum Ändern der Datenträgerverschlüsselung ist Ihr sudo-Kennwort erforderlich</message>
+    <message xml:lang="pt_BR">Alterar a criptografia do disco exige sua senha sudo</message>
+    <message xml:lang="it">Per cambiare la crittografia del disco serve la tua password sudo</message>
     <!-- asked every time: this changes the whole disk -->
     <defaults>
       <allow_any>auth_admin</allow_any>

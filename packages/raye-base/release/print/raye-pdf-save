@@ -28,6 +28,14 @@ WORDS = {
         "saved": "Enregistré dans Documents",
         "untitled": "Document",
     },
+    "es": {"printer": "Imprimir en PDF", "dialog": "Guardar como PDF", "filter": "Documentos PDF",
+           "saved": "Guardado en Documentos", "untitled": "Documento"},
+    "de": {"printer": "Als PDF drucken", "dialog": "Als PDF speichern", "filter": "PDF-Dokumente",
+           "saved": "In „Dokumente“ gespeichert", "untitled": "Dokument"},
+    "pt": {"printer": "Imprimir em PDF", "dialog": "Salvar como PDF", "filter": "Documentos PDF",
+           "saved": "Salvo em Documentos", "untitled": "Documento"},
+    "it": {"printer": "Stampa in PDF", "dialog": "Salva come PDF", "filter": "Documenti PDF",
+           "saved": "Salvato in Documenti", "untitled": "Documento"},
 }
 # extensions programs leave in the title of what they print
 DOC_EXT = re.compile(r"\.(txt|text|log|rtf|docx?|odt|xlsx?|ods|pptx?|odp|html?|xml|csv|md|png|jpe?g|gif|bmp|tiff?|pdf)$", re.I)
@@ -38,7 +46,7 @@ def language(env):
     for key in ("LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"):
         value = env.get(key, "")
         if value:
-            return "fr" if value.startswith("fr") else "en"
+            return next((code for code in ("fr", "es", "de", "pt", "it") if value.startswith(code)), "en")
     return "en"
 
 

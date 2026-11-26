@@ -9,6 +9,7 @@ ConditionPathIsReadWrite=/proc/sys/vm/min_free_kbytes
 
 [Service]
 Type=oneshot
+RemainAfterExit=yes
 ExecStart=/usr/libexec/raye-min-free
 
 [Install]

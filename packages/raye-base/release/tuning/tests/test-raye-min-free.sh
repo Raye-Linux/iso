@@ -80,5 +80,16 @@ run "a commented line is no choice" 16099 67584
 printf 'garbage\n' > "$work/zoneinfo"
 run "an unreadable zoneinfo changes nothing" 67584 67584
 
+# measured in VM 130: a oneshot without RemainAfterExit goes back to
+# inactive, every transaction that pulls sysinit.target starts it again,
+# and after a few starts in a row systemd gives up on it ("start-limit-hit"):
+# a failed unit for nothing. It stays active once it ran.
+if grep -qx 'RemainAfterExit=yes' "$here/../raye-min-free.service"; then
+    echo "ok - the unit stays active once it ran"
+else
+    echo "not ok - the unit stays active once it ran"
+    failures=$((failures + 1))
+fi
+
 [ "$failures" = 0 ] || { echo "$failures failed"; exit 1; }
 echo "all good"

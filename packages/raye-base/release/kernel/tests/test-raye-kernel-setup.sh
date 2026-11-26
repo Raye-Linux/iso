@@ -61,6 +61,11 @@ STUB
 #!/bin/sh
 echo "apt-get $*" >> "$CALLS"
 for a in "$@"; do
+    if [ "$a" = -s ]; then
+        for b in "$@"; do case $b in -*|purge|install) ;; *) echo "Purg $b [1]" ;; esac; done
+        [ -e "$CTL/sim-extra" ] && echo "Remv $(cat "$CTL/sim-extra") [1]"
+        exit 0
+    fi
     if [ "$a" = --print-uris ]; then
         [ -e "$CTL/need-download" ] && echo "'http://archive.example/linux-image-raye.deb' linux-image-raye.deb 1000 SHA256:00"
         exit 0
@@ -74,7 +79,14 @@ STUB
     cat > "$bin/apt-cache" <<'STUB'
 #!/bin/sh
 echo "apt-cache $*" >> "$CALLS"
-[ -e "$CTL/archive" ] && { echo "Package: linux-image-raye"; exit 0; }
+# the archive has the kernel ("archive"), and the NVIDIA modules of a
+# branch when "archive-<package>" is there
+pkg=
+for a in "$@"; do pkg=$a; done
+case $pkg in
+linux-modules-nvidia-*-raye) [ -e "$CTL/archive-$pkg" ] && { echo "Package: $pkg"; exit 0; } ;;
+*) [ -e "$CTL/archive" ] && { echo "Package: $pkg"; exit 0; } ;;
+esac
 echo "E: No packages found" >&2
 exit 100
 STUB
@@ -105,6 +117,13 @@ STUB
 #!/bin/sh
 echo "nm-online $*" >> "$CALLS"
 [ -e "$CTL/online" ]
+STUB
+    # installed packages: lines "ii  name" in $CTL/dpkg-installed
+    cat > "$bin/dpkg-query" <<'STUB'
+#!/bin/sh
+echo "dpkg-query $*" >> "$CALLS"
+[ -e "$CTL/dpkg-installed" ] && cat "$CTL/dpkg-installed"
+exit 0
 STUB
     chmod 755 "$bin"/*
 }
@@ -516,7 +535,7 @@ kernel_installed
 mkdir -p "$R/var/lib/raye-kernel"; : > "$(state pending)"
 run finish
 check 'called "nm-online -q -t 60"' "waits for the network"
-check 'called "install -y -q linux-image-raye"' "installed from the archive"
+check 'called "install -y -q linux-raye"' "installed from the archive"
 check '[ -e "$(state trial)" ]' "trial set"
 teardown
 
@@ -526,7 +545,7 @@ setup "finish: key in, download needed, offline"
 mkdir -p "$R/var/lib/raye-kernel"; : > "$(state pending)"
 run finish
 check '[ $rc = 0 ] && [ -e "$(state pending)" ] && [ ! -e "$(state trial)" ]' "tries again next boot"
-check '! called "install -y -q linux-image-raye"' "nothing installed"
+check '! called "install -y -q linux-raye"' "nothing installed"
 check 'grep -q "next boot" "$T/out"' "says so"
 teardown
 
@@ -675,6 +694,268 @@ check 'grep -A14 "id=\"org.raye.kernel.tpm-status\"" "$policy" | grep -q "exec.a
 if command -v xmllint >/dev/null 2>&1; then
     check 'xmllint --noout "$policy" 2>/dev/null' "well-formed XML"
 fi
+teardown
+
+# ======================================================= V1: Ubuntu's kernel goes
+ubuntu_installed() {
+    printf 'ii  linux-generic-hwe-26.04\nii  linux-image-%s\nii  linux-modules-%s\nii  linux-headers-generic-hwe-26.04\n' \
+        "$ubuntu" "$ubuntu" > "$CTL/dpkg-installed"
+}
+raye_is_a_package() {
+    mkdir -p "$R/var/lib/dpkg/info"; : > "$R/var/lib/dpkg/info/linux-image-$raye.list"
+}
+
+setup "finish: kept, Ubuntu's kernel removed"
+kernel_installed; raye_is_a_package; ubuntu_installed
+echo "$raye" > "$CTL/uname"
+mkdir -p "$R/var/lib/raye-kernel"; : > "$(state trial)"
+add_tpm_disk vda3 yes
+run finish
+check '[ $rc = 0 ] && out_is "Raye kernel kept"' "kept, one line"
+check 'called "apt-get purge -y -q linux-generic-hwe-26.04 linux-image-$ubuntu linux-modules-$ubuntu linux-headers-generic-hwe-26.04"' "Ubuntu's kernel packages purged"
+check '! called "raye-tpm bind-next --kernel ubuntu"' "no binding kept for a kernel that is gone"
+check 'called "grub-set-default 0"' "the newest Raye kernel is the default"
+check 'quiet_output' "quiet"
+teardown
+
+setup "finish: kept, but Ubuntu's kernel cannot be removed"
+kernel_installed; raye_is_a_package; ubuntu_installed
+echo "$raye" > "$CTL/uname"
+mkdir -p "$R/var/lib/raye-kernel"; : > "$(state trial)"
+: > "$CTL/apt-fails"
+run finish
+check '[ $rc = 0 ] && grep -q "Raye kernel kept" "$T/out"' "still kept"
+check 'called "raye-tpm bind-next --kernel ubuntu"' "Ubuntu's kernel stays the fallback, with its binding"
+teardown
+
+setup "finish: the trial failed, Ubuntu's kernel stays"
+kernel_installed; raye_is_a_package; ubuntu_installed
+mkdir -p "$R/var/lib/raye-kernel"; : > "$(state trial)"
+run finish
+check '[ -e "$(state failed)" ] && ! called "apt-get purge"' "nothing removed when the Raye kernel did not start"
+teardown
+
+setup "remove: Ubuntu's kernel was removed, it comes back first"
+echo "$raye" > "$CTL/uname"
+rm -f "$R/boot/vmlinuz-$ubuntu"; kernel_installed
+run remove
+check '[ $rc = 0 ]' "exit 0"
+check 'called "apt-get install -y -q linux-generic-hwe-26.04"' "Ubuntu's kernel installed again"
+check '[ "$(grep -n "install -y -q linux-generic" "$CALLS" | cut -d: -f1)" -lt "$(grep -n "apt-get purge" "$CALLS" | cut -d: -f1)" ]' "before the Raye kernel goes"
+teardown
+
+setup "remove: Ubuntu's kernel cannot come back, the Raye kernel stays"
+echo "$raye" > "$CTL/uname"
+rm -f "$R/boot/vmlinuz-$ubuntu"; kernel_installed
+: > "$CTL/apt-fails"
+run remove
+check '[ $rc != 0 ] && ! called "apt-get purge"' "never the last kernel removed"
+teardown
+
+setup "NVIDIA: the Raye kernel has modules for the installed driver"
+mkdir -p "$R/var/lib/dpkg/info"
+: > "$R/var/lib/dpkg/info/linux-modules-nvidia-580-open-7.0.0-44-generic.list"
+: > "$R/var/lib/dpkg/info/linux-modules-nvidia-580-open-generic-hwe-26.04.list"
+add_local_debs
+: > "$R/usr/share/raye/kernel/debs/linux-modules-nvidia-580-open-${raye}_580.178.04+raye1_amd64.deb"
+run status
+check 'out_is not-enrolled' "not blocked: the switch can go ahead"
+run enroll
+check '[ $rc = 0 ] && called "mokutil --import"' "the key is queued"
+rm -f "$CTL/sb"
+run enroll
+check 'called "linux-modules-nvidia-580-open-${raye}_580.178.04+raye1_amd64.deb"' "the Raye NVIDIA modules go in with the kernel"
+teardown
+
+setup "NVIDIA: Raye modules only for another driver"
+mkdir -p "$R/var/lib/dpkg/info"
+: > "$R/var/lib/dpkg/info/linux-modules-nvidia-570-server-7.0.0-44-generic.list"
+add_local_debs
+: > "$R/usr/share/raye/kernel/debs/linux-modules-nvidia-580-open-${raye}_580.178.04+raye1_amd64.deb"
+run status
+check 'out_is nvidia' "still blocked for 570-server"
+teardown
+
+setup "NVIDIA: only the Raye kernel's own modules are installed"
+mkdir -p "$R/var/lib/dpkg/info"
+: > "$R/var/lib/dpkg/info/linux-modules-nvidia-580-open-${raye}.list"
+run status
+check 'out_is not-enrolled' "the Raye modules are not Ubuntu's prebuilt ones"
+teardown
+
+# ================================================ EAC v2 boot line, status
+eac_cfg=$here/../62-raye-eac.cfg
+eac_line() {  # $1: Secure Boot byte or "none", $2: GRUB_CMDLINE_LINUX before
+    v=$T/sbvar
+    rm -f "$v"
+    [ "$1" = none ] || printf '\007\000\000\000\00'"$1" > "$v"
+    (GRUB_CMDLINE_LINUX=$2; RAYE_EAC_SB_VAR=$v; . "$eac_cfg"; printf '%s' "$GRUB_CMDLINE_LINUX")
+}
+setup "EAC: boot line with Secure Boot on"
+check '[ "$(eac_line 1 "")" = "lockdown=integrity sysctl.kernel.kexec_load_disabled=1 iommu.passthrough=0" ]' "the three options"
+check '[ "$(eac_line 1 "quiet")" = "quiet lockdown=integrity sysctl.kernel.kexec_load_disabled=1 iommu.passthrough=0" ]' "added after what is there"
+check '[ "$(eac_line 1 "lockdown=none")" = "lockdown=none" ]' "a lockdown chosen by hand is left alone"
+check '[ "$(eac_line 0 "quiet")" = "quiet" ]' "Secure Boot off: nothing"
+check '[ "$(eac_line none "quiet")" = "quiet" ]' "no EFI variable: nothing"
+# the real variable: SecureBoot in EFI_GLOBAL_VARIABLE (UEFI spec), the one mokutil reads
+check 'grep -q "/sys/firmware/efi/efivars/SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c" "$eac_cfg"' "the snippet reads the global SecureBoot variable"
+check 'grep -q "SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c" "$here/../raye-eac-status"' "raye-eac-status reads the same variable"
+teardown
+
+setup "EAC: raye-eac-status"
+st=$here/../raye-eac-status
+E=$T/eac
+mkdir -p "$E/sys/firmware/efi/efivars" "$E/sys/class/tpm/tpm0" "$E/sys/kernel/security/tpm0" \
+    "$E/sys/kernel/iommu_groups/0" "$E/proc/sys/kernel"
+printf '\007\000\000\000\001' > "$E/sys/firmware/efi/efivars/SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c"
+echo 2 > "$E/sys/class/tpm/tpm0/tpm_version_major"
+: > "$E/sys/kernel/security/tpm0/binary_bios_measurements"
+echo "none [integrity] confidentiality" > "$E/sys/kernel/security/lockdown"
+echo "capability,landlock,lockdown,yama,apparmor,bpf,ima,evm" > "$E/sys/kernel/security/lsm"
+echo 1 > "$E/proc/sys/kernel/kexec_load_disabled"
+echo DMA-FQ > "$E/sys/kernel/iommu_groups/0/type"
+echo "BOOT_IMAGE=/vmlinuz quiet lockdown=integrity sysctl.kernel.kexec_load_disabled=1 iommu.passthrough=0" > "$E/proc/cmdline"
+echo "$raye" > "$CTL/uname"
+RAYE_EAC_TEST_ROOT=$E "$st" > "$T/out" 2> "$T/err"; rc=$?
+check '[ $rc = 0 ] && tail -n 1 "$T/out" | grep -qx "eac-v2: ready"' "everything holds: ready"
+echo "capability,landlock,lockdown,yama,apparmor" > "$E/sys/kernel/security/lsm"
+echo identity > "$E/sys/kernel/iommu_groups/0/type"
+echo 0 > "$E/proc/sys/kernel/kexec_load_disabled"
+RAYE_EAC_TEST_ROOT=$E "$st" > "$T/out" 2> "$T/err"; rc=$?
+check '[ $rc = 1 ] && grep -q "^bpf-lsm  *no" "$T/out" && grep -q "^iommu-no-passthrough  *no" "$T/out" && grep -q "^kexec-disabled  *no" "$T/out"' "each failure named"
+check 'tail -n 1 "$T/out" | grep -qx "eac-v2: not ready"' "not ready"
+teardown
+
+setup "EAC: shipped"
+paths=$here/../../../debian/raye-release-paths
+check 'grep -qE "^raye-kernel +release/kernel/62-raye-eac.cfg +etc/default/grub.d/62-raye-eac.cfg$" "$paths"' "boot line snippet installed"
+check 'grep -qE "^raye-kernel +release/kernel/raye-eac-status +usr/bin/raye-eac-status$" "$paths"' "status tool installed"
+check 'grep -q "^ *linux-generic-hwe-26.04 | raye-kernel-image,$" "$here/../../../debian/control"' "raye-system accepts the Raye kernel in place of Ubuntu's (purging Ubuntu's must not take raye-system with it)"
+teardown
+
+# ============================================ V1: archive, due, fallback
+setup "archive: image, headers and the NVIDIA modules for the driver"
+# V1 installs the metapackages, so kernel updates come with apt like any
+# other update; NVIDIA's driver gets the Raye kernel's modules package,
+# which stands in for its DKMS package
+: > "$CTL/enrolled"; : > "$CTL/archive"
+mkdir -p "$R/var/lib/dpkg/info"
+: > "$R/var/lib/dpkg/info/linux-modules-nvidia-580-open-generic-hwe-26.04.list"
+run status
+check 'out_is nvidia' "blocked while the archive has no Raye modules for 580-open"
+: > "$CTL/archive-linux-modules-nvidia-580-open-raye"
+run status
+check 'out_is not-enrolled' "not blocked once the archive has them"
+kernel_installed
+run enroll
+check '[ $rc = 0 ] && called "install -y -q linux-raye linux-modules-nvidia-580-open-raye"' "kernel, headers and NVIDIA modules from the archive"
+teardown
+
+setup "switch-due: what Raye Update asks before switching"
+run switch-due
+check '[ $rc = 0 ] && out_is yes' "Ubuntu's kernel running, nothing set up: due"
+check '[ ! -e "$(logfile)" ]' "read-only, no log"
+echo 1000 > "$CTL/uid"
+run switch-due
+check '[ $rc = 0 ] && out_is yes' "a user may ask"
+echo 0 > "$CTL/uid"
+rm "$CTL/sb"
+run switch-due
+check '[ $rc = 0 ] && out_is yes' "no Secure Boot: due too (nothing to enroll)"
+: > "$CTL/sb"
+mkdir -p "$R/var/lib/raye-kernel"
+for f in pending trial failed; do
+    : > "$(state $f)"
+    run switch-due
+    check '[ $rc = 1 ] && out_is no' "not due while $f"
+    rm "$(state $f)"
+done
+mkdir -p "$R/var/lib/dpkg/info"
+: > "$R/var/lib/dpkg/info/linux-modules-nvidia-580-generic-hwe-26.04.list"
+run switch-due
+check '[ $rc = 1 ] && out_is no' "not due when the NVIDIA driver would be lost"
+rm "$R/var/lib/dpkg/info/linux-modules-nvidia-580-generic-hwe-26.04.list"
+mkdir -p "$R/var/lib/raye-tpm"; : > "$R/var/lib/raye-tpm/needs-password"
+run switch-due
+check '[ $rc = 1 ] && out_is no' "not due while the disk asks its password"
+teardown
+
+setup "switch-due: the trial boot was set up on this start"
+# after the blue screen the kernel goes in at this start (finish): one
+# more restart and it runs. Raye Update restarts right away.
+mkdir -p "$R/var/lib/raye-kernel"
+cat "$R/proc/sys/kernel/random/boot_id" > "$(state trial)"
+run switch-due
+check '[ $rc = 2 ] && out_is restart' "restart expected right after the kernel went in"
+echo 99999999-0000-0000-0000-000000000000 > "$(state trial)"
+run switch-due
+check '[ $rc = 1 ] && out_is no' "an older trial (the restart did not take it): no loop of restarts"
+teardown
+
+setup "switch-due: already on the Raye kernel"
+# after a switch, status still says not-enrolled: switch-due must not
+echo "$raye" > "$CTL/uname"
+: > "$CTL/enrolled"
+run switch-due
+check '[ $rc = 1 ] && out_is no' "done: Raye kernel running, key in, no archive"
+: > "$CTL/archive"
+mkdir -p "$R/var/lib/dpkg/info"; : > "$R/var/lib/dpkg/info/linux-raye.list"
+run switch-due
+check '[ $rc = 1 ] && out_is no' "done: the metapackage is installed"
+rm "$R/var/lib/dpkg/info/linux-raye.list"
+run switch-due
+check '[ $rc = 0 ] && out_is yes' "the archive has the metapackage, this PC not yet: due"
+teardown
+
+setup "switch-due: a Raye kernel signed with the earlier key"
+# a PC that switched during the beta runs a Raye kernel the earlier key
+# signed: the new one needs the new key first
+echo "$raye" > "$CTL/uname"
+: > "$CTL/archive"
+run switch-due
+check '[ $rc = 0 ] && out_is yes' "due: the new key is not in"
+teardown
+
+setup "trial: falls back to the kernel that runs"
+# from a Raye kernel of the beta, the trial falls back to that kernel,
+# not to Ubuntu's (which may be gone)
+old=7.0.0-40-raye
+: > "$CTL/enrolled"
+echo "$old" > "$CTL/uname"
+: > "$R/boot/vmlinuz-$old"
+rm "$R/boot/vmlinuz-$ubuntu"
+add_local_debs
+kernel_installed
+sed -i "s|^}$|\tmenuentry 'Raye, with Linux $old' --class ubuntu \$menuentry_id_option 'gnulinux-$old-advanced-$uuid' {\n\t}\n}|" "$R/boot/grub/grub.cfg"
+run enroll
+check '[ $rc = 0 ] && [ -e "$(state trial)" ]' "trial set"
+check 'called "grub-set-default gnulinux-advanced-$uuid>gnulinux-$old-advanced-$uuid"' "the running kernel stays the default"
+check 'called "grub-reboot gnulinux-advanced-$uuid>gnulinux-$raye-advanced-$uuid"' "one trial boot of the new one"
+teardown
+
+setup "finish: Ubuntu's own extra kernel modules go with it"
+# measured in VM 130 (Beta 2 install): apt also removes
+# linux-main-modules-zfs-7.0.0-44-generic and the v4l2loopback one. They
+# are pieces of Ubuntu's kernel, not something else: the purge goes on.
+kernel_installed; raye_is_a_package; ubuntu_installed
+echo "$raye" > "$CTL/uname"
+mkdir -p "$R/var/lib/raye-kernel"; : > "$(state trial)"
+echo linux-main-modules-zfs-$ubuntu > "$CTL/sim-extra"
+run finish
+check 'grep -q "^apt-get purge -y -q " "$CALLS"' "Ubuntu's kernel purged"
+check '! called "raye-tpm bind-next --kernel ubuntu"' "no binding kept for a kernel that is gone"
+teardown
+
+setup "finish: Ubuntu's kernel stays when removing it would take more"
+kernel_installed; raye_is_a_package; ubuntu_installed
+echo "$raye" > "$CTL/uname"
+mkdir -p "$R/var/lib/raye-kernel"; : > "$(state trial)"
+echo nvidia-driver-580-open > "$CTL/sim-extra"
+run finish
+check '[ $rc = 0 ] && grep -q "Raye kernel kept" "$T/out"' "still kept"
+check '! grep -q "^apt-get purge -y" "$CALLS"' "nothing purged when apt would also remove the NVIDIA driver"
+check 'grep -q "nvidia-driver-580-open" "$(logfile)"' "the log names what would have gone"
+check 'called "raye-tpm bind-next --kernel ubuntu"' "Ubuntu's kernel stays the fallback"
 teardown
 
 echo "$pass passed, $fail failed"

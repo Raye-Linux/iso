@@ -580,12 +580,15 @@ install_system() {
     in_root apt-get install -y -q "${pkgs[@]}"
     in_root apt-get -y -q full-upgrade
 
-    # the Raye kernel, offered in Settings: its packages travel with the
-    # image so switching to it works offline (built by the kernel repo)
+    # the Raye kernel the installed system switches to: its packages travel
+    # with the image (NVIDIA's modules for it too) so switching works
+    # offline. The live session and the installer keep Ubuntu's signed
+    # kernel, which starts with Secure Boot on without any key to enroll.
     if [ -n "${KERNEL_DEBS:-}" ]; then
         local deb
         install -d "$root/usr/share/raye/kernel/debs"
-        for deb in "$KERNEL_DEBS"/linux-image-*-raye_*.deb "$KERNEL_DEBS"/linux-headers-*-raye_*.deb; do
+        for deb in "$KERNEL_DEBS"/linux-image-*-raye_*.deb "$KERNEL_DEBS"/linux-headers-*-raye_*.deb \
+            "$KERNEL_DEBS"/linux-modules-nvidia-*-raye_*.deb; do
             case "$deb" in *-dbg_*|*\**) continue ;; esac
             install -m644 "$deb" "$root/usr/share/raye/kernel/debs/"
         done

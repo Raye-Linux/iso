@@ -599,6 +599,8 @@ suite("iso/wine-debs", "iso", ["bash", "tests/test_wine_debs.sh"],
 # build failed, and what went red was raye-update's keyring tests.
 suite("iso/signing-env", "iso", ["bash", "tests/test_signing_env.sh"],
       "tests/test_signing_env.sh header: everything", count="shell", timeout=300)
+suite("iso/raye-kernel-in-image", "iso", ["bash", "tests/test_raye_kernel_in_image.sh"],
+      "tests/test_raye_kernel_in_image.sh header: everything", count="shell", timeout=60)
 suite("iso/kernel-pin", "iso", ["bash", "tests/test_kernel_pin.sh"],
       "tests/test_kernel_pin.sh header: --root DIR also checks the image",
       fuller=["image"], plus=[("image", ["--root", "{image}"], [])],

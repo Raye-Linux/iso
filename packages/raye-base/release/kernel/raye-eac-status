@@ -1,0 +1,74 @@
+#!/bin/sh
+# What Easy Anti-Cheat Linux v2 checks, read on this boot. One line per
+# requirement, "ok" or "no", then a last line: "eac-v2: ready" or
+# "eac-v2: not ready". Exit 0 only when every line is ok.
+#
+#   raye-eac-status          (any user; a few lines need root to be
+#                             exact, they say "unknown" otherwise)
+#
+# What it cannot say: whether Epic knows the keys. The Raye keys are on
+# their way to Epic's list (kernel repository, docs/eac-v2.md).
+set -u
+R=${RAYE_EAC_TEST_ROOT:-}
+all=ok
+line() {
+    printf '%-28s %s\n' "$1" "$2"
+    [ "$2" = ok ] || all=no
+}
+
+sb=no
+if command -v mokutil >/dev/null 2>&1 && [ -z "$R" ]; then
+    mokutil --sb-state 2>/dev/null | grep -q "SecureBoot enabled" && sb=ok
+else
+    v=$(od -An -tu1 -j4 -N1 "$R"/sys/firmware/efi/efivars/SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c 2>/dev/null | tr -d ' ')
+    [ "$v" = 1 ] && sb=ok
+fi
+line "secure-boot" "$sb"
+
+tpm=no
+for d in "$R"/sys/class/tpm/tpm*; do
+    [ "$(cat "$d/tpm_version_major" 2>/dev/null)" = 2 ] && tpm=ok
+done
+line "tpm-2.0" "$tpm"
+
+# measured boot: the firmware's event log is there (GRUB and the EFI stub
+# extend PCRs 8 and 9 into it)
+mb=no
+[ -e "$R/sys/kernel/security/tpm0/binary_bios_measurements" ] && mb=ok
+line "measured-boot" "$mb"
+
+ld=$(cat "$R/sys/kernel/security/lockdown" 2>/dev/null)
+case "$ld" in *"[integrity]"*|*"[confidentiality]"*) ld=ok ;; *) ld=no ;; esac
+line "lockdown-integrity" "$ld"
+explicit=no
+grep -qw "lockdown=integrity" "$R/proc/cmdline" 2>/dev/null && explicit=ok
+line "lockdown-on-boot-line" "$explicit"
+
+kx=$(cat "$R/proc/sys/kernel/kexec_load_disabled" 2>/dev/null)
+[ "$kx" = 1 ] && kx=ok || kx=no
+line "kexec-disabled" "$kx"
+
+lsm=$(cat "$R/sys/kernel/security/lsm" 2>/dev/null)
+case ",$lsm," in *",bpf,"*) lsm=ok ;; *) lsm=no ;; esac
+line "bpf-lsm" "$lsm"
+
+# IOMMU: groups exist (it translates), and not in passthrough
+io=no
+if [ -n "$(ls "$R"/sys/kernel/iommu_groups 2>/dev/null)" ]; then
+    io=ok
+    for t in "$R"/sys/kernel/iommu_groups/*/type; do
+        [ -r "$t" ] || continue
+        case "$(cat "$t")" in identity) io=no ;; esac
+    done
+    grep -qE "(^| )iommu(\.passthrough=1|=pt)( |$)" "$R/proc/cmdline" 2>/dev/null && io=no
+fi
+line "iommu-no-passthrough" "$io"
+
+# the kernel that runs: a Raye or Ubuntu signed kernel
+k=no
+case "$(uname -r)" in *-raye|*-generic) [ "$sb" = ok ] && k=ok ;; esac
+line "signed-kernel" "$k"
+
+if [ "$all" = ok ]; then echo "eac-v2: ready"; exit 0; fi
+echo "eac-v2: not ready"
+exit 1

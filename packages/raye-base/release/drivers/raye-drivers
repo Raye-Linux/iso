@@ -28,9 +28,11 @@ hardware_file=$state/drivers-hardware
 # set by raye-system's postinst on a PC that has the NVIDIA driver and no
 # NVIDIA Control Panel (installed before the panel was asked for)
 panel_file=$state/drivers-nvidia-panel
-# NVIDIA's signed modules are built for Ubuntu's kernel: on the Raye kernel
-# the card would get none. Nothing is done there; back on Ubuntu's kernel
-# the next start does it.
+# Ubuntu's signed NVIDIA modules are built for Ubuntu's kernel and never
+# load on the Raye kernel: there the driver comes with the modules Raye
+# built and signed for it (linux-modules-nvidia-<branch>-raye, which also
+# stands in for NVIDIA's DKMS package). Until Raye has them for the driver
+# this PC needs, nothing is installed and the next start looks again.
 release=${RAYE_UNAME_R:-$(uname -r)}
 on_raye_kernel() { case $release in *-raye) return 0 ;; esac; return 1; }
 
@@ -58,7 +60,6 @@ nvidia_driver_installed() {
 }
 
 if [ "${1:-}" = --needed ]; then
-    on_raye_kernel && exit 1
     [ -e "$done_file" ] || exit 0
     [ -e "$panel_file" ] && exit 0
     # done before the cards were kept (Raye 1.0 Beta and older): keep them now
@@ -76,11 +77,6 @@ if [ -e "$panel_file" ] && [ "${1:-}" != --again ]; then
     apt-get update -q || exit 75
     DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends nvidia-settings || exit 1
     rm -f "$panel_file"
-    exit 0
-fi
-
-if on_raye_kernel; then
-    echo "raye-drivers: the Raye kernel is running, nothing done (Ubuntu's kernel next time)" >&2
     exit 0
 fi
 
@@ -104,6 +100,23 @@ recommended=$(ubuntu-drivers devices 2>/dev/null |
     sed -n 's/^driver *: \([^ ]*\) .*recommended.*/\1/p' |
     grep -E '^(nvidia-driver-[0-9]+(-open)?|bcmwl-kernel-source)$' | head -n 1)
 [ -n "$recommended" ] || finish "nothing to install"
+
+if on_raye_kernel; then
+    case $recommended in
+    nvidia-driver-*) ;;
+    *)  echo "raye-drivers: $recommended would be built on this PC (DKMS), not installing it" >&2
+        finish "skipped $recommended (DKMS)" ;;
+    esac
+    apt-get update -q || exit 75
+    modules=linux-modules-nvidia-${recommended#nvidia-driver-}-raye
+    if ! apt-cache show "$modules" >/dev/null 2>&1; then
+        # not done: the next start looks again
+        echo "raye-drivers: no Raye kernel modules for $recommended yet" >&2
+        exit 0
+    fi
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -q "$recommended" "$modules" nvidia-settings || exit 1
+    finish "installed $recommended $modules"
+fi
 
 # "nvidia-driver-580, (kernel modules provided by linux-modules-nvidia-580-generic-hwe-26.04)"
 modules=$(ubuntu-drivers list 2>/dev/null |

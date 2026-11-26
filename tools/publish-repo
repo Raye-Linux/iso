@@ -7,6 +7,8 @@
     publish-repo --debs DIR --out DIR [--no-sign]
     publish-repo --sources DIR   also publish the source packages (.dsc) in DIR
     publish-repo --check DIR     may this tree go out? (no image, no secret, signed)
+    publish-repo --suite resolute-beta --debs DIR
+                                 publish one Raye Insider channel (see below)
 
 The tree (dists/resolute, pool/main) is the same for every mirror:
 publish-r2 and publish-github only copy it. The folder it writes is also
@@ -22,6 +24,13 @@ signed by the shipped keyring. A refused tree is not published.
 
 Every folder also gets an index.html (raye_pages), written after the
 Release is signed: a visitor browses the tree, apt never reads them.
+
+One tree holds every update channel, one suite each: Stable is SUITE
+(resolute), Public Beta, Beta and Dev are SUITE-public-beta, SUITE-beta and
+SUITE-dev (Raye Update's raye-insider.sources names them). A publish writes
+one suite and carries the others over as they are -- their signed indexes
+and every file those name -- so publishing Stable never takes a channel
+away, nor a channel Stable. Each suite is given its full set of .debs.
 
 Index files are also kept under by-hash/ for two weeks, so a client that
 read an older InRelease from a cache still finds the files it names.
@@ -191,6 +200,47 @@ def plan_sources(dscs, conf):
     return out
 
 
+CHANNELS = ("", "-public-beta", "-beta", "-dev")
+
+
+def channel_suites(conf):
+    """The suites of the update channels, Stable first."""
+    base = conf["SUITE"]
+    for ending in CHANNELS[1:]:
+        if base.endswith(ending):
+            base = base[:-len(ending)]
+    return [base + ending for ending in CHANNELS]
+
+
+def with_suite(conf, suite):
+    """conf for publishing `suite`, one of channel_suites(conf)."""
+    if suite not in channel_suites(conf):
+        raise rp.PublishError(f"unknown suite {suite}: one of {', '.join(channel_suites(conf))}")
+    return dict(conf, SUITE=suite)
+
+
+def carry_other_suites(new, out, conf):
+    """Copies the other channels' suites of the old tree into the new one,
+    as they are, with the files their indexes name; returns those files."""
+    carried = set()
+    if not (out / "dists").is_dir():
+        return carried
+    for suite in channel_suites(conf):
+        if suite == conf["SUITE"] or not (out / "dists" / suite).is_dir():
+            continue
+        shutil.copytree(out / "dists" / suite, new / "dists" / suite)
+        for rel in published(out, dict(conf, SUITE=suite)).values():
+            src, dest = out / rel, new / rel
+            if not src.is_file():
+                raise rp.PublishError(f"{suite} names {rel}, which is missing")
+            if not dest.exists():
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, dest)
+                os.chmod(dest, 0o644)
+            carried.add(rel)
+    return carried
+
+
 def write_indexes(new, conf):
     suite_dir = new / "dists" / conf["SUITE"]
     for arch in conf["ARCHES"].split():
@@ -344,7 +394,8 @@ def build(debs, out, conf, signed=True, keyring=rp.KEYRING, dscs=(), report=None
         os.chmod(dest, 0o644)
     suite_dir = write_indexes(new, conf)
     add_by_hash(new, out, conf)
-    kept, pruned = keep_retired(new, out, conf, {rel for _, rel, _ in files},
+    carried = carry_other_suites(new, out, conf)
+    kept, pruned = keep_retired(new, out, conf, {rel for _, rel, _ in files} | carried,
                                 grace_budget, now)
     if report is not None:
         report.update(kept=kept, pruned=pruned)
@@ -384,7 +435,15 @@ def main(argv=None):
     ap.add_argument("--sources", action="append", default=[],
                     help="folder of source packages (.dsc and the files they name)")
     ap.add_argument("--check", metavar="DIR", help="audit a tree, change nothing")
+    ap.add_argument("--suite", help=f"the update channel to publish (default {conf['SUITE']}: "
+                    "Stable; or " + ", ".join(channel_suites(conf)[1:]) + ")")
     args = ap.parse_args(argv)
+    if args.suite:
+        try:
+            conf = with_suite(conf, args.suite)
+        except rp.PublishError as e:
+            print(f"publish-repo: {e}", file=sys.stderr)
+            return 2
     out = pathlib.Path(args.out)
     if args.check:
         problems = rp.audit_tree(args.check, conf["SUITE"])

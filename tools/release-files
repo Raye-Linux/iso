@@ -87,12 +87,23 @@ def split(iso, folder, name, part_size=None):
     return whole.hexdigest(), parts
 
 
-def write(conf, iso, out, signed=True, keyring=rp.KEYRING):
+def digest_of(iso):
+    h = hashlib.sha256()
+    with open(iso, "rb") as src:
+        for block in iter(lambda: src.read(8 << 20), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
+def write(conf, iso, out, signed=True, keyring=rp.KEYRING, cut=True):
     name = iso_name(conf)
     tmp = out.with_name(out.name + ".new")
     shutil.rmtree(tmp, ignore_errors=True)
     tmp.mkdir(parents=True)
-    digest, parts = split(iso, tmp / "parts", name)
+    if cut:
+        digest, parts = split(iso, tmp / "parts", name)
+    else:  # the releases link to the whole ISO on dl.rayelinux.com: no parts
+        digest, parts = digest_of(iso), []
     size = iso.stat().st_size
     lines = [f"{digest}  {name}"] + [f"{h}  {p}" for p, _, h in parts]
     (tmp / "SHA256SUMS").write_text("\n".join(lines) + "\n")
@@ -130,6 +141,8 @@ def main(argv=None):
     ap.add_argument("--out", default=os.path.join(conf["STAGE"], "release", conf["RELEASE"]))
     ap.add_argument("--dry-run", action="store_true", help="say what would be written")
     ap.add_argument("--no-sign", action="store_true", help="for a test only")
+    ap.add_argument("--no-parts", action="store_true",
+                    help="no parts/: the releases link to the whole ISO on dl.rayelinux.com")
     args = ap.parse_args(argv)
     iso, out = pathlib.Path(args.iso).resolve(), pathlib.Path(args.out)
     try:
@@ -139,13 +152,14 @@ def main(argv=None):
         count = -(-size // PART_SIZE)
         print(f"{iso} ({rp.human(size)})")
         print(f"  -> {out}/: SHA256SUMS{'' if args.no_sign else ', SHA256SUMS.asc'}, "
-              f"raye-archive.asc, release notes, release.json, parts/ ({count} parts)")
+              f"raye-archive.asc, release notes, release.json"
+              + ("" if args.no_parts else f", parts/ ({count} parts)"))
         print(f"  published as {iso_name(conf)}; {urls(conf)['r2']}")
         if args.dry_run:
             return 0
         if not args.no_sign and not rp.have_key(conf):
             raise rp.PublishError(f"no signing key {conf['SIGNING_KEY']} in {conf['GNUPGHOME']}")
-        info = write(conf, iso, out, signed=not args.no_sign)
+        info = write(conf, iso, out, signed=not args.no_sign, cut=not args.no_parts)
     except (rp.PublishError, OSError) as e:
         print(f"release-files: {e}", file=sys.stderr)
         return 1

@@ -126,6 +126,25 @@ class ReleaseFilesTests(unittest.TestCase):
                            env=dict(os.environ, GNUPGHOME=str(home)))
 
 
+    def test_no_parts_when_the_releases_link_to_the_whole_iso(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = pathlib.Path(tmp)
+            home, keyring, sub = make_test_key(tmp)
+            conf = dict(rp.settings(), GNUPGHOME=str(home), SIGNING_KEY=sub)
+            iso = tmp / "raye-test.iso"
+            data = os.urandom(3000)
+            iso.write_bytes(data)
+            with mock.patch.object(rf, "PART_SIZE", 1024):
+                info = rf.write(conf, iso, tmp / "out", keyring=keyring, cut=False)
+            out = tmp / "out"
+            self.assertEqual(info["parts"], [])
+            self.assertFalse((out / "parts").exists())
+            self.assertEqual(info["sha256"], hashlib.sha256(data).hexdigest())
+            self.assertEqual((out / "SHA256SUMS").read_text(), f"{info['sha256']}  {info['iso']}\n")
+            self.assertTrue(rp.verify(keyring, out / "SHA256SUMS.asc", out / "SHA256SUMS"))
+            subprocess.run(["gpgconf", "--kill", "gpg-agent"],
+                           env=dict(os.environ, GNUPGHOME=str(home)))
+
 class R2Tests(unittest.TestCase):
     def env_file(self, text, mode=0o600):
         tmp = pathlib.Path(tempfile.mkdtemp())

@@ -66,9 +66,10 @@ Français : https://dl.rayelinux.com/iso/1.0/release-notes-1.0.fr.md
 
 ## Known issues
 
-- The fixes for older AMD cards (RX 400 and 500 series) and for the flicker
-  on NVIDIA cards at 144 Hz were tested in virtual machines, not on those
-  cards. If you still see them, tell us.
+- Older AMD cards (RX 400 and 500 series) that fail to show the desktop
+  switch to a simpler display mode by themselves; we could not try this on
+  those cards yet. The flicker some NVIDIA cards show at 144 Hz is not fixed
+  yet: if your PC has it, send us its logs (Settings > System > Advanced).
 - A Steamworks game with Raye Proton was not yet tried with a real Steam
   account. If one fails, pick GE-Proton or Proton for that game in its
   Steam properties, and tell us.

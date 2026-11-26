@@ -79,10 +79,11 @@ English: https://dl.rayelinux.com/iso/1.0/release-notes-1.0.md
 
 ## Problèmes connus
 
-- Les correctifs pour les anciennes cartes AMD (séries RX 400 et 500) et
-  pour le scintillement des cartes NVIDIA à 144 Hz ont été essayés en
-  machine virtuelle, pas sur ces cartes. Si vous les voyez encore,
-  dites-le-nous.
+- Les anciennes cartes AMD (séries RX 400 et 500) qui n'affichent pas le
+  bureau passent toutes seules à un mode d'affichage plus simple ; nous
+  n'avons pas encore pu l'essayer sur ces cartes. Le scintillement de
+  certaines cartes NVIDIA à 144 Hz n'est pas encore corrigé : si votre PC
+  l'a, envoyez-nous ses journaux (Paramètres > Système > Avancé).
 - Un jeu Steamworks avec Raye Proton n'a pas encore été essayé avec un vrai
   compte Steam. Si l'un d'eux échoue, choisissez GE-Proton ou Proton pour ce
   jeu dans ses propriétés Steam, et dites-le-nous.

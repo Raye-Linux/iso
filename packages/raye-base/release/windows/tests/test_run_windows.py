@@ -559,6 +559,35 @@ class RunWindows(unittest.TestCase):
         self.assertEqual(asked[0], str(space / "drive_c/Games/Old Game/game.exe"))
         self.assertEqual((self.tmp / "tricks").read_text(), "-q openal\n")
 
+    def test_prepare_fetches_what_the_program_needs_and_does_not_start_it(self):
+        # the Store gets an installed program ready while its bar still
+        # runs, so the first start has nothing left to fetch
+        space = self.make_space("tool")
+        game = space / "drive_c/Games/Old Game/game.exe"
+        game.parent.mkdir(parents=True)
+        game.write_bytes(b"MZ")
+        env = self.needs_tool("openal")
+        calls = self.run_it("--space", "tool", "--run", r"C:\Games\Old Game\game.exe", "--prepare", **env)
+        self.assertEqual((self.tmp / "tricks").read_text(), "-q openal\n")
+        self.assertFalse([c for c in calls if "game.exe" in c[3]], calls)
+
+    def test_prepare_says_when_the_fetch_failed(self):
+        space = self.make_space("tool")
+        game = space / "drive_c/game.exe"
+        game.write_bytes(b"MZ")
+        env = self.needs_tool("openal", rc=1)
+        calls = self.run_it("--space", "tool", "--run", r"C:\game.exe", "--prepare", rc=4, **env)
+        self.assertFalse([c for c in calls if "game.exe" in c[3]], calls)
+        # a program that needs nothing is ready at once
+        env = self.needs_tool("")
+        self.run_it("--space", "tool", "--prepare", "--run", r"C:\game.exe", **env)
+
+    def test_prepare_needs_a_program(self):
+        self.make_space("tool")
+        r = subprocess.run(["sh", str(RUN), "--space", "tool", "--prepare"], env=self.env,
+                           capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 2, r.stderr)
+
     def test_a_program_that_needs_nothing_fetches_nothing(self):
         env = self.needs_tool("")
         self.run_it(**env)

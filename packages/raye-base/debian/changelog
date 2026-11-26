@@ -1,3 +1,46 @@
+raye-base (1.0~rc3) resolute; urgency=medium
+
+  * The Raye kernel and its NVIDIA modules now come from the Raye archive
+    (linux-raye), so kernel updates arrive like any other update.
+  * A switch that starts from an earlier Raye kernel falls back to it if the
+    new one does not start.
+  * Ubuntu's kernel is removed only when nothing else would go with it.
+  * On the Raye kernel, the NVIDIA driver installs with Raye's signed
+    modules, never with a module built on the computer.
+  * The switch to the Raye kernel takes the newest one, also when an older
+    Raye kernel from a beta is still on the disk.
+  * Wi-Fi cards that need a driver Raye builds itself, starting with
+    Broadcom, get it on their own at start, when plugged in, or from
+    Settings > Drivers. These drivers are signed by Raye, so anti-cheat
+    games keep working.
+  * Raye Proton appears in Steam's Compatibility menu: it runs a Windows
+    game on Raye's Windows layer with Raye's settings, for Steam from Raye
+    and from the Store.
+  * Game Mode turns on while Roblox runs through Quadra, and off when you
+    leave the game.
+  * New raye-proton-bench: runs the same Windows programs or games with Raye
+    Proton, GE-Proton and Proton-CachyOS on your own PC and writes down
+    launches, times, CPU time, FPS, 1 % lows and stutters.
+  * On a PC with 2 to 4 GB of memory, the first sign-in turns on a light
+    mode: visual effects and file indexing go off, with a notice that opens
+    Performance options to turn them back on.
+  * On a PC with 2 to 4 GB of memory, the Store's catalog refresh, app
+    updates and the first preparation of the Windows space wait until the PC
+    has settled after starting.
+  * The recovery key opens a disk encrypted from Settings with or without
+    its dashes.
+  * On battery, a laptop lets its idle disks, the internal USB devices it
+    can and other idle PCI devices rest, and puts everything back on the
+    charger. Graphics, sound, network cards, Bluetooth, keyboards and
+    anything you plug in are left alone.
+  * Energy saver follows the charger by itself, and Scan is installed with
+    the desktop in place of Skanpage.
+  * Raye Community is installed with the desktop.
+  * A Windows program can be got ready without being started, so the Store
+    can finish its install.
+
+ -- techoraye <190692880+techoraye@users.noreply.github.com>  Thu, 26 Nov 2026 03:00:00 +0000
+
 raye-base (1.0~rc2) resolute; urgency=medium
 
   * The system now calls itself Raye Linux 1.0.

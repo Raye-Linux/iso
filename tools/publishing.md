@@ -135,12 +135,64 @@ quilt patches `debian/patches/raye-*`, and the Raye changelog entry of
 the shipped binary. `COMPARE=source=<build tree>` refuses to write one
 that does not unpack to the tree its binaries were built from.
 
-## Raye Insider channels
+## Raye Insider channels and the release flow
 
-One tree, one suite per update channel: `resolute` (Stable), `resolute-public-beta`,
-`resolute-beta`, `resolute-dev`. `publish-repo --suite <suite> --debs <dir>` writes one
-of them and carries the others over unchanged (signed indexes and every file they name),
-so publishing Stable never removes a channel. Each suite gets its full set of .debs.
-A channel suite that has never been published makes `apt update` fail on the PCs
-that chose it: publish all four suites (the same set to start with) before Settings
-offers the channels.
+One tree, one suite per update channel. Raye Update's `raye-insider.sources` names them;
+a PC reads Stable plus the suite of its channel.
+
+| Channel | Suite | What goes there |
+|---|---|---|
+| Dev | `resolute-dev` | **every build, as soon as it is built**, with no VM check by us: the developers test it and report back |
+| Beta | `resolute-beta` | the build with the fixes for what Dev found (promoted from Dev) |
+| Public Beta | `resolute-public-beta` | the public beta, for everyone who signed up (promoted from Beta) |
+| Stable | `resolute` | finished versions (promoted from Public Beta) |
+
+The flow, for every version:
+
+    build -> publish to resolute-dev at once -> fix -> promote to resolute-beta
+          -> promote to resolute-public-beta -> promote to resolute (Stable)
+
+    tools/publish-repo --suite resolute-dev --debs <the built .debs>        # at once
+    tools/publish-repo --suite resolute-beta --from-suite resolute-dev       # the fixed build
+    tools/publish-repo --suite resolute-public-beta --from-suite resolute-beta
+    tools/publish-repo --suite resolute --from-suite resolute-public-beta    # Stable
+    tools/publish-mirrors                                                    # after each step
+
+`--from-suite` republishes the exact package files the channel below has now (nothing is
+built again), one step up only: Dev -> Beta -> Public Beta -> Stable. Add `--dry-run` to list
+them. The other suites are carried over unchanged (signed indexes and every file they name),
+so publishing one channel never removes another. A fix found in Beta is a new build: it goes
+to Dev first, then up again.
+
+Which version goes where (debian/changelog): `X.Y~devN` builds go to Dev only;
+`X.Y~betaN` and `X.Y~rcN` are promoted to Beta and Public Beta; `X.Y` (no `~`) is the only
+pattern promoted to Stable. `~` sorts before the release, so a PC on a channel always moves
+forward to the final version, and leaving a channel never downgrades (Raye Update keeps the
+newer versions until Stable catches up).
+
+A channel suite that has never been published makes `apt update` fail on the PCs that chose
+it: publish-r2 and publish-github refuse a tree where one of the four suites is missing or
+not signed (`raye_publish.audit_channels`), and publish-r2 reads the InRelease of all four on
+dl.rayelinux.com after the upload.
+
+## First publication of Raye Linux 1.0 (prepared, not run)
+
+The rc3 set (`/var/tmp/raye/v1/debs-1.0-rc3`, then the 1.0 set built from it) goes to all
+four suites the first time, so no channel points to a missing suite:
+
+    D=/var/tmp/raye/v1/debs-1.0-rc3          # or the final 1.0 set
+    tools/publish-repo --dry-run --debs $D                                   # read the list
+    tools/publish-repo --suite resolute-dev --debs $D
+    tools/publish-repo --suite resolute-beta --from-suite resolute-dev
+    tools/publish-repo --suite resolute-public-beta --from-suite resolute-beta
+    tools/publish-repo --suite resolute --from-suite resolute-public-beta
+    tools/publish-repo --check /srv/publish/apt                              # every suite
+    tools/publish-r2 apt --dry-run && tools/publish-github apt --dry-run
+    tools/publish-mirrors                                                    # R2, then GitHub Pages
+    for s in resolute resolute-public-beta resolute-beta resolute-dev; do
+        curl -fsS -o /dev/null -w "%{http_code} $s\n" https://dl.rayelinux.com/apt/dists/$s/InRelease
+        curl -fsS -o /dev/null -w "%{http_code} $s\n" https://raye-linux.github.io/packages/dists/$s/InRelease
+    done
+    /root/raye-final/tools/push-mirrors.py && /root/raye-final/tools/publish-git-mirror.py   # code mirrors
+
+Only then does the website's Raye Insider page go out.

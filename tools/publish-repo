@@ -415,6 +415,44 @@ def build(debs, out, conf, signed=True, keyring=rp.KEYRING, dscs=(), report=None
     return files, gone
 
 
+def promote(out, conf, source, target, signed=True, keyring=rp.KEYRING, report=None):
+    """Republishes the exact package set of channel `source` as channel
+    `target`, one step up the line Dev -> Beta -> Public Beta -> Stable.
+    The files are the ones already in the pool (nothing is built again);
+    the other suites are carried over as they are."""
+    suites = channel_suites(conf)
+    if source not in suites or target not in suites:
+        raise rp.PublishError(f"channels are {', '.join(suites)}")
+    if suites.index(target) != suites.index(source) - 1:
+        up = suites[suites.index(source) - 1] if suites.index(source) else None
+        raise rp.PublishError(f"{source} goes up to {up} only" if up else
+                              f"{source} is Stable: nothing above it")
+    names = sorted(set(published(out, with_suite(conf, source)).values()))
+    if not names:
+        raise rp.PublishError(f"{source} has no packages in {out}: publish it first")
+    debs = []
+    for rel in names:
+        if not (out / rel).is_file():
+            raise rp.PublishError(f"{source} names {rel}, which is missing")
+        debs.append(out / rel)
+    # build() replaces the tree: work from a copy of the files it reads
+    hold = out.with_name(out.name + ".promote")
+    shutil.rmtree(hold, ignore_errors=True)
+    hold.mkdir(parents=True)
+    try:
+        copies = []
+        for i, deb in enumerate(debs):
+            # the pool path is made from the file name: keep it
+            dest = hold / f"{i:04d}" / deb.name
+            dest.parent.mkdir()
+            shutil.copy2(deb, dest)
+            copies.append(dest)
+        return build(copies, out, with_suite(conf, target), signed=signed, keyring=keyring,
+                     report=report)
+    finally:
+        shutil.rmtree(hold, ignore_errors=True)
+
+
 def find_debs(dirs):
     debs = []
     for d in dirs:
@@ -437,7 +475,13 @@ def main(argv=None):
     ap.add_argument("--check", metavar="DIR", help="audit a tree, change nothing")
     ap.add_argument("--suite", help=f"the update channel to publish (default {conf['SUITE']}: "
                     "Stable; or " + ", ".join(channel_suites(conf)[1:]) + ")")
+    ap.add_argument("--from-suite", metavar="SUITE",
+                    help="promote: publish --suite with the exact packages SUITE has now, one channel "
+                         "up (Dev -> Beta -> Public Beta -> Stable); nothing is built again")
     args = ap.parse_args(argv)
+    if args.from_suite and not args.suite:
+        print("publish-repo: --from-suite needs --suite (the channel above it)", file=sys.stderr)
+        return 2
     if args.suite:
         try:
             conf = with_suite(conf, args.suite)
@@ -459,8 +503,21 @@ def main(argv=None):
             if not found:
                 raise rp.PublishError(f"no .dsc in {d}")
             dscs += found
-        debs = find_debs(args.debs or [conf["DEBS"]])
-        if args.dry_run:
+        if args.from_suite and args.dry_run:
+            names = sorted(set(published(out, with_suite(conf, args.from_suite)).values()))
+            for rel in names:
+                print(f"  promote   {rel}")
+            print(f"would publish {len(names)} files of {args.from_suite} as {conf['SUITE']} in {out}")
+            return 0
+        if args.from_suite:
+            if not args.no_sign and not rp.have_key(conf):
+                raise rp.PublishError(f"no signing key {conf['SIGNING_KEY']} in {conf['GNUPGHOME']}")
+            files, gone = promote(out, conf, args.from_suite, conf["SUITE"],
+                                  signed=not args.no_sign, report=report)
+        debs = [] if args.from_suite else find_debs(args.debs or [conf["DEBS"]])
+        if args.from_suite:
+            pass
+        elif args.dry_run:
             files, gone = plan(debs, out, conf)
         else:
             if not args.no_sign and not rp.have_key(conf):

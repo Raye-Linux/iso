@@ -150,6 +150,11 @@ def public_size(url):
         return int(r.headers.get("Content-Length", -1))
 
 
+def public_inreleases(conf, public):
+    """The InRelease of every update channel on the mirror, Stable first."""
+    return [f"{public}/apt/dists/{suite}/InRelease" for suite in rp.channel_suites(conf["SUITE"])]
+
+
 def main(argv=None):
     conf = rp.settings()
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
@@ -167,6 +172,9 @@ def main(argv=None):
         if args.what in ("all", "apt"):
             if not (tree / "dists" / conf["SUITE"] / "InRelease").is_file():
                 raise rp.PublishError(f"no signed tree in {tree}: run publish-repo first")
+            problems = rp.audit_channels(tree, conf)
+            if problems:
+                raise rp.PublishError(f"{tree} must not be published:\n  " + "\n  ".join(problems))
             files = list(files_of(tree))
             print(f"apt: {len(files)} files, {rp.human(sum(f.stat().st_size for f in files))}"
                   f" -> {conf['R2_PUBLIC']}/apt/")
@@ -222,7 +230,9 @@ def main(argv=None):
                       file=sys.stderr)
                 return 1
         if args.what in ("all", "apt"):
-            public_size(f"{conf['R2_PUBLIC']}/apt/dists/{conf['SUITE']}/InRelease")
+            # every channel: a PC on Dev reads its own suite
+            for url in public_inreleases(conf, conf["R2_PUBLIC"]):
+                public_size(url)
     except OSError as e:
         print(f"publish-r2: uploaded, but {conf['R2_PUBLIC']} does not answer yet ({e})",
               file=sys.stderr)

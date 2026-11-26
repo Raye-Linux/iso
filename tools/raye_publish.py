@@ -155,6 +155,36 @@ def _has_marker(path):
     return False
 
 
+# One apt tree, one suite per update channel (Raye Insider): Stable is the
+# configured SUITE, then -public-beta, -beta and -dev.
+CHANNEL_ENDINGS = ("", "-public-beta", "-beta", "-dev")
+
+
+def channel_suites(suite):
+    """The suites of every update channel, Stable first."""
+    base = suite
+    for ending in CHANNEL_ENDINGS[1:]:
+        if base.endswith(ending):
+            base = base[:-len(ending)]
+    return [base + ending for ending in CHANNEL_ENDINGS]
+
+
+def audit_channels(tree, conf, keyring=None):
+    """audit_tree for every channel suite: a mirror never goes out with a
+    channel missing, or a PC on that channel fails its apt update."""
+    keyring = keyring or KEYRING
+    problems = []
+    for suite in channel_suites(conf["SUITE"]):
+        if not (pathlib.Path(tree) / "dists" / suite).is_dir():
+            problems.append(f"dists/{suite} is missing: publish every update channel "
+                            f"(publish-repo --suite {suite}) before a mirror")
+            continue
+        for p in audit_tree(tree, suite, keyring):
+            if p not in problems:
+                problems.append(p)
+    return problems
+
+
 def audit_tree(tree, suite, keyring=KEYRING, signed=True):
     """Problems that forbid publishing this tree; [] when it may go out.
 

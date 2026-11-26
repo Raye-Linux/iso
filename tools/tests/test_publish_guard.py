@@ -66,7 +66,10 @@ class GuardTests(unittest.TestCase):
         self.debs.mkdir()
         make_deb(self.debs, "raye-demo", "1.0")
         self.out = self.work / "apt"
-        pr.build(sorted(self.debs.glob("*.deb")), self.out, self.conf, keyring=self.keyring)
+        # every update channel is published: a mirror never goes out with one missing
+        for suite in reversed(pr.channel_suites(self.conf)):
+            pr.build(sorted(self.debs.glob("*.deb")), self.out, pr.with_suite(self.conf, suite),
+                     keyring=self.keyring)
         self.suite = self.out / "dists" / self.conf["SUITE"]
 
     def problems(self):
@@ -86,6 +89,23 @@ class GuardTests(unittest.TestCase):
     def test_a_good_tree_may_go_out(self):
         self.assertEqual(self.problems(), [])
         pg.check_tree(self.out, self.conf, self.keyring)
+
+    # a PC on a channel whose suite is not on the mirror fails apt update
+    def test_a_tree_without_every_channel_does_not_go_out(self):
+        for suite in ("resolute-dev", "resolute-public-beta"):
+            with self.subTest(suite=suite):
+                shutil.rmtree(self.work / "gone", ignore_errors=True)
+                shutil.move(str(self.out / "dists" / suite), str(self.work / "gone"))
+                with self.assertRaisesRegex(rp.PublishError, suite):
+                    pg.check_tree(self.out, self.conf, self.keyring)
+                self.assertTrue(any(suite in p for p in rp.audit_channels(self.out, self.conf, self.keyring)))
+                shutil.move(str(self.work / "gone"), str(self.out / "dists" / suite))
+
+    def test_every_channel_suite_is_checked_on_the_mirror(self):
+        r2 = load("publish_r2_g", "publish-r2")
+        self.assertEqual(r2.public_inreleases(self.conf, "https://dl.example"),
+                         [f"https://dl.example/apt/dists/{s}/InRelease"
+                          for s in ("resolute", "resolute-public-beta", "resolute-beta", "resolute-dev")])
 
     # ---- the ISO, never
     def test_an_iso_by_its_name(self):

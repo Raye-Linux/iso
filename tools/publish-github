@@ -41,7 +41,7 @@ def check_tree(tree, conf, keyring=rp.KEYRING):
     publish-repo audits what it writes, but the folder can be touched in
     between; this is the last look before the push.
     """
-    problems = rp.audit_tree(tree, conf["SUITE"], keyring)
+    problems = rp.audit_channels(tree, conf, keyring)
     if problems:
         raise rp.PublishError(f"{tree} must not be published:\n  " + "\n  ".join(problems))
 
@@ -178,7 +178,7 @@ def main(argv=None):
         if args.what in ("all", "apt"):
             if not (tree / "dists" / conf["SUITE"] / "InRelease").is_file():
                 raise rp.PublishError(f"no signed tree in {tree}: run publish-repo first")
-            check_tree(tree, conf)
+            check_tree(tree, conf)   # every channel suite, each signed
             print(f"apt: {tree} -> {conf['GITHUB_ORG']}/{conf['GITHUB_PACKAGES']} -> {conf['GITHUB_PAGES']}/")
             jobs.append(("apt", apt_job(conf, tree, time.strftime("%Y-%m-%d"))))
         if args.what in ("all", "iso"):

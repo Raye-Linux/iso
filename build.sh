@@ -44,6 +44,7 @@ PROXY=${PROXY-http://127.0.0.1:3142}       # apt-cacher-ng, empty to skip
 LOCAL_REPO=${LOCAL_REPO:-0}                 # 1: no aptly, packages go in straight
 DESKTOP_DEBS=${DESKTOP_DEBS:-}              # the Raye desktop packages, see above
 WINE_DEBS=${WINE_DEBS:-$src/wine/out}       # raye-wine, see above
+PROTON_DEBS=${PROTON_DEBS:-}                # raye-proton, see add_proton_debs
 # no cache running here: go to the mirror directly
 if [ -n "$PROXY" ] && ! curl -fs -o /dev/null --max-time 3 "$PROXY/acng-report.html"; then
     PROXY=""
@@ -128,6 +129,20 @@ add_wine_debs() {
     [ "$found" -gt 0 ] || die "raye-wine is missing: raye-windows-apps needs it. Build it and pass the folder:
         (cd $src/wine && ./build.sh) && WINE_DEBS=$src/wine/out $0 $*"
     echo "raye-wine added"
+}
+
+# raye-gaming depends on raye-proton, built from GE-Proton in its own
+# container (packages/raye-proton, hours and ~80 GB): like raye-wine, it is
+# made apart and dropped in PROTON_DEBS; the image refuses to go on without it.
+add_proton_debs() {
+    local debs=$1 deb found=0
+    for deb in "$PROTON_DEBS"/raye-proton_*.deb; do
+        [ -e "$deb" ] || continue
+        cp "$deb" "$debs/"
+        found=$((found + 1))
+    done
+    [ "$found" -gt 0 ] || die "raye-proton is missing: raye-gaming needs it. Build it (packages/raye-proton) and pass the folder in PROTON_DEBS"
+    echo "raye-proton added"
 }
 
 # The image must hold the very file apt is offered for a version it already
@@ -280,6 +295,7 @@ build_packages() {
     done
     add_desktop_debs "$debs"
     add_wine_debs "$debs"
+    add_proton_debs "$debs"
     prefer_published "$debs"
     ls -1 "$debs"
 

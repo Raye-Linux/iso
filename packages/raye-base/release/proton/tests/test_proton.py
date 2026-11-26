@@ -4,6 +4,8 @@ ships the first Raye Proton, a launcher on raye-wine."""
 import pathlib
 import re
 
+import pytest
+
 BASE = pathlib.Path(__file__).resolve().parents[3]
 
 
@@ -25,5 +27,11 @@ def test_raye_gaming_no_longer_ships_the_launcher():
 
 
 def test_raye_proton_takes_over_the_launcher_s_files():
-    control = (BASE.parent / "raye-proton/debian/control").read_text()
+    # raye-base is built alone (the image copies one package per build dir):
+    # the sibling package is only there in the full source tree, where
+    # tests/test_proton_in_image.sh and this test run together.
+    sibling = BASE.parent / "raye-proton/debian/control"
+    if not sibling.exists():
+        pytest.skip("packages/raye-proton is not beside raye-base in this build tree")
+    control = sibling.read_text()
     assert "\nReplaces: raye-gaming\n" in control and "Breaks:" not in control

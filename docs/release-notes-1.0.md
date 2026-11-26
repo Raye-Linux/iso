@@ -77,6 +77,7 @@ Français : https://dl.rayelinux.com/iso/1.0/release-notes-1.0.fr.md
   the icons stay at the top. Desktop icons can sit under a taskbar on the
   left. A second screen does not get the side taskbar yet.
 - Raye Community is a beta: expect missing features.
+- In Setup, the keyboard layout names stay in English in every language.
 - Not every Windows program runs, and apps built only for the Microsoft
   Store cannot run at all.
 

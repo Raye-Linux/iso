@@ -91,6 +91,7 @@ English: https://dl.rayelinux.com/iso/1.0/release-notes-1.0.md
   restent en haut. Les icônes du bureau peuvent se trouver sous une barre à
   gauche. Un deuxième écran n'a pas encore la barre sur le côté.
 - Raye Community est une bêta : il manque des fonctions.
+- Dans l'installation, les noms des dispositions de clavier restent en anglais.
 - Tous les programmes Windows ne fonctionnent pas, et les applis faites
   uniquement pour le Microsoft Store ne peuvent pas fonctionner.
 

@@ -958,5 +958,51 @@ check 'grep -q "nvidia-driver-580-open" "$(logfile)"' "the log names what would 
 check 'called "raye-tpm bind-next --kernel ubuntu"' "Ubuntu's kernel stays the fallback"
 teardown
 
+setup "finish offline: the Beta's older kernel next to the V1 one is left out"
+# measured on a Beta 2: /usr/share/raye/kernel/debs still holds the
+# Beta's 7.0.14-raye next to 7.0.14-44r4-raye. sort -V puts 7.0.14-raye
+# on top: both were installed and the older one was started.
+beta=7.0.14-raye v1=7.0.14-44r4-raye
+: > "$CTL/enrolled"
+: > "$CTL/archive"; : > "$CTL/need-download"
+mkdir -p "$R/usr/share/raye/kernel/debs"
+for k in "$beta" "$v1"; do
+    : > "$R/usr/share/raye/kernel/debs/linux-image-${k}_7.0.0-1_amd64.deb"
+    : > "$R/usr/share/raye/kernel/debs/linux-headers-${k}_7.0.0-1_amd64.deb"
+done
+mkdir -p "$R/var/lib/raye-kernel"; : > "$(state pending)"
+run finish
+check 'called "linux-image-${v1}_7.0.0-1_amd64.deb"' "the V1 kernel is installed"
+check 'called "linux-headers-${v1}_7.0.0-1_amd64.deb"' "with its headers"
+check '! called "linux-image-${beta}_"' "the Beta's older kernel is not installed"
+check '! called "linux-headers-${beta}_"' "nor its headers"
+teardown
+
+setup "trial: the V1 kernel is tried, not the Beta's older one"
+beta=7.0.14-raye v1=7.0.14-44r4-raye
+: > "$CTL/enrolled"
+: > "$R/boot/vmlinuz-$beta"; : > "$R/boot/vmlinuz-$v1"
+sed -i "s|^}$|\tmenuentry 'Raye, with Linux $beta' --class ubuntu \$menuentry_id_option 'gnulinux-$beta-advanced-$uuid' {\n\t}\n\tmenuentry 'Raye, with Linux $v1' --class ubuntu \$menuentry_id_option 'gnulinux-$v1-advanced-$uuid' {\n\t}\n}|" "$R/boot/grub/grub.cfg"
+add_local_debs
+run enroll
+check 'called "grub-reboot gnulinux-advanced-$uuid>gnulinux-$v1-advanced-$uuid"' "one trial boot of the V1 kernel"
+teardown
+
+setup "finish: kept, the Beta's older Raye kernel would sort first in the menu"
+# GRUB's first line starts the kernel sort -V puts on top: with the
+# Beta's 7.0.14-raye still there, that is the older one, not this one
+beta=7.0.14-raye v1=7.0.14-44r4-raye
+raye=$v1
+: > "$R/boot/vmlinuz-$beta"; kernel_installed; raye_is_a_package; ubuntu_installed
+sed -i "s|^}$|\tmenuentry 'Raye, with Linux $beta' --class ubuntu \$menuentry_id_option 'gnulinux-$beta-advanced-$uuid' {\n\t}\n\tmenuentry 'Raye, with Linux $v1' --class ubuntu \$menuentry_id_option 'gnulinux-$v1-advanced-$uuid' {\n\t}\n}|" "$R/boot/grub/grub.cfg"
+echo "$v1" > "$CTL/uname"
+mkdir -p "$R/var/lib/raye-kernel"; : > "$(state trial)"
+run finish
+check '[ $rc = 0 ] && out_is "Raye kernel kept"' "kept"
+check '! called "grub-set-default 0"' "not the menu's first line, which starts the older kernel"
+check 'called "grub-set-default gnulinux-advanced-$uuid>gnulinux-$v1-advanced-$uuid"' "the kernel that started is the default"
+raye=7.0.0-42-raye
+teardown
+
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

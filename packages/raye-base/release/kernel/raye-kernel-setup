@@ -139,6 +139,16 @@ nvidia_blocks() {
     return 1
 }
 
+# the newest of these kernel releases, compared as dpkg compares versions:
+# sort -V puts the Beta's 7.0.14-raye above the V1's 7.0.14-44r4-raye
+newest_release() {
+    best=
+    for k in "$@"; do
+        if [ -z "$best" ] || dpkg --compare-versions "$k" gt "$best"; then best=$k; fi
+    done
+    printf '%s\n' "$best" | sed '/^$/d'
+}
+
 # ------------------------------------------------------------- packages
 # linux-raye follows the newest Raye kernel (image and headers): once it
 # is installed, kernel updates come with apt like any other update
@@ -154,9 +164,13 @@ archive_packages() {
 
 # the image, and the headers so drivers built on the computer (NVIDIA
 # through DKMS) follow the new kernel
+# shellcheck disable=SC2046  # one release per word
 shipped_debs() {
-    ls "$debs"/linux-image-*-raye_*.deb "$debs"/linux-headers-*-raye_*.deb 2>/dev/null
-    for x in $(nvidia_branches); do raye_nvidia_debs "$x"; done
+    rel=$(newest_release $(ls "$debs"/linux-image-*-raye_*.deb 2>/dev/null |
+        sed -n 's|.*/linux-image-\(.*-raye\)_[^/]*\.deb$|\1|p'))
+    [ -n "$rel" ] || return 0
+    ls "$debs"/linux-image-"$rel"_*.deb "$debs"/linux-headers-"$rel"_*.deb 2>/dev/null
+    for x in $(nvidia_branches); do raye_nvidia_debs "$x" | grep -F -- "-${rel}_" || true; done
 }
 
 # from the Raye archive, or shipped next to this script
@@ -206,11 +220,25 @@ entry_id() {
     grep -o "gnulinux-$1-advanced-[0-9a-f-]*" "$grub_menu" 2>/dev/null | head -n 1
 }
 # shellcheck disable=SC2012  # kernel file names are plain
-newest() { ls "$R"/boot/vmlinuz-*-"$1" 2>/dev/null | sed 's|.*/vmlinuz-||' | sort -V | tail -n 1; }
-# the newest kernel of all is the Raye kernel (GRUB sorts the same way)
-top_is_raye() {
-    r=$(newest raye)
-    [ -n "$r" ] && [ "$(printf '%s\n%s\n' "$r" "$(newest generic)" | sort -V | tail -n 1)" = "$r" ]
+# shellcheck disable=SC2046
+newest() { newest_release $(ls "$R"/boot/vmlinuz-*-"$1" 2>/dev/null | sed 's|.*/vmlinuz-||'); }
+# the menu's first line starts the kernel GRUB sorts on top (sort -V over
+# every kernel): true when that is the one running now
+# shellcheck disable=SC2012  # kernel file names are plain
+top_is_running() {
+    [ "$(ls "$R"/boot/vmlinuz-* 2>/dev/null | sed 's|.*/vmlinuz-||' | sort -V | tail -n 1)" = "$(uname -r)" ]
+}
+# the kernel that runs now becomes the default: the first line when GRUB
+# puts it there, its own entry otherwise (an older Raye kernel of the Beta
+# can sort above it)
+default_to_running() {
+    if top_is_running; then
+        quietly grub-set-default 0
+    else
+        sub=$(submenu_id)
+        id=$(entry_id "$(uname -r)")
+        [ -n "$sub" ] && [ -n "$id" ] && quietly grub-set-default "$sub>$id"
+    fi
 }
 
 # ------------------------------------------------------------------ TPM
@@ -569,17 +597,11 @@ finish)
             # the menu's first line ("Raye Linux GNU/Linux") starts the
             # newest kernel: when that is this one, it is the default, so
             # the menu opens on it rather than inside "Advanced options"
-            if top_is_raye; then
-                quietly grub-set-default 0
-            else
-                sub=$(submenu_id)
-                id=$(entry_id "$(uname -r)")
-                [ -n "$sub" ] && [ -n "$id" ] && quietly grub-set-default "$sub>$id"
-            fi
+            default_to_running
             rebind_tpm
             if retire_ubuntu; then
-                # only Raye kernels left: the first line starts the newest
-                quietly grub-set-default 0
+                # only Raye kernels left (GRUB is rewritten by the purge)
+                default_to_running
                 tpm prune
             else
                 # the bindings no kernel uses any more go; Ubuntu's kernel

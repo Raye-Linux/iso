@@ -172,7 +172,7 @@ prefer_published() {
 # account: raye-desktop depends on raye-account (Raye account, since 0.5.4)
 # raye-scx (game mode's scheduler) needs packages/raye-scx/upstream, which
 # fetch-scx.sh fills once; the build itself does not touch the network.
-compiled_sources() { echo "$src/installer $src/settings $src/store $src/theme $src/archive $src/files $src/apps $src/account $here/packages/raye-scx"; }
+compiled_sources() { echo "$src/installer $src/settings $src/store $src/theme $src/archive $src/files $src/apps $src/account $src/community $here/packages/raye-scx"; }
 
 make_devroot() {
     [ -x "$devroot/usr/bin/dpkg-buildpackage" ] && return

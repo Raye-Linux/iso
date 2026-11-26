@@ -26,4 +26,4 @@ def test_raye_gaming_no_longer_ships_the_launcher():
 
 def test_raye_proton_takes_over_the_launcher_s_files():
     control = (BASE.parent / "raye-proton/debian/control").read_text()
-    assert "Replaces: raye-gaming (<<" in control and "Breaks: raye-gaming (<<" in control
+    assert "\nReplaces: raye-gaming\n" in control and "Breaks:" not in control

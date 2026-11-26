@@ -13,9 +13,10 @@ Package: raye-proton
 Architecture: amd64
 Depends: ${misc:Depends}
 # Raye Proton used to be a small launcher shipped by raye-gaming in the
-# same folder.
-Breaks: raye-gaming (<< 1.0~rc4~)
-Replaces: raye-gaming (<< 1.0~rc4~)
+# same folder; raye-gaming no longer ships it, in any later version, so
+# this takes the folder over from every raye-gaming (no version bound:
+# which raye-base version comes with this change is decided at release).
+Replaces: raye-gaming
 Description: Steam compatibility tool for Windows games, built by Raye
  Raye Proton is GE-Proton, built by Raye from its sources with
  GE-Proton's own build system: Valve's Proton with the newest Wine,

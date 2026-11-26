@@ -2,6 +2,9 @@
 Description=Make Raye Proton Steam's default once Steam has set itself up
 
 [Path]
+# Steam from the archive (steam-installer) lives in ~/.steam/debian-installation,
+# Valve's own .deb in ~/.local/share/Steam, the Store's in its Flatpak folder
+PathChanged=%h/.steam/debian-installation/config/config.vdf
 PathChanged=%h/.local/share/Steam/config/config.vdf
 PathChanged=%h/.var/app/com.valvesoftware.Steam/data/Steam/config/config.vdf
 Unit=raye-proton-default.service

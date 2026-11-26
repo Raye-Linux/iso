@@ -160,7 +160,9 @@ def test_the_package_keeps_the_tool_as_built_and_ships_the_licences():
     assert "build-ge.sh check" in rules
     assert "raye-proton-licenses.tar.gz" in rules and "usr/share/doc/raye-proton" in rules
     control = (HERE / "debian/control").read_text()
-    assert "Replaces: raye-gaming" in control and "Breaks: raye-gaming" in control
+    # takes the first launcher's folder over from any raye-gaming, and
+    # never breaks the raye-gaming that brings it
+    assert "\nReplaces: raye-gaming\n" in control and "Breaks:" not in control
 
 
 # ---- Steam's default -----------------------------------------------------
@@ -232,6 +234,19 @@ def test_a_config_it_does_not_understand_is_left_alone(world):
     assert (apt / "config/config.vdf").read_text() == '"InstallConfigStore"\n{\n\t"Software"\n'
 
 
+def test_steam_from_the_archive_in_its_debian_folder(tmp_path):
+    # steam-installer puts Steam in ~/.steam/debian-installation, ~/.steam/steam points there
+    home, proc = tmp_path / "home", tmp_path / "proc"
+    proc.mkdir()
+    tool = make_tool(tmp_path / "system" / "raye-proton")
+    real = home / ".steam/debian-installation"
+    (real / "config").mkdir(parents=True)
+    (real / "config/config.vdf").write_text(CONFIG)
+    (home / ".steam/steam").symlink_to(real)
+    run_default(home, proc, tool)
+    assert mapping((real / "config/config.vdf").read_text()).get("0").get("name") == "raye-proton"
+
+
 def test_the_store_s_steam_gets_it_with_its_own_copy(world):
     home, proc, tool, apt = world
     fp = home / ".var/app/com.valvesoftware.Steam/data/Steam"
@@ -300,6 +315,7 @@ def test_setup_does_nothing_without_the_store_s_steam(tmp_path, flatpak):
 
 def test_units_run_both_steps_and_watch_both_steams():
     path = (RAYE / "raye-proton-default.path").read_text()
+    assert "%h/.steam/debian-installation/config/config.vdf" in path  # steam-installer
     assert "%h/.local/share/Steam/config/config.vdf" in path
     assert "%h/.var/app/com.valvesoftware.Steam/data/Steam/config/config.vdf" in path
     for unit in ("raye-proton-setup.service", "raye-proton-default.service"):

@@ -1,0 +1,10 @@
+[Unit]
+Description=Offer Raye Proton in the Store's Steam too, and as Steam's default for Windows games
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/raye-proton-setup
+ExecStart=/usr/libexec/raye-proton-default --wait 120
+
+[Install]
+WantedBy=default.target

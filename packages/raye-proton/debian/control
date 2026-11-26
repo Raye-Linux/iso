@@ -1,0 +1,28 @@
+Source: raye-proton
+Section: games
+Priority: optional
+Maintainer: techoraye <190692880+techoraye@users.noreply.github.com>
+Build-Depends: debhelper-compat (= 13),
+               python3:any,
+               python3-pytest <!nocheck>
+Standards-Version: 4.7.0
+Rules-Requires-Root: no
+Vcs-Git: https://github.com/Raye-Linux/iso.git
+
+Package: raye-proton
+Architecture: amd64
+Depends: ${misc:Depends}
+# Raye Proton used to be a small launcher shipped by raye-gaming in the
+# same folder; raye-gaming no longer ships it, in any later version, so
+# this takes the folder over from every raye-gaming (no version bound:
+# which raye-base version comes with this change is decided at release).
+Replaces: raye-gaming
+Description: Steam compatibility tool for Windows games, built by Raye
+ Raye Proton is GE-Proton, built by Raye from its sources with
+ GE-Proton's own build system: Valve's Proton with the newest Wine,
+ DXVK, VKD3D-Proton, NVAPI, media playback fixes, per-game fixes
+ (protonfixes) and NTSync when the kernel has it. Steam shows it as
+ "Raye Proton" in a game's Properties > Compatibility; games that talk
+ to Steam from inside the game work, as with Valve's Proton.
+ .
+ It is not affiliated with Valve or with the GE-Proton project.

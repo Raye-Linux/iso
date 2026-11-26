@@ -1,0 +1,4 @@
+# The GE-Proton release Raye Proton is built from (build-ge.sh).
+tag=GE-Proton11-14
+commit=777d72b4ae50b3121ac46df2a7605bb2d6156840
+sdk=registry.gitlab.steamos.cloud/proton/steamrt4/sdk/x86_64:4.0.20260714.251823-0

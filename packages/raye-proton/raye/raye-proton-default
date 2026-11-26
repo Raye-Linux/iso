@@ -1,0 +1,289 @@
+#!/usr/bin/python3
+"""Makes Raye Proton the tool Steam uses for Windows games, once.
+
+Steam keeps its compatibility tools in config/config.vdf, under
+CompatToolMapping: entry "0" is the one Settings > Compatibility >
+"Enable Steam Play for all other titles" writes, the others are the
+games given their own tool. This adds "0" = raye-proton, as that menu
+would, for Steam from the archive and the Store's (Flatpak), and only:
+
+- when the person has no "0" yet: a tool they picked, Raye Proton or
+  any other, is never replaced; games set one by one are never touched;
+- the first time: once set, a marker stays next to config.vdf, so
+  turning Steam Play off again (or picking another tool) is final;
+- when the Raye Proton there is the build with Steam's bridge
+  (lsteamclient): the old launcher on raye-wine never becomes the default;
+- while Steam is closed: Steam writes config.vdf back when it quits.
+
+Games with a Linux version keep it: "0" only covers the others.
+The way back is Steam's own menu. Nothing else in the file changes.
+
+  raye-proton-default [--wait SECONDS]
+"""
+import os
+import pwd
+import sys
+import time
+
+TOOL = "raye-proton"
+BRIDGE = os.path.join("files", "lib", "wine", "x86_64-windows", "lsteamclient.dll")
+MARK = ".raye-proton-default"
+FLATPAK_APP = "com.valvesoftware.Steam"
+
+
+def say(msg):
+    print("raye-proton-default: " + msg, file=sys.stderr)
+
+
+# ---- KeyValues text (Valve's .vdf) -------------------------------------
+class VdfError(ValueError):
+    pass
+
+
+def tokens(text):
+    """(kind, value, start, end): kind is 's' (string), '{' or '}'."""
+    i, n = 0, len(text)
+    while i < n:
+        c = text[i]
+        if c in " \t\r\n":
+            i += 1
+        elif text.startswith("//", i):
+            j = text.find("\n", i)
+            i = n if j < 0 else j + 1
+        elif c in "{}":
+            yield c, c, i, i + 1
+            i += 1
+        elif c == '"':
+            j, out = i + 1, []
+            while True:
+                if j >= n:
+                    raise VdfError("unterminated string")
+                d = text[j]
+                if d == "\\" and j + 1 < n:
+                    out.append({"n": "\n", "t": "\t", "\\": "\\", '"': '"'}.get(text[j + 1], text[j + 1]))
+                    j += 2
+                elif d == '"':
+                    break
+                else:
+                    out.append(d)
+                    j += 1
+            yield "s", "".join(out), i, j + 1
+            i = j + 1
+        else:  # a bare word
+            j = i
+            while j < n and text[j] not in " \t\r\n{}\"":
+                j += 1
+            yield "s", text[i:j], i, j
+
+
+class Node:
+    """A block: children in order, each (key, value|Node). open/close are
+    the offsets of its braces in the text (-1 for the whole file)."""
+
+    def __init__(self, open_at=-1):
+        self.items = []
+        self.open_at = open_at
+        self.close_at = -1
+
+    def get(self, key):
+        for k, v in self.items:
+            if k.lower() == key.lower():
+                return v
+        return None
+
+
+def parse(text):
+    root = Node()
+    stack = [root]
+    key = None
+    for kind, val, start, _end in tokens(text):
+        if kind == "s":
+            if key is None:
+                key = val
+            else:
+                stack[-1].items.append((key, val))
+                key = None
+        elif kind == "{":
+            if key is None:
+                raise VdfError("block without a name")
+            node = Node(start)
+            stack[-1].items.append((key, node))
+            stack.append(node)
+            key = None
+        else:
+            if len(stack) == 1 or key is not None:
+                raise VdfError("unbalanced braces")
+            stack[-1].close_at = start
+            stack.pop()
+    if len(stack) != 1 or key is not None:
+        raise VdfError("unbalanced braces")
+    return root
+
+
+def quote(s):
+    return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def line_indent(text, at):
+    start = text.rfind("\n", 0, at) + 1
+    j = start
+    while j < len(text) and text[j] in " \t":
+        j += 1
+    return text[start:j]
+
+
+def block_text(name, pairs, indent):
+    inner = indent + "\t"
+    lines = [indent + quote(name), indent + "{"]
+    lines += [inner + quote(k) + "\t\t" + quote(v) for k, v in pairs]
+    lines.append(indent + "}")
+    return "\n".join(lines) + "\n"
+
+
+def insert_after_brace(text, node, piece):
+    """piece goes on the line after node's opening brace."""
+    nl = text.find("\n", node.open_at)
+    at = len(text) if nl < 0 else nl + 1
+    if nl < 0:
+        piece = "\n" + piece
+    return text[:at] + piece + text[at:]
+
+
+def with_default(text):
+    """The text with "0" = raye-proton added, or None when the person's
+    config already has a "0" (theirs, or ours)."""
+    root = parse(text)
+    store = root.get("InstallConfigStore")
+    if not isinstance(store, Node):
+        raise VdfError("no InstallConfigStore")
+    path = [store]
+    for name in ("Software", "Valve", "Steam"):
+        nxt = path[-1].get(name)
+        if nxt is None:
+            break
+        if not isinstance(nxt, Node):
+            raise VdfError(name + " is not a block")
+        path.append(nxt)
+    entry = [("name", TOOL), ("config", ""), ("priority", "75")]
+    if len(path) == 4:
+        steam = path[3]
+        mapping = steam.get("CompatToolMapping")
+        if isinstance(mapping, Node):
+            if mapping.get("0") is not None:
+                return None
+            indent = line_indent(text, mapping.open_at) + "\t"
+            return insert_after_brace(text, mapping, block_text("0", entry, indent))
+        if mapping is not None:
+            raise VdfError("CompatToolMapping is not a block")
+        indent = line_indent(text, steam.open_at) + "\t"
+        piece = block_text("CompatToolMapping", [], indent)
+        piece = piece[: piece.rindex(indent + "}")] + block_text("0", entry, indent + "\t") + indent + "}\n"
+        return insert_after_brace(text, steam, piece)
+    # Steam has not written its own section yet: build what is missing
+    names = ("Software", "Valve", "Steam")[len(path) - 1:]
+    parent = path[-1]
+    indent = line_indent(text, parent.open_at) + "\t"
+    piece = block_text("0", entry, indent + "\t" * (len(names) + 1))
+    piece = (indent + "\t" * len(names) + quote("CompatToolMapping") + "\n" + indent + "\t" * len(names) + "{\n"
+             + piece + indent + "\t" * len(names) + "}\n")
+    for depth in range(len(names) - 1, -1, -1):
+        pad = indent + "\t" * depth
+        piece = pad + quote(names[depth]) + "\n" + pad + "{\n" + piece + pad + "}\n"
+    return insert_after_brace(text, parent, piece)
+
+
+def tool_name(vdf_path):
+    try:
+        root = parse(open(vdf_path, encoding="utf-8").read())
+        tools = root.get("compatibilitytools").get("compat_tools")
+        return [k for k, v in tools.items if isinstance(v, Node)]
+    except (OSError, ValueError, AttributeError):
+        return []
+
+
+def is_bridge_build(tool_dir):
+    """Raye Proton built from GE-Proton: it carries Steam's bridge."""
+    return (TOOL in tool_name(os.path.join(tool_dir, "compatibilitytool.vdf"))
+            and os.path.isfile(os.path.join(tool_dir, BRIDGE)))
+
+
+# ---- the person's Steams -------------------------------------------------
+def steams(home):
+    """(label, Steam's folder, where its Raye Proton is)."""
+    system_tool = os.environ.get("RAYE_PROTON_SRC", "/usr/share/steam/compatibilitytools.d/" + TOOL)
+    apt = os.path.join(home, ".steam", "steam")
+    if not os.path.isdir(apt):
+        apt = os.path.join(home, ".local", "share", "Steam")
+    out = [("Steam", os.path.realpath(apt), system_tool)]
+    fp = os.path.join(home, ".var", "app", FLATPAK_APP, "data", "Steam")
+    out.append(("Steam (Flatpak)", fp, os.path.join(fp, "compatibilitytools.d", TOOL)))
+    return out
+
+
+def steam_running(uid):
+    """Steam (either one) has a process of this person's."""
+    proc = os.environ.get("RAYE_PROC", "/proc")
+    for pid in os.listdir(proc):
+        if not pid.isdigit():
+            continue
+        try:
+            if os.stat(os.path.join(proc, pid)).st_uid != uid:
+                continue
+            comm = open(os.path.join(proc, pid, "comm")).read().strip()
+        except OSError:
+            continue
+        if comm in ("steam", "steamwebhelper", "steam.sh"):
+            return True
+    return False
+
+
+def apply(label, steam_dir, tool_dir):
+    config = os.path.join(steam_dir, "config", "config.vdf")
+    mark = os.path.join(steam_dir, "config", MARK)
+    if not os.path.isfile(config):
+        return "no config yet"
+    if os.path.exists(mark):
+        return "already done once"
+    if not is_bridge_build(tool_dir):
+        return "Raye Proton there is not the build with Steam's bridge"
+    text = open(config, encoding="utf-8").read()
+    try:
+        new = with_default(text)
+    except VdfError as e:
+        return "config.vdf not understood (%s), left alone" % e
+    if new is None:
+        open(mark, "w").close()
+        return "a tool is already chosen, left alone"
+    tmp = config + ".raye-new"
+    st = os.stat(config)
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(new)
+    os.chmod(tmp, st.st_mode & 0o7777)
+    os.replace(tmp, config)
+    open(mark, "w").close()
+    return "Raye Proton is now the default"
+
+
+def main(argv):
+    wait = 0
+    if argv[:1] == ["--wait"] and len(argv) == 2:
+        wait = int(argv[1])
+    elif argv:
+        print(__doc__.strip().splitlines()[-1].strip(), file=sys.stderr)
+        return 2
+    home = os.environ.get("HOME") or pwd.getpwuid(os.getuid()).pw_dir
+    uid = os.getuid()
+    deadline = time.monotonic() + wait
+    while steam_running(uid):
+        if time.monotonic() >= deadline:
+            say("Steam is open: nothing changed, it is done once Steam is closed")
+            return 0
+        time.sleep(2)
+    for label, steam_dir, tool_dir in steams(home):
+        if os.path.isdir(steam_dir):
+            say("%s: %s" % (label, apply(label, steam_dir, tool_dir)))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

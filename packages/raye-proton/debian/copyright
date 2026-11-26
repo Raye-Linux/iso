@@ -1,0 +1,59 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: raye-proton
+Source: https://github.com/Raye-Linux/iso
+Comment: Raye Proton is GE-Proton (https://github.com/GloriousEggroll/proton-ge-custom),
+ tag and commit in ge-version.txt, built unchanged by build-ge.sh with
+ GE-Proton's own build system; only the name Steam shows is set
+ (raye/raye-proton-name). GE-Proton is Valve's Proton
+ (https://github.com/ValveSoftware/Proton) with Wine, wine-staging, DXVK,
+ VKD3D-Proton, dxvk-nvapi, FFmpeg, protonfixes, umu and the other
+ components listed in .gitmodules of that tag. The licence and notice
+ files of GE-Proton and of every component are installed in
+ /usr/share/doc/raye-proton/licenses, under each component's path. The
+ source of every component is the tag above with its git submodules.
+ Raye Proton is not affiliated with Valve or with the GE-Proton project.
+
+Files: *
+Copyright: 2026 techoraye
+License: GPL-3+
+
+Files: upstream/raye-proton.tar.gz
+Copyright: 2018-2026 Valve Corporation
+           2019-2026 Thomas Crider (GloriousEggroll) and the GE-Proton contributors
+           The Wine, DXVK, VKD3D-Proton and other component authors
+License: BSD-3-clause and various
+Comment: The top level of Proton is under the BSD 3-clause licence below
+ (LICENSE.proton); each component keeps its own licence (Wine and
+ wine-staging LGPL-2.1+, DXVK and dxvk-nvapi Zlib and MIT, VKD3D-Proton
+ LGPL-2.1+, FFmpeg LGPL-2.1+, protonfixes BSD-2-clause, and the others in
+ /usr/share/doc/raye-proton/licenses).
+
+License: BSD-3-clause
+ Redistribution and use in source and binary forms, with or without modification,
+ are permitted provided that the following conditions are met:
+ .
+ 1. Redistributions of source code must retain the above copyright notice, this
+ list of conditions and the following disclaimer.
+ .
+ 2. Redistributions in binary form must reproduce the above copyright notice,
+ this list of conditions and the following disclaimer in the documentation and/or
+ other materials provided with the distribution.
+ .
+ 3. Neither the name of the copyright holder nor the names of its contributors
+ may be used to endorse or promote products derived from this software without
+ specific prior written permission.
+ .
+ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
+ ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+ ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+License: GPL-3+
+ On Debian systems, the full text of the GNU General Public License
+ version 3 can be found in /usr/share/common-licenses/GPL-3.

@@ -258,13 +258,8 @@ raye-gaming  release/gaming/raye-game-hold                     usr/libexec/raye-
 raye-gaming  release/gaming/raye-game-watch                    usr/libexec/raye-game-watch
 raye-gaming  release/gaming/game-mode.sh                       usr/lib/raye/gaming/game-mode.sh
 raye-gaming  release/gaming/50-raye-game-scheduler.rules        usr/share/polkit-1/rules.d/50-raye-game-scheduler.rules
-# Raye Proton: Steam's compatibility tool for raye-wine, for Steam from the
-# archive (this folder) and the Store's (raye-proton-setup copies it there)
-raye-gaming  release/proton/proton                             usr/share/steam/compatibilitytools.d/raye-proton/proton
-raye-gaming  release/proton/compatibilitytool.vdf              usr/share/steam/compatibilitytools.d/raye-proton/compatibilitytool.vdf
-raye-gaming  release/proton/toolmanifest.vdf                   usr/share/steam/compatibilitytools.d/raye-proton/toolmanifest.vdf
-raye-gaming  release/proton/raye-proton-setup                  usr/libexec/raye-proton-setup
-raye-gaming  release/proton/raye-proton-setup.service          usr/lib/systemd/user/raye-proton-setup.service
+# Raye Proton itself is its own package (packages/raye-proton, GE-Proton
+# built by Raye), pulled in by raye-gaming; its benchmark stays here
 raye-gaming  release/proton/raye-proton-bench                  usr/bin/raye-proton-bench
 raye-gaming  release/proton/tools.tsv                          usr/share/raye/proton-bench/tools.tsv
 

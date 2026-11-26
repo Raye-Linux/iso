@@ -1,0 +1,6 @@
+raye-proton (11.14+raye1) resolute; urgency=medium
+
+  * Raye Proton is now built from GE-Proton11-14: games that use Steam
+    from inside the game work, and GE-Proton's game fixes come with it.
+
+ -- techoraye <190692880+techoraye@users.noreply.github.com>  Thu, 26 Nov 2026 02:30:00 +0000

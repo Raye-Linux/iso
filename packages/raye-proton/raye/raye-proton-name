@@ -1,0 +1,12 @@
+#!/bin/sh
+# Gives the GE-Proton build the name Steam shows: "Raye Proton". The
+# build already calls itself raye-proton inside (configure.sh
+# --build-name=raye-proton), the name Steam keeps in its settings, the
+# same as the first Raye Proton's: games set to it stay set to it.
+# Only the display_name line changes.
+set -eu
+vdf=$1/compatibilitytool.vdf
+grep -q '^ *"raye-proton" ' "$vdf" || { echo "raye-proton-name: $vdf is not raye-proton's" >&2; exit 1; }
+sed -i 's|^\( *"display_name" *\)"raye-proton"$|\1"Raye Proton"|' "$vdf"
+[ "$(grep -c '"display_name" "Raye Proton"$' "$vdf")" -eq 1 ] || {
+    echo "raye-proton-name: display_name not set in $vdf" >&2; exit 1; }

@@ -6,8 +6,16 @@
   <action id="org.raye.sleep-guard">
     <description>Turn sleep back on</description>
     <description xml:lang="fr">Réactiver la mise en veille</description>
+    <description xml:lang="es">Volver a activar la suspensión</description>
+    <description xml:lang="de">Energie sparen wieder aktivieren</description>
+    <description xml:lang="pt_BR">Reativar a suspensão</description>
+    <description xml:lang="it">Riattiva la sospensione</description>
     <message>Turning sleep back on needs your password</message>
     <message xml:lang="fr">Réactiver la mise en veille demande votre mot de passe</message>
+    <message xml:lang="es">Para volver a activar la suspensión se necesita tu contraseña</message>
+    <message xml:lang="de">Zum Reaktivieren von „Energie sparen“ ist Ihr Kennwort erforderlich</message>
+    <message xml:lang="pt_BR">Reativar a suspensão exige sua senha</message>
+    <message xml:lang="it">Per riattivare la sospensione serve la tua password</message>
     <defaults>
       <allow_any>auth_admin</allow_any>
       <allow_inactive>auth_admin</allow_inactive>

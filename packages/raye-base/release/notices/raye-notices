@@ -77,6 +77,86 @@ WORDS = {
         "portal_title_unnamed": "Connectez-vous à ce réseau",
         "sign_in": "Se connecter",
     },
+    "es": {
+        "storage": "Almacenamiento",
+        "low_disk_title": "Poco espacio en disco",
+        "low_disk_body": "Quedan {space} GB en este PC. Libera espacio para que siga funcionando bien.",
+        "very_low_disk_title": "Disco casi lleno",
+        "clean_up": "Liberar espacio",
+        "health_title": "Puede que una unidad esté fallando",
+        "health_body": "{drive} informa de un problema. Haz ahora una copia de seguridad de tus archivos.",
+        "back_up": "Abrir Almacenamiento",
+        "power": "Energía",
+        "low_battery_title": "Batería baja",
+        "low_battery_body": "Queda un {percent} %. Conecta pronto el PC.",
+        "critical_battery_title": "Batería casi agotada",
+        "critical_battery_body": "Queda un {percent} %. Conecta el PC ahora o se apagará.",
+        "network": "Red",
+        "portal_title": "Inicia sesión en {network}",
+        "portal_body": "Esta red te pide iniciar sesión antes de poder usar Internet.",
+        "portal_title_unnamed": "Inicia sesión en esta red",
+        "sign_in": "Iniciar sesión",
+    },
+    "de": {
+        "storage": "Speicher",
+        "low_disk_title": "Wenig Speicherplatz",
+        "low_disk_body": "Auf diesem PC sind noch {space} GB frei. Geben Sie Speicherplatz frei, damit er weiterhin gut läuft.",
+        "very_low_disk_title": "Datenträger fast voll",
+        "clean_up": "Bereinigen",
+        "health_title": "Ein Laufwerk fällt möglicherweise aus",
+        "health_body": "{drive} meldet ein Problem. Sichern Sie jetzt Ihre Dateien.",
+        "back_up": "Speicher öffnen",
+        "power": "Energie",
+        "low_battery_title": "Akku schwach",
+        "low_battery_body": "Noch {percent} %. Schließen Sie den PC bald an.",
+        "critical_battery_title": "Akku fast leer",
+        "critical_battery_body": "Noch {percent} %. Schließen Sie den PC jetzt an, sonst schaltet er sich aus.",
+        "network": "Netzwerk",
+        "portal_title": "Bei {network} anmelden",
+        "portal_body": "Für dieses Netzwerk ist eine Anmeldung erforderlich, bevor Sie das Internet nutzen können.",
+        "portal_title_unnamed": "Bei diesem Netzwerk anmelden",
+        "sign_in": "Anmelden",
+    },
+    "pt": {
+        "storage": "Armazenamento",
+        "low_disk_title": "Pouco espaço em disco",
+        "low_disk_body": "Restam {space} GB neste PC. Libere espaço para que ele continue funcionando bem.",
+        "very_low_disk_title": "Disco quase cheio",
+        "clean_up": "Limpar",
+        "health_title": "Uma unidade pode estar falhando",
+        "health_body": "{drive} está relatando um problema. Faça backup dos seus arquivos agora.",
+        "back_up": "Abrir Armazenamento",
+        "power": "Energia",
+        "low_battery_title": "Bateria fraca",
+        "low_battery_body": "Restam {percent}%. Conecte o PC à energia em breve.",
+        "critical_battery_title": "Bateria quase descarregada",
+        "critical_battery_body": "Restam {percent}%. Conecte o PC à energia agora ou ele será desligado.",
+        "network": "Rede",
+        "portal_title": "Entre em {network}",
+        "portal_body": "Esta rede pede que você entre antes de usar a internet.",
+        "portal_title_unnamed": "Entre nesta rede",
+        "sign_in": "Entrar",
+    },
+    "it": {
+        "storage": "Archiviazione",
+        "low_disk_title": "Spazio su disco insufficiente",
+        "low_disk_body": "Su questo PC restano {space} GB. Libera spazio perché continui a funzionare bene.",
+        "very_low_disk_title": "Disco quasi pieno",
+        "clean_up": "Pulisci",
+        "health_title": "Un'unità potrebbe guastarsi",
+        "health_body": "{drive} segnala un problema. Esegui subito il backup dei tuoi file.",
+        "back_up": "Apri Archiviazione",
+        "power": "Alimentazione",
+        "low_battery_title": "Batteria scarica",
+        "low_battery_body": "Rimane il {percent}%. Collega presto il PC all'alimentazione.",
+        "critical_battery_title": "Batteria quasi esaurita",
+        "critical_battery_body": "Rimane il {percent}%. Collega subito il PC all'alimentazione o si spegnerà.",
+        "network": "Rete",
+        "portal_title": "Accedi a {network}",
+        "portal_body": "Questa rete richiede l'accesso prima di poter usare Internet.",
+        "portal_title_unnamed": "Accedi a questa rete",
+        "sign_in": "Accedi",
+    },
 }
 
 
@@ -85,7 +165,8 @@ def language(env=os.environ):
     for key in ("LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"):
         value = env.get(key, "")
         if value:
-            return "fr" if value.split(":")[0].lower().startswith("fr") else "en"
+            return next((code for code in ("fr", "es", "de", "pt", "it")
+                         if value.split(":")[0].lower().startswith(code)), "en")
     return "en"
 
 
@@ -119,7 +200,7 @@ def disk_conditions(read, words, paths):
         if level:
             title = words["very_low_disk_title" if level == 2 else "low_disk_title"]
             space = "%.1f" % (free / GIB)
-            if words is WORDS["fr"]:
+            if words is not WORDS["en"]:
                 space = space.replace(".", ",")
             out.append(Notice("disk:%s" % fsid, level, words["storage"], "drive-harddisk", title,
                               words["low_disk_body"].format(space=space),

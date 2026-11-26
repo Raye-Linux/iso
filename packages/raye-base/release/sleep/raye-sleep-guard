@@ -340,6 +340,62 @@ WORDS = {
         "page": "Alimentation",
         "open": "Ouvrir les Paramètres",
     },
+    "es": {
+        "app": "Energía",
+        "off_title": "La suspensión está desactivada en este PC",
+        "off_body": "La suspensión no funciona en este PC, así que Raye la desactivó.",
+        "off_lid": "Al cerrar la tapa, el PC se bloquea y se apaga la pantalla.",
+        "off_where": "Puedes volver a activar la suspensión en Configuración > Sistema > {page}.",
+        "warn_title": "Este PC no salió de la suspensión",
+        "warn_body": "La última vez que este PC se suspendió, no volvió. "
+                     "Si vuelve a ocurrir, Raye desactivará la suspensión en este PC.",
+        "warn_lid": "Al cerrar la tapa, el PC se bloqueará y se apagará la pantalla.",
+        "page_battery": "Energía y batería",
+        "page": "Energía",
+        "open": "Abrir Configuración",
+    },
+    "de": {
+        "app": "Energie",
+        "off_title": "Energie sparen ist auf diesem PC deaktiviert",
+        "off_body": "Energie sparen funktioniert auf diesem PC nicht, daher hat Raye es deaktiviert.",
+        "off_lid": "Beim Schließen des Deckels wird der PC gesperrt und der Bildschirm ausgeschaltet.",
+        "off_where": "Sie können Energie sparen unter „Einstellungen > System > {page}“ wieder aktivieren.",
+        "warn_title": "Dieser PC ist nicht aus dem Energiesparmodus aufgewacht",
+        "warn_body": "Als dieser PC zuletzt in den Energiesparmodus wechselte, ist er nicht zurückgekehrt. "
+                     "Wenn das erneut passiert, deaktiviert Raye den Energiesparmodus auf diesem PC.",
+        "warn_lid": "Beim Schließen des Deckels wird der PC dann gesperrt und der Bildschirm ausgeschaltet.",
+        "page_battery": "Energie und Akku",
+        "page": "Energie",
+        "open": "Einstellungen öffnen",
+    },
+    "pt": {
+        "app": "Energia",
+        "off_title": "A suspensão está desativada neste PC",
+        "off_body": "A suspensão não funciona neste PC, então o Raye a desativou.",
+        "off_lid": "Fechar a tampa bloqueia o PC e desliga a tela.",
+        "off_where": "Você pode reativar a suspensão em Configurações > Sistema > {page}.",
+        "warn_title": "Este PC não voltou da suspensão",
+        "warn_body": "Na última vez que este PC entrou em suspensão, ele não voltou. "
+                     "Se acontecer de novo, o Raye desativará a suspensão neste PC.",
+        "warn_lid": "Fechar a tampa então bloqueará o PC e desligará a tela.",
+        "page_battery": "Energia e bateria",
+        "page": "Energia",
+        "open": "Abrir Configurações",
+    },
+    "it": {
+        "app": "Alimentazione",
+        "off_title": "La sospensione è disattivata su questo PC",
+        "off_body": "La sospensione non funziona su questo PC, quindi Raye l'ha disattivata.",
+        "off_lid": "Chiudendo il coperchio il PC si blocca e lo schermo si spegne.",
+        "off_where": "Puoi riattivare la sospensione in Impostazioni > Sistema > {page}.",
+        "warn_title": "Questo PC non si è riattivato dalla sospensione",
+        "warn_body": "L'ultima volta che questo PC è andato in sospensione, non si è riattivato. "
+                     "Se succede di nuovo, Raye disattiverà la sospensione su questo PC.",
+        "warn_lid": "Chiudendo il coperchio il PC si bloccherà e lo schermo si spegnerà.",
+        "page_battery": "Alimentazione e batteria",
+        "page": "Alimentazione",
+        "open": "Apri Impostazioni",
+    },
 }
 
 OPEN_POWER = ["raye-settings", "--page", "system/power"]
@@ -349,7 +405,8 @@ def language(env=os.environ):
     for key in ("LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"):
         value = env.get(key, "")
         if value:
-            return "fr" if value.split(":")[0].lower().startswith("fr") else "en"
+            return next((code for code in ("fr", "es", "de", "pt", "it")
+                         if value.split(":")[0].lower().startswith(code)), "en")
     return "en"
 
 

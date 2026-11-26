@@ -21,6 +21,10 @@ fi
 nbsp=$(printf '\302\240')
 case $lang in
     fr*) name="Imprimer${nbsp}en${nbsp}PDF"; info="Imprimer en PDF" ;;
+    es*) name="Imprimir${nbsp}en${nbsp}PDF"; info="Imprimir en PDF" ;;
+    de*) name="Als${nbsp}PDF${nbsp}drucken"; info="Als PDF drucken" ;;
+    pt*) name="Imprimir${nbsp}em${nbsp}PDF"; info="Imprimir em PDF" ;;
+    it*) name="Stampa${nbsp}in${nbsp}PDF"; info="Stampa in PDF" ;;
     *) name="Print${nbsp}to${nbsp}PDF"; info="Print to PDF" ;;
 esac
 

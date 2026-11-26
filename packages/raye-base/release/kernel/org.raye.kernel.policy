@@ -6,8 +6,16 @@
   <action id="org.raye.kernel">
     <description>Change the kernel this computer starts</description>
     <description xml:lang="fr">Changer le noyau que l'ordinateur démarre</description>
+    <description xml:lang="es">Cambiar el kernel con el que se inicia este equipo</description>
+    <description xml:lang="de">Kernel ändern, mit dem dieser Computer startet</description>
+    <description xml:lang="pt_BR">Alterar o kernel com que este computador inicia</description>
+    <description xml:lang="it">Cambia il kernel con cui si avvia questo computer</description>
     <message>Changing the kernel needs your password</message>
     <message xml:lang="fr">Changer de noyau demande votre mot de passe</message>
+    <message xml:lang="es">Para cambiar el kernel se necesita tu contraseña</message>
+    <message xml:lang="de">Zum Ändern des Kernels ist Ihr Kennwort erforderlich</message>
+    <message xml:lang="pt_BR">Alterar o kernel exige sua senha</message>
+    <message xml:lang="it">Per cambiare il kernel serve la tua password</message>
     <!-- this one asks for the password: it changes what the computer boots -->
     <defaults>
       <allow_any>auth_admin</allow_any>
@@ -19,8 +27,16 @@
   <action id="org.raye.kernel.tpm-status">
     <description>Check whether the security chip opens the disk by itself</description>
     <description xml:lang="fr">Vérifier si la puce de sécurité ouvre le disque toute seule</description>
+    <description xml:lang="es">Comprobar si el chip de seguridad abre el disco por sí solo</description>
+    <description xml:lang="de">Prüfen, ob der Sicherheitschip den Datenträger selbst öffnet</description>
+    <description xml:lang="pt_BR">Verificar se o chip de segurança abre o disco sozinho</description>
+    <description xml:lang="it">Controlla se il chip di sicurezza apre il disco da solo</description>
     <message>Checking the security chip needs your password</message>
     <message xml:lang="fr">Vérifier la puce de sécurité demande votre mot de passe</message>
+    <message xml:lang="es">Para comprobar el chip de seguridad se necesita tu contraseña</message>
+    <message xml:lang="de">Zum Prüfen des Sicherheitschips ist Ihr Kennwort erforderlich</message>
+    <message xml:lang="pt_BR">Verificar o chip de segurança exige sua senha</message>
+    <message xml:lang="it">Per controllare il chip di sicurezza serve la tua password</message>
     <!-- read only: the person at the computer is not asked anything.
          pkexec picks this action only when the first argument is tpm-status -->
     <defaults>

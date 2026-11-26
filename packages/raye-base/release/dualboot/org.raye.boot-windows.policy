@@ -6,8 +6,16 @@
   <action id="org.raye.boot-windows">
     <description>Start Windows next time</description>
     <description xml:lang="fr">Démarrer Windows la prochaine fois</description>
+    <description xml:lang="es">Iniciar Windows la próxima vez</description>
+    <description xml:lang="de">Beim nächsten Mal Windows starten</description>
+    <description xml:lang="pt_BR">Iniciar o Windows da próxima vez</description>
+    <description xml:lang="it">Avvia Windows la prossima volta</description>
     <message>Restarting into Windows needs your permission</message>
     <message xml:lang="fr">Redémarrer sur Windows demande votre autorisation</message>
+    <message xml:lang="es">Para reiniciar en Windows se necesita tu permiso</message>
+    <message xml:lang="de">Zum Neustart in Windows ist Ihre Erlaubnis erforderlich</message>
+    <message xml:lang="pt_BR">Reiniciar no Windows exige sua permissão</message>
+    <message xml:lang="it">Per riavviare in Windows serve la tua autorizzazione</message>
     <!-- the same as restarting: allowed for whoever sits at the computer -->
     <defaults>
       <allow_any>auth_admin</allow_any>

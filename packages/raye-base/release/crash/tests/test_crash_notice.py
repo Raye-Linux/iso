@@ -425,10 +425,14 @@ class LanguageTest(unittest.TestCase):
     def test_choice(self):
         self.assertEqual(self.pick(LANG="fr_FR.UTF-8"), "fr")
         self.assertEqual(self.pick(LANG="fr_CA.UTF-8"), "fr")
-        self.assertEqual(self.pick(LANG="de_DE.UTF-8"), "en")
+        self.assertEqual(self.pick(LANG="nl_NL.UTF-8"), "en")
+        self.assertEqual(self.pick(LANG="de_DE.UTF-8"), "de")
+        self.assertEqual(self.pick(LANG="es_MX.UTF-8"), "es")
+        self.assertEqual(self.pick(LANG="pt_BR.UTF-8"), "pt")
+        self.assertEqual(self.pick(LANG="it_IT.UTF-8"), "it")
         self.assertEqual(self.pick(LANG="en_GB.UTF-8", LC_MESSAGES="fr_BE.UTF-8"), "fr")
         self.assertEqual(self.pick(LANG="fr_FR.UTF-8", LC_ALL="en_US.UTF-8"), "en")
-        self.assertEqual(self.pick(LANG="en_US.UTF-8", LANGUAGE="de:fr:en"), "fr")
+        self.assertEqual(self.pick(LANG="en_US.UTF-8", LANGUAGE="nl:fr:en"), "fr")
         self.assertEqual(self.pick(LANG="C", LANGUAGE="fr"), "en")
         self.assertEqual(self.pick(), "en")
 
@@ -446,6 +450,20 @@ class FilesTest(unittest.TestCase):
             if isinstance(value, str):
                 self.assertEqual(re.findall(r"\{\w+\}", value), re.findall(r"\{\w+\}", fr[key]),
                                  key)
+
+    def test_spanish_german_portuguese_italian(self):
+        en = self.strings("en")
+        for lang in ("es", "de", "pt", "it"):
+            t = self.strings(lang)
+            self.assertEqual(list(t), list(en), lang)
+            self.assertEqual(len(t["months"]), 12, lang)
+            for key, value in en.items():
+                if isinstance(value, str):
+                    self.assertTrue(t[key], (lang, key))
+                    self.assertEqual(sorted(re.findall(r"\{\w+\}", value)),
+                                     sorted(re.findall(r"\{\w+\}", t[key])), (lang, key))
+                    if len(re.findall(r"[A-Za-z]{2,}", re.sub(r"\{\w+\}", "", value))) >= 3:
+                        self.assertNotEqual(t[key], value, (lang, key))
 
     def test_built_in_english_matches_the_file(self):
         self.assertEqual(notice.ENGLISH, self.strings("en"))

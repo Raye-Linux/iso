@@ -1,0 +1,235 @@
+#!/usr/bin/python3 -I
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Light mode for PCs with little memory (2 to 4 GB).
+
+    raye-light-mode [check]   "low <MiB>" (exit 0) or "normal <MiB>" (exit 1)
+    raye-light-mode session   first sign-in of an account, from the user unit
+    (as a generator)          started as system-generators/raye-light-mode
+                              or user-generators/raye-light-mode
+
+Below 4000 MiB of memory (a "4 GB" PC reports a little less than 4 GiB,
+the same line Settings > Performance options draws):
+
+  - at the first sign-in of an account, once: the visual effects go off
+    the way "Let Raye choose" turns them off on a slow PC, and the file
+    index stops, unless the person already chose for either. A notice says
+    so and opens Performance options. Nothing is changed again later, so
+    what the person turns back on stays on.
+  - at every start: the Store's catalog refresh and app updates, and the
+    first preparation of the Windows space, wait until the PC has settled
+    instead of running in the first minutes (drop-ins written by the
+    generator, nothing on disk).
+
+On a PC with more memory nothing happens at all.
+"""
+import os
+import pathlib
+import shutil
+import subprocess
+import sys
+
+LOW_MEMORY_KIB = 4000 * 1024
+DROPIN = "50-raye-light-mode.conf"
+NOTICE_DELAY = "60s"
+
+# what each start waits for, by unit (system manager, then user manager)
+SYSTEM_DROPINS = {
+    # refreshed 2 min after boot otherwise; downloads and parses feeds
+    "raye-store-catalog.timer": "[Timer]\nOnBootSec=\nOnBootSec=20min\n",
+}
+USER_DROPINS = {
+    # the Store's app updates (a user timer): Persistent=true runs a missed
+    # day's update right at sign-in
+    "raye-store-autoupdate.timer": "[Timer]\nPersistent=false\nOnStartupSec=30min\n",
+    # creates the Windows space (a Wine prefix) 2 min after sign-in otherwise
+    "raye-windows-prepare.timer": "[Timer]\nOnStartupSec=\nOnStartupSec=20min\n",
+}
+
+# every visual effect off, as Settings writes them (settings
+# src/backends/performance.cpp, setMode("auto") on a slow PC)
+EFFECTS_OFF = (
+    ("kdeglobals", "KDE", "AnimationDurationFactor", "0"),
+    ("kwinrc", "Plugins", "raye_windowsEnabled", "false"),
+    ("kwinrc", "Plugins", "squashEnabled", "false"),
+    ("kwinrc", "Plugins", "raye_maximizeEnabled", "false"),
+    ("kwinrc", "Plugins", "raye_popupsEnabled", "false"),
+    ("kwinrc", "Plugins", "slidingpopupsEnabled", "false"),
+    ("kwinrc", "Plugins", "slideEnabled", "false"),
+    ("kdeglobals", "Raye", "TransparencyEffects", "false"),
+    ("kwinrc", "Plugins", "blurEnabled", "false"),
+    ("kwinrc", "Plugins", "contrastEnabled", "false"),
+    ("rayerc", "Common", "ShadowSize", "ShadowNone"),
+    ("kdeglobals", "Raye", "VisualEffectsMode", "auto"),
+)
+
+WORDS = {
+    "en": {
+        "title": "Light mode is on",
+        "body": "This PC has {gb} GB of memory, so Raye turned off visual effects and file "
+                "indexing to keep it fast. You can turn them back on in Performance options.",
+        "open": "Performance options",
+    },
+    "fr": {
+        "title": "Mode léger activé",
+        "body": "Ce PC a {gb} Go de mémoire : Raye a coupé les effets visuels et l'indexation "
+                "des fichiers pour qu'il reste rapide. Vous pouvez les rétablir dans Options de "
+                "performances.",
+        "open": "Options de performances",
+    },
+}
+
+
+def memory_kib(meminfo="/proc/meminfo"):
+    """MemTotal, 0 when it cannot be read (then nothing is decided)."""
+    try:
+        with open(meminfo, encoding="ascii") as fh:
+            for line in fh:
+                if line.startswith("MemTotal:"):
+                    return int(line.split()[1])
+    except (OSError, ValueError, IndexError):
+        pass
+    return 0
+
+
+def is_low(kib):
+    return 0 < kib < LOW_MEMORY_KIB
+
+
+def gigabytes(kib):
+    """What the box says: 1.9 GiB of MemTotal is a 2 GB PC."""
+    return max(1, round(kib / (1024 * 1024)))
+
+
+def language(env):
+    for key in ("LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"):
+        value = env.get(key, "")
+        if value:
+            return "fr" if value.split(":")[0].lower().startswith("fr") else "en"
+    return "en"
+
+
+# ------------------------------------------------------------ generator
+def generate(kind, normal_dir, kib):
+    """Writes the drop-ins of a slow PC; returns the units it wrote for."""
+    if not is_low(kib):
+        return []
+    dropins = USER_DROPINS if kind == "user" else SYSTEM_DROPINS
+    done = []
+    for unit, text in dropins.items():
+        folder = pathlib.Path(normal_dir, unit + ".d")
+        folder.mkdir(parents=True, exist_ok=True)
+        folder.joinpath(DROPIN).write_text("# raye-light-mode: this PC has little memory\n" + text,
+                                           encoding="utf-8")
+        done.append(unit)
+    return done
+
+
+# -------------------------------------------------------------- session
+def read_key(file, group, key):
+    try:
+        out = subprocess.run(["kreadconfig6", "--file", file, "--group", group, "--key", key],
+                             capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    return out.stdout.strip() if out.returncode == 0 else ""
+
+
+def write_key(file, group, key, value):
+    subprocess.run(["kwriteconfig6", "--file", file, "--group", group, "--key", key, "--notify", value],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10, check=False)
+
+
+def delete_key(file, group, key):
+    subprocess.run(["kwriteconfig6", "--file", file, "--group", group, "--key", key, "--notify", "--delete"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10, check=False)
+
+
+def quiet(cmd):
+    try:
+        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
+
+def effects_off():
+    """True when the effects were turned off here, False when the person
+    had already chosen (Settings keeps the choice in VisualEffectsMode)."""
+    if read_key("kdeglobals", "Raye", "VisualEffectsMode"):
+        return False
+    delete_key("kwinrc", "Plugins", "wobblywindowsEnabled")
+    for file, group, key, value in EFFECTS_OFF:
+        write_key(file, group, key, value)
+    # the window manager reloads its effects, the window borders follow
+    quiet(["dbus-send", "--session", "--type=signal", "/KWin", "org.kde.KWin.reloadConfig"])
+    quiet(["dbus-send", "--session", "--print-reply", "--dest=org.kde.KWin", "/KWin", "org.kde.KWin.reconfigure"])
+    return True
+
+
+def indexing_off():
+    """True when the file index was stopped here."""
+    if read_key("baloofilerc", "Basic Settings", "Indexing-Enabled"):
+        return False
+    write_key("baloofilerc", "Basic Settings", "Indexing-Enabled", "false")
+    if shutil.which("balooctl6"):
+        # stops an indexer this sign-in already started
+        quiet(["balooctl6", "disable"])
+    return True
+
+
+def notify(env, kib):
+    words = WORDS[language(env)]
+    body = words["body"].format(gb=gigabytes(kib))
+    ask = ["notify-send", "--app-name=Raye", "--icon=preferences-desktop-effects", "--urgency=normal",
+           "--action=open=" + words["open"], "--wait", words["title"], body]
+    script = ('[ "$(%s)" = open ] && exec raye-settings --page system/performance'
+              % " ".join("'%s'" % a.replace("'", "'\\''") for a in ask))
+    # a minute after sign-in: sent while the desktop is still starting, the
+    # notice went nowhere a person could see it (measured on a 4 GB PC)
+    quiet(["systemd-run", "--user", "--quiet", "--collect", "--on-active=" + NOTICE_DELAY, "--", "sh", "-c", script])
+
+
+def state_file(env):
+    base = env.get("XDG_STATE_HOME") or os.path.join(env.get("HOME", os.path.expanduser("~")), ".local/state")
+    return pathlib.Path(base, "raye", "light-mode")
+
+
+def session(env, kib):
+    """Once per account. Returns what was done, for the log and the tests."""
+    marker = state_file(env)
+    if marker.exists() or kib == 0:
+        return "already" if marker.exists() else "unknown"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    if not is_low(kib):
+        marker.write_text("normal %d\n" % (kib // 1024), encoding="ascii")
+        return "normal"
+    changed = [name for name, ok in (("effects", effects_off()), ("indexing", indexing_off())) if ok]
+    marker.write_text("light %d %s\n" % (kib // 1024, " ".join(changed) or "none"), encoding="ascii")
+    if changed:
+        notify(env, kib)
+    return "light " + (" ".join(changed) or "none")
+
+
+def main(argv, env=os.environ):
+    name = os.path.basename(os.path.dirname(os.path.abspath(argv[0])))
+    kib = memory_kib(env.get("RAYE_MEMINFO", "/proc/meminfo"))
+    if name in ("system-generators", "user-generators"):
+        # generators get <normal> <early> <late>; say nothing, never fail the boot
+        try:
+            if len(argv) > 1:
+                generate("user" if name == "user-generators" else "system", argv[1], kib)
+        except OSError:
+            pass
+        return 0
+    command = argv[1] if len(argv) > 1 else "check"
+    if command == "check":
+        print("%s %d" % ("low" if is_low(kib) else "normal", kib // 1024))
+        return 0 if is_low(kib) else 1
+    if command == "session":
+        print(session(env, kib))
+        return 0
+    print("usage: raye-light-mode [check|session]", file=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

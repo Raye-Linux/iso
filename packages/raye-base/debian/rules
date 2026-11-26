@@ -35,6 +35,7 @@ ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
 	python3 -B -m unittest discover -s release/firefox/tests
 	python3 -B -m unittest discover -s release/identity/tests
 	python3 -B -m unittest discover -s release/notices/tests
+	python3 -B -m unittest discover -s release/lightmode/tests
 	python3 -B -m unittest discover -s release/snapshots/tests
 	python3 -B -m unittest discover -s release/crash/tests
 	python3 -B -m unittest discover -s release/windows/tests

@@ -1,0 +1,18 @@
+# Light mode on a PC with little memory: at the first sign-in of an
+# account, the visual effects and the file index go off once, with a
+# notice (raye-light-mode). Does nothing on a PC with 4 GB or more.
+[Unit]
+Description=Light mode for a PC with little memory
+Documentation=https://github.com/Raye-Linux/handbook
+PartOf=graphical-session.target
+After=graphical-session.target plasma-plasmashell.service
+ConditionPathExists=!%S/raye/light-mode
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/raye-light-mode session
+NoNewPrivileges=yes
+MemoryHigh=64M
+
+[Install]
+WantedBy=graphical-session.target

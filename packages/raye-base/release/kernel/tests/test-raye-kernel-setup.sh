@@ -71,6 +71,10 @@ for a in "$@"; do
         exit 0
     fi
 done
+# the archive answers the lists but not the download (a server down)
+if [ -e "$CTL/archive-down" ]; then
+    for b in "$@"; do [ "$b" = linux-raye ] && exit 100; done
+fi
 echo "Setting up linux-image-raye ..."
 echo "Warning: os-prober will be executed to detect other bootable partitions." >&2
 [ -e "$CTL/apt-fails" ] && exit 100
@@ -1002,6 +1006,20 @@ check '[ $rc = 0 ] && out_is "Raye kernel kept"' "kept"
 check '! called "grub-set-default 0"' "not the menu's first line, which starts the older kernel"
 check 'called "grub-set-default gnulinux-advanced-$uuid>gnulinux-$v1-advanced-$uuid"' "the kernel that started is the default"
 raye=7.0.0-42-raye
+teardown
+
+setup "finish: the archive fails, the copy on the disk does the job"
+# measured in VM 130: the network was up, the archive did not answer, and
+# the switch waited for the next start although the kernel was on the disk
+: > "$CTL/enrolled"
+: > "$CTL/archive"; : > "$CTL/need-download"; : > "$CTL/online"; : > "$CTL/archive-down"
+add_local_debs
+kernel_installed
+mkdir -p "$R/var/lib/raye-kernel"; : > "$(state pending)"
+run finish
+check 'called "install -y -q linux-raye"' "the archive was tried first"
+check 'called "linux-image-${raye}_7.0.0-42.1_amd64.deb"' "then the package on the disk"
+check '[ -e "$(state trial)" ]' "trial set"
 teardown
 
 echo "$pass passed, $fail failed"

@@ -625,7 +625,14 @@ finish)
         # without leaving a failed unit behind
         pkgs=$(boot_packages)
         [ -n "$pkgs" ] || { say "Raye kernel not reachable yet, next boot"; exit 0; }
-        install_kernel "$pkgs" && try_once && rm -f "$pending"
+        if ! install_kernel "$pkgs"; then
+            # the archive did not answer: the copy shipped on the disk
+            disk=$(shipped_debs)
+            [ -n "$disk" ] && [ "$disk" != "$pkgs" ] || exit 1
+            note "the archive did not answer, the Raye kernel comes from the disk"
+            install_kernel "$disk" || exit 1
+        fi
+        try_once && rm -f "$pending"
     elif ! mokutil --list-new 2>/dev/null | grep -q .; then
         # the key was turned down at the blue screen: start over later
         note "key turned down at the restart"

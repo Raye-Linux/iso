@@ -117,8 +117,9 @@ def verify(keyring, signature, data=None):
 TREE_TOP = {"dists", "pool", ".nojekyll", raye_pages.INDEX}
 POOL_SUFFIXES = (".deb", ".dsc", ".tar.gz", ".tar.xz", ".tar.bz2", ".tar.zst",
                  ".diff.gz", ".tar.gz.asc", ".tar.xz.asc", ".tar.bz2.asc")
-FILE_LIMIT = 100 * 1000 * 1000        # GitHub refuses a file this big
-TREE_LIMIT = 1000 * 1000 * 1000       # a GitHub Pages site stays under 1 GB
+FILE_LIMIT = 2 * 1000 * 1000 * 1000   # no package file this big, on any mirror
+GITHUB_FILE_LIMIT = 100 * 1000 * 1000 # GitHub refuses a file this big: such a package stays on R2
+TREE_LIMIT = 1000 * 1000 * 1000       # the GitHub Pages copy stays under 1 GB
 SECRET_MARKERS = (b"PRIVATE KEY BLOCK-----", b"PRIVATE KEY-----",
                   b"OPENSSH PRIVATE KEY", b"R2_SECRET_ACCESS_KEY")
 SECRET_PARTS = {"private-keys-v1.d", "openpgp-revocs.d", "pubring.kbx", "trustdb.gpg",
@@ -169,6 +170,26 @@ def channel_suites(suite):
     return [base + ending for ending in CHANNEL_ENDINGS]
 
 
+def r2_only(tree):
+    """The package files GitHub cannot hold (100 MB or more), relative to
+    the tree: the GitHub Pages copy leaves them out, R2 keeps them. A PC
+    reads R2 first; while R2 is down, only these few fail to download."""
+    tree = pathlib.Path(tree)
+    pool = tree / "pool"
+    if not pool.is_dir():
+        return []
+    return sorted(p.relative_to(tree).as_posix() for p in pool.rglob("*")
+                  if p.is_file() and p.stat().st_size >= GITHUB_FILE_LIMIT)
+
+
+def github_size(tree):
+    """What the GitHub Pages copy of the tree weighs: the tree without r2_only()."""
+    tree = pathlib.Path(tree)
+    return sum(p.stat().st_size for p in tree.rglob("*")
+               if p.is_file() and not (p.stat().st_size >= GITHUB_FILE_LIMIT
+                                       and p.relative_to(tree).parts[0] == "pool"))
+
+
 def audit_channels(tree, conf, keyring=None):
     """audit_tree for every channel suite: a mirror never goes out with a
     channel missing, or a PC on that channel fails its apt update."""
@@ -212,10 +233,13 @@ def audit_tree(tree, suite, keyring=KEYRING, signed=True):
         if not path.is_file():
             continue
         size = path.stat().st_size
-        total += size
+        if not (size >= GITHUB_FILE_LIMIT and rel.startswith("pool/")):
+            total += size   # what the GitHub copy weighs: r2_only() stays out of it
         if low.endswith((".iso", ".img", ".qcow2")) or ".iso." in parts[-1]:
             problems.append(f"{rel}: an image file name")
         if size >= FILE_LIMIT:
+            problems.append(f"{rel}: {human(size)}, no package file of 2 GB or more")
+        elif size >= GITHUB_FILE_LIMIT and not rel.startswith("pool/"):
             problems.append(f"{rel}: {human(size)}, GitHub refuses files of 100 MB or more")
         page = parts[-1] == raye_pages.INDEX
         if page and not raye_pages.is_folder_page(path):
@@ -229,7 +253,8 @@ def audit_tree(tree, suite, keyring=KEYRING, signed=True):
         if _openpgp_secret(head) or _has_marker(path):
             problems.append(f"{rel}: secret key material")
     if total >= TREE_LIMIT:
-        problems.append(f"the tree is {human(total)}, a GitHub Pages site must stay under 1 GB")
+        problems.append(f"the GitHub copy of the tree is {human(total)}, a GitHub Pages site "
+                        "must stay under 1 GB")
     if not signed:
         return problems
     suite_dir = tree / "dists" / suite

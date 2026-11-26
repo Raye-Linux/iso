@@ -109,8 +109,8 @@ under another name), secret key material (armored or binary OpenPGP
 secret keys, a GnuPG home, `r2.env`), anything at the top that is not
 `dists/`, `pool/`, `.nojekyll` or `index.html`, a non-package file in
 `pool/` (an `index.html` excepted), an `index.html` that is not a folder
-page (it must start with `<!DOCTYPE html>` and stay under 1 MB), a file
-of 100 MB or more, a tree of 1 GB or more, and a Release that is not
+page (it must start with `<!DOCTYPE html>` and stay under 1 MB), a package
+file of 2 GB or more, a file of 100 MB or more outside `pool/`, a GitHub copy of 1 GB or more, and a Release that is not
 signed by the shipped keyring -- InRelease must sign the very Release
 that is in the tree.
 
@@ -119,6 +119,15 @@ that is in the tree.
 Source packages of the patched packages go in with
 `--sources DIR` (a folder of `.dsc` and the files they name); they are
 indexed in `dists/resolute/main/source/Sources`.
+
+## Packages of 100 MB or more stay on R2
+
+GitHub refuses a file of 100 MB or more, so the Raye kernel image and Raye Proton cannot go
+in the GitHub Pages copy. Such a package goes in the tree and on R2 as usual; publish-github
+lists them (`raye_publish.r2_only`), removes them from its copy before the push, and checks
+that nothing of 100 MB or more is left. The 1 GB limit, and the 72-hour budget, count the
+GitHub copy only. A PC reads R2 first: while R2 is down, the other packages still come from
+GitHub and only these few fail to download until R2 answers again.
 
 ## Tests
 

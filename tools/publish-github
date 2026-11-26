@@ -46,9 +46,12 @@ def check_tree(tree, conf, keyring=rp.KEYRING):
         raise rp.PublishError(f"{tree} must not be published:\n  " + "\n  ".join(problems))
 
 
-def apt_job(conf, tree, stamp):
+def apt_job(conf, tree, stamp, r2_only=()):
     repo = f"{conf['GITHUB_ORG']}/{conf['GITHUB_PACKAGES']}"
     name, _, mail = AUTHOR.partition(" <")
+    # packages of 100 MB or more stay on R2 only: git refuses them
+    drop = "".join(f'rm -f "$work"/{shlex.quote(rel)}\necho "left on R2 only: {rel}"\n'
+                   for rel in r2_only)
     # one commit, pushed over the last one: the repo never grows with old packages
     return f"""set -eu
 export HOME=/root
@@ -56,6 +59,9 @@ work=$(mktemp -d /var/tmp/raye-pages.XXXXXX)
 trap 'rm -rf "$work"' EXIT
 cp -a {shlex.quote(str(tree))}/. "$work"/
 touch "$work/.nojekyll"
+{drop}if find "$work" -type f -size +{GITHUB_FILE_LIMIT - 1}c | grep -q .; then
+    echo "refused: a file of 100 MB or more is in the GitHub copy" >&2; exit 3
+fi
 # last look on the VM itself, after the copy: never an image, never a key
 if find "$work" -type f \\( -iname '*.iso' -o -iname '*.iso.*' \\) | grep -q .; then
     echo "refused: an image file is in the tree" >&2; exit 3
@@ -180,7 +186,10 @@ def main(argv=None):
                 raise rp.PublishError(f"no signed tree in {tree}: run publish-repo first")
             check_tree(tree, conf)   # every channel suite, each signed
             print(f"apt: {tree} -> {conf['GITHUB_ORG']}/{conf['GITHUB_PACKAGES']} -> {conf['GITHUB_PAGES']}/")
-            jobs.append(("apt", apt_job(conf, tree, time.strftime("%Y-%m-%d"))))
+            big = rp.r2_only(tree)
+            for rel in big:
+                print(f"  R2 only (100 MB or more): {rel}")
+            jobs.append(("apt", apt_job(conf, tree, time.strftime("%Y-%m-%d"), big)))
         if args.what in ("all", "iso"):
             if not (release / "SHA256SUMS.asc").is_file():
                 raise rp.PublishError(f"no signed release in {release}: run release-files first")

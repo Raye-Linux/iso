@@ -207,3 +207,59 @@ class GuardTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+
+@unittest.skipIf(missing, f"missing {', '.join(missing)}")
+class LargePackageTests(unittest.TestCase):
+    """A package GitHub cannot hold (100 MB or more: the Raye kernel, Raye
+    Proton) stays on R2 only; the GitHub copy leaves it out and must still
+    stay under 1 GB. The limit is moved just under the size of one demo
+    package, a random 300 kB one, so no test writes 100 MB."""
+
+    setUpClass = classmethod(GuardTests.setUpClass.__func__)
+    tearDownClass = classmethod(GuardTests.tearDownClass.__func__)
+
+    def setUp(self):
+        self.work = pathlib.Path(tempfile.mkdtemp(dir=self.tmp))
+        debs = self.work / "debs"
+        debs.mkdir()
+        make_deb(debs, "raye-demo", "1.0")
+        big = make_deb(debs, "raye-big", "1.0", payload=os.urandom(300_000).hex())
+        self.out = self.work / "apt"
+        for suite in reversed(pr.channel_suites(self.conf)):
+            pr.build(sorted(debs.glob("*.deb")), self.out, pr.with_suite(self.conf, suite),
+                     keyring=self.keyring)
+        self.big = next((self.out / "pool").rglob(big.name))
+        self.limits = (rp.GITHUB_FILE_LIMIT, rp.TREE_LIMIT)
+        rp.GITHUB_FILE_LIMIT = self.big.stat().st_size
+
+    def tearDown(self):
+        rp.GITHUB_FILE_LIMIT, rp.TREE_LIMIT = self.limits
+
+    def problems(self):
+        return rp.audit_tree(self.out, self.conf["SUITE"], self.keyring)
+
+    def test_a_big_package_may_go_out_on_r2(self):
+        self.assertEqual(self.problems(), [])
+        pg.check_tree(self.out, self.conf, self.keyring)
+        self.assertEqual(rp.r2_only(self.out), [self.big.relative_to(self.out).as_posix()])
+
+    def test_a_big_package_does_not_count_against_the_github_copy(self):
+        rp.TREE_LIMIT = rp.github_size(self.out) + 1
+        self.assertEqual(self.problems(), [])
+        rp.GITHUB_FILE_LIMIT = self.limits[0]               # counted again: over the limit
+        self.assertTrue(any("1 GB" in p for p in self.problems()))
+
+    def test_a_big_file_outside_the_pool_is_still_refused(self):
+        page = self.out / "dists" / "index.html"
+        rp.GITHUB_FILE_LIMIT = page.stat().st_size
+        self.assertTrue(any("100 MB" in p and "dists/index.html" in p for p in self.problems()))
+
+    def test_the_github_job_drops_exactly_the_r2_only_files(self):
+        big = rp.r2_only(self.out)
+        job = pg.apt_job(self.conf, self.out, "today", big)
+        self.assertEqual(job.count('rm -f "$work"/'), 1)
+        self.assertIn(f'rm -f "$work"/{big[0]}', job)
+        self.assertIn("-size +99999999c", job)
+        self.assertLess(job.index("rm -f"), job.index("git push"))   # dropped before the push

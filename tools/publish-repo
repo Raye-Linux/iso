@@ -342,7 +342,8 @@ def retired_debs(out, conf, chosen, now=None):
 
 
 def tree_size(tree):
-    return sum(p.stat().st_size for p in tree.rglob("*") if p.is_file())
+    """What counts against GRACE_BUDGET: the GitHub copy (R2-only files are left out)."""
+    return rp.github_size(tree)
 
 
 def keep_retired(new, out, conf, chosen, budget=None, now=None):
@@ -355,6 +356,8 @@ def keep_retired(new, out, conf, chosen, budget=None, now=None):
     young = {rel for rel, _, _ in candidates}
     for rel, src, at in candidates:
         size = src.stat().st_size
+        if size >= rp.GITHUB_FILE_LIMIT:
+            size = 0   # R2 only: the GitHub copy does not carry it
         if size > room:
             pruned.append(rel)
             continue

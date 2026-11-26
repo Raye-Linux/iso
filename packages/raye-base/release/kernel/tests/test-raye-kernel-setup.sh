@@ -692,9 +692,12 @@ teardown
 
 setup "polkit"
 policy=$here/../org.raye.kernel.policy
-check 'grep -A12 "id=\"org.raye.kernel\"" "$policy" | grep -q "<allow_active>auth_admin</allow_active>"' "changing the kernel asks the password"
-check 'grep -A14 "id=\"org.raye.kernel.tpm-status\"" "$policy" | grep -q "<allow_active>yes</allow_active>"' "reading the TPM state does not"
-check 'grep -A14 "id=\"org.raye.kernel.tpm-status\"" "$policy" | grep -q "exec.argv1\">tpm-status<"' "only for tpm-status"
+# the whole <action> block, however many languages it carries
+action() { awk -v id="$1" 'index($0, "id=\"" id "\"") {p=1} p; p && /<\/action>/ {exit}' "$policy"; }
+check 'action org.raye.kernel | grep -q "<allow_active>auth_admin</allow_active>"' "changing the kernel asks the password"
+check 'action org.raye.kernel.tpm-status | grep -q "<allow_active>yes</allow_active>"' "reading the TPM state does not"
+check 'action org.raye.kernel.tpm-status | grep -q "exec.argv1\">tpm-status<"' "only for tpm-status"
+check '! action org.raye.kernel | grep -q "<allow_active>yes</allow_active>"' "the kernel change never goes without the password"
 if command -v xmllint >/dev/null 2>&1; then
     check 'xmllint --noout "$policy" 2>/dev/null' "well-formed XML"
 fi

@@ -723,7 +723,8 @@ class Files(unittest.TestCase):
         self.assertEqual(action.get("id"), "org.raye.windows.components")
         langs = {d.get("{http://www.w3.org/XML/1998/namespace}lang")
                  for d in action.findall("description")}
-        self.assertEqual(langs, {None, "fr"})
+        # English, French, and the four languages of the V1
+        self.assertEqual(langs, {None, "fr", "es", "de", "pt_BR", "it"})
         annotate = {a.get("key"): a.text for a in action.findall("annotate")}
         self.assertEqual(annotate["org.freedesktop.policykit.exec.path"],
                          "/usr/libexec/raye-windows-components")

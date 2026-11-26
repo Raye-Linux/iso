@@ -1,0 +1,10 @@
+[Unit]
+Description=Make Raye Proton Steam's default once Steam has set itself up
+
+[Path]
+PathChanged=%h/.local/share/Steam/config/config.vdf
+PathChanged=%h/.var/app/com.valvesoftware.Steam/data/Steam/config/config.vdf
+Unit=raye-proton-default.service
+
+[Install]
+WantedBy=default.target

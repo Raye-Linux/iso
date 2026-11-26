@@ -1,0 +1,52 @@
+#!/bin/sh
+# Puts Raye Proton in the Store's Steam (Flatpak) as well: Steam from the
+# archive finds it in /usr/share/steam/compatibilitytools.d by itself, the
+# Flatpak only looks in its own folder, so it gets a copy there (about
+# the size of the tool), made again when Raye Update brings a new build.
+# Inside the Flatpak it runs as it does in Steam from the archive, in
+# Steam's own runtime: nothing goes out of the sandbox.
+#
+# It also takes away what the first Raye Proton (a launcher on raye-wine)
+# had set up: its copy, in a folder this Steam does not read, and the
+# permission it had asked for to start games outside the sandbox.
+# Nothing happens while the Store's Steam is not installed.
+# raye-proton-setup --remove undoes it.
+set -u
+src=${RAYE_PROTON_SRC:-/usr/share/steam/compatibilitytools.d/raye-proton}
+app=com.valvesoftware.Steam
+tools="$HOME/.var/app/$app/data/Steam/compatibilitytools.d"
+dest="$tools/raye-proton"
+old="$HOME/.var/app/$app/.local/share/Steam/compatibilitytools.d"
+
+forget_launcher() {
+    rm -rf "$old/raye-proton"
+    rmdir "$old" 2>/dev/null
+    if [ -e "$old/.raye-proton-override" ]; then
+        flatpak override --user --no-talk-name=org.freedesktop.Flatpak "$app" 2>/dev/null
+        rm -f "$old/.raye-proton-override"
+        rmdir "$old" 2>/dev/null
+    fi
+    return 0
+}
+
+if [ "${1:-}" = --remove ]; then
+    rm -rf "$dest" "$dest.new"
+    forget_launcher
+    exit 0
+fi
+
+flatpak info "$app" >/dev/null 2>&1 || exit 0
+[ -f "$src/compatibilitytool.vdf" ] || exit 0
+forget_launcher
+# the copy is current when it is the same build (GE-Proton writes its
+# name and date in "version") under the same name for Steam
+if cmp -s "$src/version" "$dest/version" &&
+   cmp -s "$src/compatibilitytool.vdf" "$dest/compatibilitytool.vdf"; then
+    exit 0
+fi
+mkdir -p "$tools" || exit 1
+rm -rf "$dest.new"
+cp -a --reflink=auto "$src" "$dest.new" || { rm -rf "$dest.new"; exit 1; }
+rm -rf "$dest"
+mv "$dest.new" "$dest"
+exit 0

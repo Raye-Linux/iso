@@ -1,0 +1,7 @@
+[Unit]
+Description=Make Raye Proton Steam's default for Windows games, if no tool was chosen
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/raye-proton-setup
+ExecStart=/usr/libexec/raye-proton-default --wait 300

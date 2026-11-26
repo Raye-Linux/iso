@@ -1,0 +1,53 @@
+#!/usr/bin/make -f
+#
+# Raye Proton is GE-Proton built by build-ge.sh (hours, in the Proton
+# SDK container): the two archives it makes are not kept in git. Put
+# them in upstream/ (or point RAYE_PROTON_UPSTREAM at their folder);
+# the build checks them against upstream.sha512 before unpacking, and
+# ships the tool byte for byte, only its display name set.
+
+export PYTHONDONTWRITEBYTECODE = 1
+
+PKG = debian/raye-proton
+TOOLS = $(PKG)/usr/share/steam/compatibilitytools.d
+UP ?= $(or $(RAYE_PROTON_UPSTREAM),upstream)
+
+%:
+	dh $@
+
+override_dh_auto_configure:
+	sh build-ge.sh check $(UP)
+
+override_dh_auto_build:
+
+override_dh_auto_test:
+ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
+	python3 -m pytest -q -p no:cacheprovider tests
+endif
+
+override_dh_auto_install:
+	install -d $(TOOLS) $(PKG)/usr/share/doc/raye-proton $(PKG)/usr/libexec $(PKG)/usr/lib/systemd/user
+	tar -C $(TOOLS) --no-same-owner -xzf $(UP)/raye-proton.tar.gz
+	test -x $(TOOLS)/raye-proton/proton
+	sh raye/raye-proton-name $(TOOLS)/raye-proton
+	tar -C $(PKG)/usr/share/doc/raye-proton --no-same-owner -xzf $(UP)/raye-proton-licenses.tar.gz
+	mv $(PKG)/usr/share/doc/raye-proton/raye-proton-licenses $(PKG)/usr/share/doc/raye-proton/licenses
+	install -m 755 raye/raye-proton-setup raye/raye-proton-default $(PKG)/usr/libexec/
+	install -m 644 raye/raye-proton-setup.service raye/raye-proton-default.service \
+		raye/raye-proton-default.path $(PKG)/usr/lib/systemd/user/
+
+# the tool is shipped as it was built: no stripping, no rewriting, and
+# its libraries need what Steam's runtime gives them, not system packages
+override_dh_strip:
+override_dh_dwz:
+override_dh_strip_nondeterminism:
+override_dh_shlibdeps:
+override_dh_makeshlibs:
+override_dh_fixperms:
+	dh_fixperms -Xusr/share/steam/compatibilitytools.d
+
+override_dh_compress:
+	dh_compress -Xlicenses
+
+override_dh_builddeb:
+	dh_builddeb -- -Zxz

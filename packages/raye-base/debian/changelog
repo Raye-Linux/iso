@@ -38,6 +38,9 @@ raye-base (1.0~rc3) resolute; urgency=medium
   * Raye Community is installed with the desktop.
   * A Windows program can be got ready without being started, so the Store
     can finish its install.
+  * The image includes Spanish, German, Brazilian Portuguese and Italian
+    language support; Raye's notices, crash screen and admin prompts are
+    translated.
 
  -- techoraye <190692880+techoraye@users.noreply.github.com>  Thu, 26 Nov 2026 03:00:00 +0000
 

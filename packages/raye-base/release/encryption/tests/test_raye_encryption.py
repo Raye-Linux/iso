@@ -58,6 +58,7 @@ class FakeMachine(re_.System):
         self.size = 100 * GIB
         self.fs_size = 100 * GIB
         self.calls = []
+        self.added_keys = []
         self.fail = set()
         self.proc_lines = ['{"device_bytes":"%d","device_size":"%d"}' % (n * GIB, 10 * GIB)
                            for n in (2, 5, 10)]
@@ -102,6 +103,9 @@ class FakeMachine(re_.System):
 
     def run(self, argv, data=None, check=False):
         self.calls.append((argv, data))
+        if argv[:2] == ["cryptsetup", "luksAddKey"]:
+            with open(argv[-1]) as f:
+                self.added_keys.append((f.read(), argv))
         rc = 1 if argv[0] in self.fail else 0
         out = b""
         if argv[:3] == ["btrfs", "filesystem", "resize"]:
@@ -306,6 +310,18 @@ class EncryptTest(Base):
         self.assertFalse(os.path.exists(self.m.path(re_.STATE_DIR + "/active")))
         with open(self.m.path("/run/raye-encryption/progress.json")) as f:
             self.assertEqual(json.load(f), {"done": 10 * GIB, "size": 10 * GIB})
+
+    def test_recovery_key_opens_the_disk_typed_with_or_without_dashes(self):
+        key, st = self.after_restart()
+        rc, _, err = self.tool("run")
+        self.assertEqual(rc, 0, err)
+        typed = [k for k, _ in self.m.added_keys]
+        self.assertEqual(typed, [key, key.replace("-", "")])
+        self.assertEqual(len(typed[1]), 48)
+        for _, argv in self.m.added_keys:
+            # a random 48-digit key needs no slow key derivation
+            self.assertEqual(argv[argv.index("--pbkdf") + 1], "pbkdf2")
+            self.assertEqual(argv[argv.index("--pbkdf-force-iterations") + 1], "1000")
 
     def test_power_cut_keeps_everything_for_the_next_start(self):
         key, st = self.after_restart()

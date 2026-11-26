@@ -73,6 +73,10 @@ class Refused(Exception):
         self.code = code
 
 
+# 1000 is the least key derivation cryptsetup takes (see add_keys)
+RECOVERY_ITERATIONS = "1000"
+
+
 def new_recovery_key():
     # same shape as the installer's: eight groups of six digits
     return "-".join("%06d" % secrets.randbelow(10 ** 6) for _ in range(8))
@@ -480,13 +484,21 @@ class Tool:
         disk opens the usual way and the sealed copies go."""
         key = self.unseal("recovery.jwe")
         if key and state.get("recovery") != "added":
-            fd, tmp = tempfile.mkstemp(dir=self.p(RUN_DIR))
-            try:
-                os.write(fd, key.encode())
-                os.close(fd)
-                self.sys.run(["cryptsetup", "luksAddKey", "--key-file", keyfile, part, tmp], check=True)
-            finally:
-                os.unlink(tmp)
+            # two ways to type the same key open the disk: as it is written
+            # (eight groups, with dashes) and as its 48 digits. A recovery
+            # key is 48 random digits, so its slots need no slow key
+            # derivation, which would cost every wrong password at the boot
+            # screen a few more seconds per slot.
+            for typed in (key, key.replace("-", "")):
+                fd, tmp = tempfile.mkstemp(dir=self.p(RUN_DIR))
+                try:
+                    os.write(fd, typed.encode())
+                    os.close(fd)
+                    self.sys.run(["cryptsetup", "luksAddKey", "--key-file", keyfile,
+                                  "--pbkdf", "pbkdf2", "--pbkdf-force-iterations", RECOVERY_ITERATIONS,
+                                  part, tmp], check=True)
+                finally:
+                    os.unlink(tmp)
             state["recovery"] = "added"
             self.save(state)
         del key

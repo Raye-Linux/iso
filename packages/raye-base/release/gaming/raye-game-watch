@@ -11,6 +11,9 @@
 #   Windows    the programs of a space raye-run-windows marks as a game
 #              (its profile, or Settings), not the layer's own services
 #              nor, for a launcher, the launcher itself
+#   Roblox     the player Quadra starts under Rosemary ("<rosemary>
+#              .../RobloxPlayer.app"), from the Store's AppImage or Flatpak;
+#              Quadra itself is a launcher
 # The person's choices are in ~/.config/raye/game-mode.conf (game-mode.sh).
 # Games are listed for Settings in ~/.local/state/raye/game-mode/games.
 #
@@ -27,7 +30,7 @@ steampids=${RAYE_GAME_STEAM_PIDFILES:-"$HOME/.steam/steam.pid"}
 steamlibs=${RAYE_GAME_STEAM_LIBS:-"$HOME/.var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps $HOME/.local/share/Steam/steamapps $HOME/.steam/steam/steamapps"}
 # the Common Redistributables Steam installs before a game's first start
 steam_tools=" 228980 "
-launchers=" com.valvesoftware.Steam com.heroicgameslauncher.hgl net.lutris.Lutris com.usebottles.bottles io.itch.itch "
+launchers=" com.valvesoftware.Steam com.heroicgameslauncher.hgl net.lutris.Lutris com.usebottles.bottles io.itch.itch org.quadrahq.Quadra "
 nl='
 '
 me=$$
@@ -178,6 +181,31 @@ store() {
     instances=$keep
 }
 
+# Roblox through Quadra. Looked for only while an AppImage is mounted (the
+# Store's Quadra is one) or Quadra's Flatpak runs: a grep over every
+# process costs about 10 ms.
+natives() {
+    grep -qs '/\.mount_' "$proc/mounts" ||
+        grep -qsx 'name=org.quadrahq.Quadra' "$xrt"/.flatpak/*/info || return 0
+    for f in $(grep -lsa 'RobloxPlayer\.app' "$proc"/[0-9]*/cmdline); do
+        pid=${f%/cmdline}; pid=${pid##*/}
+        listed "$known" "$pid" && continue
+        mine_has "$pid" && continue
+        a=$(args_of "$pid") found=""
+        set -f; ifs=$IFS; IFS=$nl
+        for w in $a; do
+            case $w in */RobloxPlayer.app|*/RobloxPlayer.app/) found=1 ;; esac
+        done
+        IFS=$ifs; set +f
+        # not remembered before it is the player: a shell or a wrapper that
+        # names it keeps its number when it becomes Rosemary
+        [ -n "$found" ] || continue
+        look "$pid"
+        wanted "app:com.roblox.RobloxPlayer" "" || continue
+        handover "$pid" "app:com.roblox.RobloxPlayer" "" "Roblox" || known=${known% "$pid"}
+    done
+}
+
 # raye-run-windows leaves $runtime/windows/PID for each program it starts;
 # the search goes on a minute after that process ends, for a launcher that
 # starts its game and quits
@@ -239,6 +267,7 @@ once() {
     store
     steam
     windows
+    natives
 }
 
 if [ "${1:-}" = --once ]; then

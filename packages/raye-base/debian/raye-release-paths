@@ -79,6 +79,10 @@ raye-system  release/drivers/raye-flatpak-gl              usr/libexec/raye-flatp
 raye-system  release/drivers/raye-flatpak-gl.service      usr/lib/systemd/system/raye-flatpak-gl.service
 raye-system  release/drivers/raye-gpu-driver-changed      usr/libexec/raye-gpu-driver-changed
 raye-system  release/drivers/80raye-gpu-driver            etc/apt/apt.conf.d/80raye-gpu-driver
+raye-system  release/drivers/raye-hw-drivers              usr/libexec/raye-hw-drivers
+raye-system  release/drivers/raye-hw-drivers.service      usr/lib/systemd/system/raye-hw-drivers.service  no-start
+raye-system  release/drivers/70-raye-hw-drivers.rules     usr/lib/udev/rules.d/70-raye-hw-drivers.rules
+raye-system  release/drivers/raye-modules.index           usr/share/raye/drivers/raye-modules.index
 # Chromebooks: the top row through keyd, which only starts when a config
 # exists, and the Pixelbook's Search key. Nothing happens on other machines.
 raye-system  release/chromebook/raye-chromebook               usr/libexec/raye-chromebook
@@ -246,6 +250,15 @@ raye-gaming  release/gaming/raye-game-hold                     usr/libexec/raye-
 raye-gaming  release/gaming/raye-game-watch                    usr/libexec/raye-game-watch
 raye-gaming  release/gaming/game-mode.sh                       usr/lib/raye/gaming/game-mode.sh
 raye-gaming  release/gaming/50-raye-game-scheduler.rules        usr/share/polkit-1/rules.d/50-raye-game-scheduler.rules
+# Raye Proton: Steam's compatibility tool for raye-wine, for Steam from the
+# archive (this folder) and the Store's (raye-proton-setup copies it there)
+raye-gaming  release/proton/proton                             usr/share/steam/compatibilitytools.d/raye-proton/proton
+raye-gaming  release/proton/compatibilitytool.vdf              usr/share/steam/compatibilitytools.d/raye-proton/compatibilitytool.vdf
+raye-gaming  release/proton/toolmanifest.vdf                   usr/share/steam/compatibilitytools.d/raye-proton/toolmanifest.vdf
+raye-gaming  release/proton/raye-proton-setup                  usr/libexec/raye-proton-setup
+raye-gaming  release/proton/raye-proton-setup.service          usr/lib/systemd/user/raye-proton-setup.service
+raye-gaming  release/proton/raye-proton-bench                  usr/bin/raye-proton-bench
+raye-gaming  release/proton/tools.tsv                          usr/share/raye/proton-bench/tools.tsv
 
 # ---------------------------------------------------------------- desktop
 # System notices in Raye words (GP-26). raye-restart-notice is the helper

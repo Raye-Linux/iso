@@ -166,6 +166,47 @@ watch
 expect "windows: ... and is, once it has become the program" registered 330
 gone 330
 
+# --------------------------------------------------------------- Roblox
+# Quadra (the Store's AppImage) runs the player under Rosemary
+process 400 /home/u/.local/share/raye-store/appimages/org.quadrahq.Quadra.AppImage
+process 401 /home/u/.local/share/quadra/rosemary/bin/rosemary /home/u/.local/share/quadra/roblox/RobloxPlayer.app --protocolString roblox-player:1
+process 402 /home/u/.local/share/quadra/rosemary/bin/rosemary server --prefix /home/u/.local/share/quadra/prefix
+process 403 /usr/bin/vim notes-about-RobloxPlayer.app-later
+watch
+expect "roblox: nothing is searched while no AppImage nor Quadra runs" eval '! registered 401'
+printf 'Quadra on /tmp/.mount_QuadraAbC123 type fuse.Quadra (ro,nosuid,nodev)\n' > "$proc/mounts"
+watch
+expect "roblox: the player under Rosemary is handed to GameMode" registered 401
+expect "roblox: not Quadra itself" eval '! registered 400'
+expect "roblox: not Rosemary's prefix server" eval '! registered 402'
+expect "roblox: not a program that only names the player" eval '! registered 403'
+expect "roblox: it is listed for Settings as Roblox" has "$home/.local/state/raye/game-mode/games" "app:com.roblox.RobloxPlayer	Roblox"
+gone 401
+rm "$proc/mounts"
+process 404 /app/libexec/rosemary /home/u/.var/app/org.quadrahq.Quadra/data/quadra/RobloxPlayer.app
+watch
+expect "roblox: Quadra's Flatpak does not start the search by itself" eval '! registered 404'
+desktop org.quadrahq.Quadra Quadra "GNOME;GTK;Game;"
+flatpak 9 org.quadrahq.Quadra 405
+process 405 /app/bin/quadra
+watch
+expect "roblox: ... but its player is found while Quadra's Flatpak runs" registered 404
+expect "roblox: Quadra's Flatpak is a launcher, not a game" eval '! registered 405'
+gone 404
+# the running watcher (not --once): a process it saw as a shell or a
+# wrapper naming the player keeps its number when it becomes Rosemary
+printf 'Quadra on /tmp/.mount_QuadraAbC123 type fuse.Quadra (ro,nosuid,nodev)\n' > "$proc/mounts"
+process 406 /bin/sh -c "exec rosemary /home/u/.local/share/quadra/roblox/RobloxPlayer.app --x"
+: > "$log"
+RAYE_GAME_INTERVAL=0.2 sh "$gaming/raye-game-watch" & watcher=$!
+sleep 1
+process 406 /home/u/.local/share/quadra/rosemary/bin/rosemary /home/u/.local/share/quadra/roblox/RobloxPlayer.app
+sleep 1.5
+kill "$watcher"; wait "$watcher" 2>/dev/null || true
+expect "roblox: a player that became Rosemary after a first look is handed over" registered 406
+gone 406
+rm "$proc/mounts"
+
 # --------------------------------------------------------- your choices
 printf 'on=windows:notepad-plus-plus\n' > "$conf"
 watch

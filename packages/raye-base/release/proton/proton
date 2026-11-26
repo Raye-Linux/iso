@@ -1,0 +1,118 @@
+#!/bin/sh
+# Raye Proton: the compatibility tool Steam offers next to its own Proton
+# (a game's Properties > Compatibility), which runs the game on raye-wine,
+# Raye's Windows layer, with Raye's settings: Direct3D on Vulkan (DXVK,
+# VKD3D-Proton, set up by raye-wine in every prefix) or back to OpenGL
+# when the computer has no usable Vulkan, NVAPI on NVIDIA cards, 4 GB for
+# 32-bit games, quiet logs, no Wine menu entries.
+#
+# Steam starts it as  proton <verb> <program> [args...]  with the game's
+# folder in STEAM_COMPAT_DATA_PATH: the game's Windows space is pfx/ in
+# there, like Proton's, made the first time without any window.
+#
+# The Store's Steam (Flatpak) cannot run raye-wine in its sandbox: the
+# copy raye-proton-setup puts in its folder hands the game to this same
+# script on the computer (flatpak-spawn --host), paths translated.
+#
+# What it does not do: Valve's Proton carries a bridge to the Steam client
+# (lsteamclient); games that ask Steam for the signed-in player from
+# inside the game need Valve's Proton.
+set -u
+verb=${1:-}
+[ $# -gt 0 ] && shift
+wine_dir=${RAYE_WINE:-/opt/raye-wine}
+flatpak_app=com.valvesoftware.Steam
+
+say() { echo "Raye Proton: $*" >&2; }
+
+# ---- inside the Store's Steam: go out to the computer ----------------
+# its home is persisted under ~/.var/app/<app>: a path of the sandbox's
+# home is that folder on the computer (files given to it from outside,
+# /mnt, /media, are the same on both sides)
+host_path() {
+    case $1 in
+        "$HOME/.var/app/"*) printf '%s' "$1" ;;
+        "$HOME"/*) printf '%s' "$HOME/.var/app/$flatpak_app/${1#"$HOME"/}" ;;
+        *) printf '%s' "$1" ;;
+    esac
+}
+
+if [ -f "${RAYE_FLATPAK_INFO:-/.flatpak-info}" ]; then
+    command -v flatpak-spawn >/dev/null || { say "flatpak-spawn is missing"; exit 1; }
+    # the copy of this script on the computer (raye-proton-setup keeps it
+    # in Steam's folder, which both sides see)
+    self=$(host_path "$(readlink -f "$0")")
+    data=$(host_path "${STEAM_COMPAT_DATA_PATH:-}")
+    set -- "$verb" "$@"
+    for a do
+        shift
+        case $a in /*) a=$(host_path "$a") ;; esac
+        set -- "$@" "$a"
+    done
+    exec flatpak-spawn --host --watch-bus --directory="$(host_path "$PWD")" \
+        --env=STEAM_COMPAT_DATA_PATH="$data" \
+        --env=SteamAppId="${SteamAppId:-}" --env=SteamGameId="${SteamGameId:-}" \
+        --env=DISPLAY="${DISPLAY:-}" --env=WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-}" \
+        --env=XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-}" --env=RAYE_PROTON_FROM_FLATPAK=1 \
+        "$self" "$@"
+fi
+
+# ---- on the computer -----------------------------------------------------
+[ -x "$wine_dir/bin/wine" ] || { say "Raye's Windows layer is not installed (raye-wine)"; exit 1; }
+PATH=$wine_dir/bin:$PATH
+WINESERVER=$wine_dir/bin/wineserver
+export PATH WINESERVER
+
+data=${STEAM_COMPAT_DATA_PATH:-}
+case $verb in
+    run|waitforexitandrun|getcompatpath|getnativepath)
+        [ -n "$data" ] || { say "STEAM_COMPAT_DATA_PATH is not set"; exit 1; } ;;
+    installscript|runinprefix|'') exit 0 ;;
+    *) exit 0 ;;
+esac
+export WINEPREFIX="$data/pfx"
+
+# Raye's settings, as raye-run-windows gives every program
+export WINEDEBUG="${WINEDEBUG:--all}"
+export DXVK_LOG_LEVEL="${DXVK_LOG_LEVEL:-none}"
+export VKD3D_DEBUG="${VKD3D_DEBUG:-none}"
+export WINE_LARGE_ADDRESS_AWARE="${WINE_LARGE_ADDRESS_AWARE:-1}"
+gpu=$("$wine_dir/bin/raye-wine-gpu" --env 2>/dev/null)
+gpu_overrides=$(printf '%s\n' "$gpu" |
+    sed -n "s/^RAYE_WINE_OVERRIDES='\([A-Za-z0-9_.,;=-]*\)'\$/\1/p" | tail -n 1)
+printf '%s\n' "$gpu" | grep -qx 'DXVK_ENABLE_NVAPI=1' && export DXVK_ENABLE_NVAPI=1
+overrides="winemenubuilder.exe=d${WINEDLLOVERRIDES:+;$WINEDLLOVERRIDES}"
+[ -n "$gpu_overrides" ] && overrides="$overrides;$gpu_overrides"
+
+# the layer's own windows ("configuration is being updated") have nowhere
+# to draw while the space is set up
+hidden() {
+    env -u DISPLAY -u WAYLAND_DISPLAY \
+        WINEDLLOVERRIDES="winemenubuilder.exe,winex11.drv,winewayland.drv=d" "$@" >/dev/null 2>&1
+}
+
+version=$(wine --version 2>/dev/null)
+stamp=$data/raye-proton-version
+mkdir -p "$data"
+if [ ! -d "$WINEPREFIX/drive_c" ]; then
+    mkdir -p "$WINEPREFIX"
+    hidden wineboot --init
+    wineserver -w
+    printf '%s\n' "$version" > "$stamp"
+elif [ "$(cat "$stamp" 2>/dev/null)" != "$version" ]; then
+    hidden wineboot --update
+    wineserver -w
+    printf '%s\n' "$version" > "$stamp"
+fi
+
+case $verb in
+    getcompatpath) exec winepath -w "$@" ;;
+    getnativepath) exec winepath -u "$@" ;;
+esac
+export WINEDLLOVERRIDES="$overrides"
+wine "$@"
+rc=$?
+# waitforexitandrun: Steam counts the game as running until the space is
+# quiet (a launcher that starts the game and quits)
+[ "$verb" = waitforexitandrun ] && wineserver -w
+exit $rc

@@ -15,7 +15,7 @@ RELEASE = python3 debian/raye_release.py
 
 override_dh_auto_test:
 ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
-	python3 -m pytest -q -p no:cacheprovider debian/test_raye_release.py debian/test_root_terms.py release/apt/tests release/grub/tests release/boot/tests release/updates/tests release/recovery/tests release/skel/tests release/kconf_update/tests release/gaming/tests release/drivers/tests
+	python3 -m pytest -q -p no:cacheprovider debian/test_raye_release.py debian/test_root_terms.py release/apt/tests release/grub/tests release/boot/tests release/updates/tests release/recovery/tests release/skel/tests release/kconf_update/tests release/gaming/tests release/drivers/tests release/proton/tests
 	sh tests/test_tuning.sh
 	sh release/tuning/tests/test-laptop-wake.sh
 	sh release/tuning/tests/test-raye-vm-cursor.sh
